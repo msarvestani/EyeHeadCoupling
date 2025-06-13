@@ -24,7 +24,7 @@ This repository analyzes eye and head movement coupling in rats and tree shrews.
 3. **Activate the environment**
 
    ```
-   conda activate EyeHead
+   conda activate EyeHeadCoupling
    ```
 
 ## 🚀 Running the Jupyter Notebook
