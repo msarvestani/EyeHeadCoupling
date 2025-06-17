@@ -18,7 +18,7 @@ This repository analyzes eye and head movement coupling in rats and tree shrews.
    Make sure you have conda installed, then run:
 
    ```
-   conda env create -f environment.yml
+   conda env create -f EyeHeadCoupling.yml
    ```
 
 3. **Activate the environment**
