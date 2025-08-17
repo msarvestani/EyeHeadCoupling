@@ -1,0 +1,20 @@
+- session_id: session1
+  subject: subj1
+  data_dir: /data/session1
+  files:
+    - eye.csv
+    - head.csv
+  calibration: calib1.json
+  parameters:
+    sample_rate: 100
+    gain: 1.2
+- session_id: session2
+  subject: subj2
+  data_dir: /data/session2
+  files:
+    - eye2.csv
+    - head2.csv
+  calibration: calib2.json
+  parameters:
+    sample_rate: 120
+    gain: 1.1
