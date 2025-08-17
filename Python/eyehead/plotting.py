@@ -11,14 +11,17 @@ def rotation_matrix(angle_rad: float) -> np.ndarray:
                      [np.sin(angle_rad), np.cos(angle_rad)]])
 
 
-def vector_to_rgb(angle: float, absolute: float, max_abs: float) -> tuple[float, float, float]:
-    """Map vector angle and magnitude to an RGB colour."""
+def vector_to_rgb(angle: float) -> tuple[float, float, float]:
+    """Map a vector angle to an RGB colour.
+
+    The output colour encodes direction only; saturation and value are kept
+    constant, so the magnitude of the vector does not influence the colour
+    intensity.
+    """
     angle = angle % (2 * np.pi)
     if angle < 0:
         angle += 2 * np.pi
-    return matplotlib.colors.hsv_to_rgb((angle / (2 * np.pi),
-                                         absolute / max_abs,
-                                         absolute / max_abs))
+    return matplotlib.colors.hsv_to_rgb((angle / (2 * np.pi), 1.0, 1.0))
 
 
 def plot_angle_distribution(angle: np.ndarray, ax_polar: plt.Axes, num_bins: int = 18) -> None:
