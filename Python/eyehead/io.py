@@ -114,6 +114,7 @@ def load_session_data(config: SessionConfig) -> SessionData:
     data = SessionData()
 
     def _find_file(name: str, per_eye: bool) -> Optional[Path]:
+        animal = (config.animal_id or config.animal_name or "").lower()
         animal = (config.animal_name or "").lower()
         side = (config.camera_side or "").lower() if per_eye else ""
         for p in folder.glob("*.csv"):

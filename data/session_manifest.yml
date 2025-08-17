@@ -4,7 +4,8 @@ sessions:
     session_path: /data/session_01
     subject_id: Paris
     date: 2025-08-06
-    animal_name: Tsh001
+    animal_name: Paris
+    animal_id: Tsh001
     camera_side: L
   session_02:
     experiment_type: stimulation
@@ -12,4 +13,5 @@ sessions:
     subject_id: subj_02
     date: 2023-06-16
     animal_name: subj_02
+    animal_id: subj_02
     camera_side: R
