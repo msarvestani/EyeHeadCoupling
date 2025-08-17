@@ -9,6 +9,10 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 from utils.session_loader import load_session
+import sys
+
+# Put the repo's “Python” folder on sys.path so `import eyehead` works
+sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 def main(session_id: str) -> None:
     """Run the analysis for a given session identifier."""

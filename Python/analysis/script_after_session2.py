@@ -1,8 +1,27 @@
 # ruff: noqa
 
-from eyehead.functions import *
-
+from pathlib import Path
 import sys
+
+# Put the repo's “Python” folder on sys.path so `import eyehead` works
+sys.path.append(str(Path(__file__).resolve().parents[1]))
+
+from eyehead import (
+    SaccadeConfig,
+    SessionConfig,
+    determine_camera_side,
+    calibrate_eye_position,
+    detect_saccades,
+    butter_noncausal,
+    interpolate_nans,
+    load_session_data,
+    rotation_matrix,
+    vector_to_rgb,
+    select_folder,
+    select_file,
+    choose_option,
+)
+
 import os
 import numpy as np
 import pandas as pd
