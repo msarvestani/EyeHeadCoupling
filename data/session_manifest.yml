@@ -2,10 +2,10 @@ sessions:
   session_01:
     experiment_type: fixation
     session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-08-06T16_40_40
-    subject_id: Paris
     date: 2025-08-06
     animal_name: Paris
     animal_id: Tsh001
+    calibration_factor = 3.76
     camera_side: L
   session_02:
     experiment_type: stimulation
