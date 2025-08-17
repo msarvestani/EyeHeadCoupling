@@ -1,7 +1,7 @@
 sessions:
   session_01:
     experiment_type: fixation
-    session_path: r"X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-08-06T16_40_40\\"
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-08-06T16_40_40
     subject_id: Paris
     date: 2025-08-06
   session_02:
