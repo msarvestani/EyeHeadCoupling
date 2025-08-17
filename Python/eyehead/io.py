@@ -114,8 +114,7 @@ def load_session_data(config: SessionConfig) -> SessionData:
     data = SessionData()
 
     def _find_file(name: str, per_eye: bool) -> Optional[Path]:
-        animal = (config.animal_id or config.animal_name or "").lower()
-        animal = (config.animal_name or "").lower()
+        animal = (config.animal_id or "").lower()
         side = (config.camera_side or "").lower() if per_eye else ""
         for p in folder.glob("*.csv"):
             fname = p.name.lower()
@@ -139,14 +138,16 @@ def load_session_data(config: SessionConfig) -> SessionData:
 
     data.camera = _load_csv("camera")
     data.go = _load_csv("go")
+
     data.ellipse_center_xy = _load_csv("ellipse_center_xy", required=True, per_eye=True)
     if data.ellipse_center_xy is not None:
         data.eye_frame = data.ellipse_center_xy[:, 0].astype(int)
         data.eye_timestamp = data.ellipse_center_xy[:, 1]
         data.eye_x = data.ellipse_center_xy[:, 2]
         data.eye_y = data.ellipse_center_xy[:, 3]
+
     data.origin_of_eye_coordinate = _load_csv(
-        "origin_of_eye_coordinate", required=True, per_eye=True
+        "origin_of_eyecoordinate", required=True, per_eye=True
     )
     data.torsion = _load_csv("torsion", per_eye=True)
     data.vdaxis = _load_csv("vdaxis", per_eye=True)
