@@ -16,6 +16,7 @@ from utils.session_loader import load_session
 def main(session_id: str) -> None:
     """Run the full analysis pipeline for ``session_id``."""
     config = load_session(session_id)
+    config.results_dir.mkdir(parents=True, exist_ok=True)
     data = load_session_data(config)
     eye_pos_cal = calibrate_eye_position(data, config)
 

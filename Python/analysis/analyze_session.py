@@ -17,9 +17,10 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 def main(session_id: str) -> None:
     """Run the analysis for a given session identifier."""
     session = load_session(session_id)
-    folder_path = Path(session.session_path)
-    results_dir = Path(session.results_dir)
-    results_dir.mkdir(parents=True, exist_ok=True)
+    folder_path = session.folder_path
+    results_dir = session.results_dir
+    if results_dir is not None:
+        results_dir.mkdir(parents=True, exist_ok=True)
 
     # The rest of the analysis would operate on ``folder_path`` and
     # save any generated figures into ``results_dir``.  For now we simply
