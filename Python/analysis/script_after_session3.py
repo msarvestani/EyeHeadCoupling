@@ -1,22 +1,39 @@
 from __future__ import annotations
-
+import sys
 import argparse
+from pathlib import Path
+# Put the repo's “Python” folder on sys.path so `import eyehead` works
+sys.path.append(str(Path(__file__).resolve().parents[1]))
+from utils.session_loader import load_session
 
 from eyehead import (
     SaccadeConfig,
+    SessionConfig,
     calibrate_eye_position,
     detect_saccades,
     load_session_data,
     organize_stims,
     sort_plot_saccades,
 )
-from utils.session_loader import load_session
 
 
 def main(session_id: str) -> None:
     """Run the full analysis pipeline for ``session_id``."""
     config = load_session(session_id)
     config.results_dir.mkdir(parents=True, exist_ok=True)
+
+    folder_path = config.folder_path
+    results_dir = config.results_dir
+    if results_dir is not None:
+        results_dir.mkdir(parents=True, exist_ok=True)
+
+    # The rest of the analysis would operate on ``folder_path`` and
+    # save any generated figures into ``results_dir``.  For now we simply
+    # report the resolved paths so that the script remains functional
+    # even when the full analysis pipeline is not available.
+    print(f"Session path: {folder_path}")
+    print(f"Results directory: {results_dir}")
+
     data = load_session_data(config)
     eye_pos_cal = calibrate_eye_position(data, config)
 
