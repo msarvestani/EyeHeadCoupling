@@ -113,23 +113,37 @@ def load_session_data(config: SessionConfig) -> SessionData:
     folder = Path(config.folder_path)
     data = SessionData()
 
-    def _load_csv(name: str, *, required: bool = False) -> Optional[np.ndarray]:
-        file_path = folder / f"{name}.csv"
-        if not file_path.exists():
+    def _find_file(name: str, per_eye: bool) -> Optional[Path]:
+        animal = (config.animal_id or config.animal_name or "").lower()
+        side = (config.camera_side or "").lower() if per_eye else ""
+        for p in folder.glob("*.csv"):
+            fname = p.name.lower()
+            if animal and not fname.startswith(animal):
+                continue
+            if name.lower() not in fname:
+                continue
+            if side and f"_{side}" not in fname:
+                continue
+            return p
+        return None
+
+    def _load_csv(name: str, *, required: bool = False, per_eye: bool = False) -> Optional[np.ndarray]:
+        file_path = _find_file(name, per_eye)
+        if file_path is None:
             if required:
-                raise FileNotFoundError(f"Required file '{file_path}' not found")
+                raise FileNotFoundError(f"Required file matching '{name}' not found in {folder}")
             return None
         cleaned = clean_csv(str(file_path))
         return np.genfromtxt(cleaned, delimiter=",", skip_header=1)
 
     data.camera = _load_csv("camera")
     data.go = _load_csv("go")
-    data.ellipse_center_xy = _load_csv("ellipse_center_xy", required=True)
+    data.ellipse_center_xy = _load_csv("ellipse_center_xy", required=True, per_eye=True)
     data.origin_of_eye_coordinate = _load_csv(
-        "origin_of_eye_coordinate", required=True
+        "origin_of_eye_coordinate", required=True, per_eye=True
     )
-    data.torsion = _load_csv("torsion")
-    data.vdaxis = _load_csv("vdaxis")
+    data.torsion = _load_csv("torsion", per_eye=True)
+    data.vdaxis = _load_csv("vdaxis", per_eye=True)
     data.imu = _load_csv("imu")
     data.end_of_trial = _load_csv("end_of_trial")
     data.cue = _load_csv("cue")

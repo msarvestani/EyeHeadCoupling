@@ -168,7 +168,8 @@ def detect_saccades(
     plt.tight_layout()
     plt.show()
 
-    prob_fname = f"{config.session_name}_saccades.png"
+    side_tag = f"_{config.camera_side}" if config.camera_side else ""
+    prob_fname = f"{config.session_name}{side_tag}_saccades.png"
     fig.savefig(config.results_dir / prob_fname, dpi=300, bbox_inches="tight")
 
     return {

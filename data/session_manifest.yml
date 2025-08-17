@@ -1,11 +1,17 @@
 sessions:
   session_01:
     experiment_type: fixation
-    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-08-06T16_40_40\
+    session_path: /data/session_01
     subject_id: Paris
     date: 2025-08-06
+    animal_name: Paris
+    animal_id: Tsh001
+    camera_side: L
   session_02:
     experiment_type: stimulation
     session_path: /data/session_02
     subject_id: subj_02
     date: 2023-06-16
+    animal_name: subj_02
+    animal_id: subj_02
+    camera_side: R
