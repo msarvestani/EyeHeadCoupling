@@ -52,6 +52,8 @@ def main(session_id: str) -> None:
         config,
         data=data,
     )
+    indices = saccades["saccade_indices_xy"]
+    print(f"Detected {len(indices)} saccades")
     saccades["stim_frames"], stim_type = organize_stims(
         data.go_frame,
         go_dir_x=data.go_direction_x,
