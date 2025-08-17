@@ -113,17 +113,21 @@ def load_session_data(config: SessionConfig) -> SessionData:
     folder = Path(config.folder_path)
     data = SessionData()
 
-    def _load_csv(name: str) -> Optional[np.ndarray]:
+    def _load_csv(name: str, *, required: bool = False) -> Optional[np.ndarray]:
         file_path = folder / f"{name}.csv"
         if not file_path.exists():
+            if required:
+                raise FileNotFoundError(f"Required file '{file_path}' not found")
             return None
         cleaned = clean_csv(str(file_path))
         return np.genfromtxt(cleaned, delimiter=",", skip_header=1)
 
     data.camera = _load_csv("camera")
     data.go = _load_csv("go")
-    data.ellipse_center_xy = _load_csv("ellipse_center_xy")
-    data.origin_of_eye_coordinate = _load_csv("origin_of_eye_coordinate")
+    data.ellipse_center_xy = _load_csv("ellipse_center_xy", required=True)
+    data.origin_of_eye_coordinate = _load_csv(
+        "origin_of_eye_coordinate", required=True
+    )
     data.torsion = _load_csv("torsion")
     data.vdaxis = _load_csv("vdaxis")
     data.imu = _load_csv("imu")

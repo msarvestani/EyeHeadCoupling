@@ -29,6 +29,11 @@ class SaccadeConfig:
 
 def calibrate_eye_position(data: SessionData, config: SessionConfig) -> np.ndarray:
     """Calibrate eye position using eyelid markers and gaze samples."""
+    if data.origin_of_eye_coordinate is None or data.ellipse_center_xy is None:
+        raise ValueError(
+            "Missing eye marker data: origin_of_eye_coordinate or ellipse_center_xy"
+        )
+
     oc = data.origin_of_eye_coordinate
     ec = data.ellipse_center_xy
 
