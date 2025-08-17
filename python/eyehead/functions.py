@@ -34,15 +34,25 @@ from typing import Optional, Union
 
 
 @dataclass
-class SaccadeDetectionConfig:
+class SaccadeConfig:
     """Configuration parameters for :func:`detect_saccades`."""
-    calibration_factor: Union[float, np.ndarray]
-    blink_velocity_threshold: float
     saccade_threshold: float
-    blink_detection: int = 0
-    saccade_threshold_torsion: Optional[float] = None
+    saccade_threshold_torsion: float
+    blink_threshold: float = 10.0
+    blink_detection: int = 1
+    saccade_win: float = 0.7
 
-
+@dataclass
+class SessionConfig:
+    """Configuration parameters for a session."""
+    session_name: str
+    results_dir: Path
+    calibration_factor: float
+    camera_side: Optional[str] = None
+    eye_name: Optional[str] = None
+    ttl_freq: Optional[float] = None
+    folder_path: Optional[str] = None
+    # Add other session-related parameters as needed
 
 def get_session_date_from_path(path):
     match = re.search(r"\d{4}-\d{2}-\d{2}", path)
@@ -168,31 +178,21 @@ def plot_linear_histogram(angles, ax, num_bins=18):
     ax.set_ylabel("Normalised count")
     ax.set_title("Linear angle histogram")    
 
-def detect_saccades(
-    marker1_x, marker1_y, marker2_x, marker2_y,
-    gaze_x, gaze_y,
-    eye_frames,
-
-    config: SaccadeDetectionConfig,
-    vd_axis_lx=None, vd_axis_ly=None, vd_axis_rx=None, vd_axis_ry=None,
-    torsion_angle=None,
-):
+def calibrate_eye_position(marker1_x, marker1_y, marker2_x, marker2_y,
+        gaze_x, gaze_y,
+        SessionConfig,
+        ):
+    
     """Detect saccades from eye tracking data.
 
     Parameters
-    ----------
-    marker1_x, marker1_y, marker2_x, marker2_y : array_like
+    ----------   
+        marker1_x, marker1_y, marker2_x, marker2_y : array_like
         Coordinates of the eyelid markers.
     gaze_x, gaze_y : array_like
         Gaze position from Bonsai.
-    eye_frames : array_like
-        Frame numbers associated with ``gaze_x``/``gaze_y``.
     config : :class:`SaccadeDetectionConfig`
         Parameters controlling the detection.
-    vd_axis_lx, vd_axis_ly, vd_axis_rx, vd_axis_ry : array_like, optional
-        Vertical displacement axis of the eyelids, used for blink detection.
-    torsion_angle : array_like, optional
-        Torsion angle of the eye.
     """
 
     # 1. eye-centred coordinates → degrees
@@ -206,7 +206,7 @@ def detect_saccades(
     eye_camera[:, 1] = medfilt(eye_camera[:, 1], kernel_size=3)
 
     # read in 1 or 2 calibration factors
-    cal = np.asarray(config.calibration_factor, dtype=np.float64)
+    cal = np.asarray(SessionConfig.calibration_factor, dtype=np.float64)
     if cal.ndim == 0:
         fx = fy = float(cal)
     elif cal.shape == (2,):
@@ -217,22 +217,42 @@ def detect_saccades(
     eye_camera[:, 0] /= fx
     eye_camera[:, 1] /= fy
 
+    eye_camera_cal = eye_camera
+    return eye_camera_cal
 
-    
+def detect_saccades(
+    eye_pos_cal,
+    eye_frames,
+    SaccadeConfig,
+    SessionConfig,
+    vd_axis_lx=None, vd_axis_ly=None, vd_axis_rx=None, vd_axis_ry=None,
+    torsion_angle=None,
+):
+    """Detect saccades from eye tracking data.
+
+    Parameters
+    ----------
+
+    vd_axis_lx, vd_axis_ly, vd_axis_rx, vd_axis_ry : array_like, optional
+        Vertical displacement axis of the eyelids, used for blink detection.
+    torsion_angle : array_like, optional
+        Torsion angle of the eye.
+    """
+
     # 2. instantaneous velocity  →  speed
-    dx = np.ediff1d(eye_camera[:, 0], to_begin=0)
-    dy = np.ediff1d(eye_camera[:, 1], to_begin=0)
+    dx = np.ediff1d(eye_pos_cal[:, 0], to_begin=0)
+    dy = np.ediff1d(eye_pos_cal[:, 1], to_begin=0)
     xy_speed = np.sqrt(dx**2 + dy**2)
 
-    xy_mask = xy_speed >= config.saccade_threshold
+    xy_mask = xy_speed >= SaccadeConfig.saccade_threshold
 
     # 3. torsional velocity
     if torsion_angle is not None:
         torsion_angle = interpolate_nans(np.asarray(torsion_angle, dtype=np.float64))
         dtheta = np.ediff1d(torsion_angle, to_begin=0)
         torsion_speed = np.abs(dtheta)
-        thresh = (config.saccade_threshold_torsion
-                  if config.saccade_threshold_torsion is not None else np.inf)
+        thresh = (SaccadeConfig.saccade_threshold_torsion
+                  if SaccadeConfig.saccade_threshold_torsion is not None else np.inf)
         torsion_mask = torsion_speed >= thresh
     else:
         torsion_speed = np.zeros_like(xy_speed)
@@ -249,20 +269,20 @@ def detect_saccades(
     # 5. Package eye positions and velocity into output
 
     if torsion_angle is not None:
-        eye_pos = np.column_stack([eye_camera, torsion_angle])
+        eye_pos = np.column_stack([eye_pos_cal, torsion_angle])
         eye_vel = np.column_stack([dx, dy, dtheta])
     else:
-        eye_pos = eye_camera
+        eye_pos = eye_pos_cal
         eye_vel = np.column_stack([dx, dy])
 
     # 6. Optional blink removal
-    if (config.blink_detection and vd_axis_lx is not None and vd_axis_ly is not None
+    if (SaccadeConfig.blink_detection and vd_axis_lx is not None and vd_axis_ly is not None
             and vd_axis_rx is not None and vd_axis_ry is not None):
         vd_axis_left = np.vstack([vd_axis_lx, vd_axis_ly]).T
         vd_axis_right = np.vstack([vd_axis_rx, vd_axis_ry]).T
         vd_axis_d = np.linalg.norm(vd_axis_right - vd_axis_left, axis=1)
         vd_axis_vel = np.gradient(vd_axis_d)
-        blink_indices = np.where(np.abs(vd_axis_vel) > config.blink_velocity_threshold)[0]
+        blink_indices = np.where(np.abs(vd_axis_vel) > SaccadeConfig.blink_threshold)[0]
         mask = ~np.isin(saccade_indices_xy, blink_indices)
         saccade_indices_xy = saccade_indices_xy[mask]
         saccade_frames_xy = eye_frames[saccade_indices_xy]
@@ -278,8 +298,8 @@ def detect_saccades(
     ax.plot(frames, xy_speed, linewidth=0.8, label='Speed (°/frame)')
     ax.scatter(saccade_indices_xy, xy_speed[saccade_indices_xy],
             color='tab:red', s=12, label='Saccade idx')
-    ax.axhline(saccade_threshold, color='tab:orange',
-            linestyle='--', label=f'Threshold = {saccade_threshold}')
+    ax.axhline(SaccadeConfig.saccade_threshold, color='tab:orange',
+            linestyle='--', label=f'Threshold = {SaccadeConfig.saccade_threshold}')
     ax.set_ylabel('Speed (° / frame)')
     ax.set_title('Instantaneous XY speed with detected saccade frames')
     ax.legend()
@@ -289,8 +309,8 @@ def detect_saccades(
     ax2.plot(frames, torsion_speed, linewidth=0.8, label='Torsion Speed (°/frame)')
     ax2.scatter(saccade_indices_theta, torsion_speed[saccade_indices_theta],
                 color='tab:purple', s=12, label='Torsion idx')
-    ax2.axhline(saccade_threshold_torsion, color='tab:purple',
-                linestyle='--', label=f'Threshold = {saccade_threshold_torsion}')
+    ax2.axhline(SaccadeConfig.saccade_threshold_torsion, color='tab:purple',
+                linestyle='--', label=f'Threshold = {SaccadeConfig.saccade_threshold_torsion}')
     ax2.set_xlabel('Frame number')
     ax2.set_ylabel('Torsion Speed (° / frame)')
     ax2.set_title('Instantaneous torsion speed with detected torsional saccades')
@@ -302,8 +322,8 @@ def detect_saccades(
 
 
     # save alongside other figures
-    prob_fname = f"{session_name}_saccades.png"
-    fig.savefig(results_dir / prob_fname, dpi=300, bbox_inches='tight')
+    prob_fname = f"{SessionConfig.session_name}_saccades.png"
+    fig.savefig(SessionConfig.results_dir / prob_fname, dpi=300, bbox_inches='tight')
 
 
     return {
@@ -350,14 +370,15 @@ def organize_stims(
     return stim_frames, stim_type
 
 def sort_plot_saccades(
-    #sorts saccades by stimulus onset
+    SessionConfig,
+    SaccadeConfig,
     saccades,
-    saccade_window,  # seconds before/after each stimulus
-    session_path,
     stim_type='None',
-    eye_name='Eye',
 
 ):
+    saccade_window_frames = SaccadeConfig.saccade_win*SessionConfig.ttl_freq
+    session_path = SessionConfig.folder_path
+    eye_name = SessionConfig.eye_name
 
     eye_pos = saccades["eye_pos"]
     eye_pos_diff = saccades["eye_vel"]
@@ -416,8 +437,8 @@ def sort_plot_saccades(
     ax_quiver.set_title(
         f"{session_name}\n"
         f"All translational saccades ({n_all}) — {eye_name}  (stim: {stim_type})\n"
-        f"saccade_thresh = {saccade_thresh}, saccade_win = {saccade_win}s\n"
-        f"blink_thresh = {blink_thresh}, blink_detection = {blink_detection}s\n"
+        f"saccade_thresh = {SaccadeConfig.saccade_threshold}, saccade_win = {SaccadeConfig.saccade_win}s\n"
+        f"blink_thresh = {SaccadeConfig.blink_threshold}, blink_detection = {SaccadeConfig.blink_detection}s\n"
         )
 
     cols = np.array([vector_to_rgb(a, max_abs) for a in angle_all])
@@ -434,13 +455,13 @@ def sort_plot_saccades(
 
     # save master figure
     all_fname = f"{session_name}_{eye_name}_ALL_{stim_type}.png"
-    fig.savefig(results_dir / all_fname, dpi=300, bbox_inches='tight')
+    fig.savefig(SessionConfig.results_dir / all_fname, dpi=300, bbox_inches='tight')
 
 
     # Determine the overall frame range [0, last_frame]
     last_frame = int(saccade_frames_xy.max())
     clipped_any = False
-    plot_window = np.arange(0,saccade_window,1)
+    plot_window = np.arange(0,saccade_window_frames,1)
 
     # ───────── one figure per stimulus label (skip "All") ─────────
     for label, frames in stim_frames.items():
@@ -545,7 +566,7 @@ def sort_plot_saccades(
 
         fig.tight_layout()
         fname = f"{session_name}_{eye_name}_{label.replace('/','-')}.png"
-        fig.savefig(results_dir / fname, dpi=300, bbox_inches='tight')
+        fig.savefig(SessionConfig.results_dir / fname, dpi=300, bbox_inches='tight')
 
 
 def plot_eye_fixations_between_cue_and_go_by_trial(
@@ -821,19 +842,4 @@ def quantify_fixation_stability_vs_random(
         },
         "figure": fig,
     }
-
-def peristim_change(stim_frames):
-    rel_times = []
-    for f0 in stim_frames:
-        nearby = saccade_frames[
-            (saccade_frames >= f0 - frame_win) &
-            (saccade_frames <= f0 + frame_win)
-        ]
-        rel_times.extend(nearby - f0)
-    rel_times = np.array(rel_times)
-
-    counts, _ = np.histogram(rel_times, bins=bins)
-    prob_bin = counts / len(stim_frames)  # saccades per bin per stim
-    change = 100 * (prob_bin - baseline_rate) / baseline_rate
-    return change
 

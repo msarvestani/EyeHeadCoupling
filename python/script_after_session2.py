@@ -30,30 +30,8 @@ from matplotlib.collections import LineCollection
 import matplotlib
 
 
-# Configuration ------------------------------------------------------------
-config = SaccadeDetectionConfig(
-    calibration_factor=3.76,
-    blink_velocity_threshold=10.0,
-    saccade_threshold=1.0,
-    blink_detection=1,
-    saccade_threshold_torsion=None,
-)
-
-cal = 3.76  # Calibration factor for the pixels to degrees
-ttl_freq = 60  # TTL frequency in Hz
-
-# Parameters for nlink and saccade detection
-blink_detection = 1
-blink_thresh= 10
-saccade_thresh= 1.0
-torsion_velocity_thresh = 1.5
-saccade_win=0.7    # Window size for saccade detection in seconds
-
-#folder_path = select_folder() #this won't work if you're running jupyter lab in browser, so hard coding
-
-
-###################################### Paris
-
+################################################################# Setup paths ################################################################# 
+############################################################################################################################################### 
 #First day when we started doing interleaved stim.
 #folder_path = r"X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-06-09T13_09_02\\" # interleaved
 
@@ -163,22 +141,31 @@ folder_path = r"X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_se
 # folder_path = r"X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-08-14T15_06_12\\" #interleaved
 # folder_path = r"X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-08-14T15_12_24\\" #interleaved
 
-
-
 results_dir = Path(folder_path) / "Results\\"
 results_dir.mkdir(exist_ok=True)
 
-session_name = os.path.basename(folder_path.rstrip("/\\"))
 
-# determine which camera is used based on the folder name and cut off date
-camera_side = determine_camera_side(folder_path)
-eye_name = f"{camera_side} Eye"  # e.g. "Left camera" or "Right camera"
-print(f"Using camera side: {camera_side}")
+# Configuration ------------------------------------------------------------
+SaccadeConfig = SaccadeConfig(
+    saccade_threshold=1.0,
+    saccade_threshold_torsion=1.5,
+    blink_threshold=10.0,
+    blink_detection=1,
+    saccade_win=0.7,
+)
 
 
+SessionConfig = SessionConfig(
+    session_name=os.path.basename(folder_path.rstrip("/\\")),
+    results_dir=results_dir,
+    camera_side=determine_camera_side(folder_path),
+    eye_name=f"{determine_camera_side(folder_path)} Eye",
+    ttl_freq=60,
+    calibration_factor=3.76,
+    folder_path=folder_path,
+)
 
-print(f"Scanning folder: {folder_path}")
-print(f"Found {len(os.listdir(folder_path))} files")
+
 
 # Scan the folder for specific files
 for f in os.listdir(folder_path):
@@ -191,18 +178,23 @@ for f in os.listdir(folder_path):
         camera_file = full_path
     if 'go' in f_lower:
         go_file = full_path
-    if f"ellipse_center_XY_{camera_side}".lower() in f_lower:
+    if f"ellipse_center_XY_{SessionConfig.camera_side}".lower() in f_lower:
         ellipse_center_XY_file = full_path
-    if f"origin_of_eyecoordinate_{camera_side}".lower() in f_lower:
+    if f"origin_of_eyecoordinate_{SessionConfig.camera_side}".lower() in f_lower:
         origin_of_eye_coordinate_file = full_path
-    if f"vdaxis_{camera_side}".lower() in f_lower:
+    if f"vdaxis_{SessionConfig.camera_side}".lower() in f_lower:
         vdaxis_file = full_path
-    if f"torsion_{camera_side}".lower() in f_lower:
+    if f"torsion_{SessionConfig.camera_side}".lower() in f_lower:
         torsion_file = full_path
     if 'endoftrial' in f_lower:
         end_of_trial_file = full_path
     if 'cue' in f_lower:
         cue_file = full_path
+
+
+
+################################################################# Import data ################################################################# 
+###############################################################################################################################################  
 
 ## Read the camera data and map between camera TTL (for saccades) and Bonsai TTLs (for frames)
 camera_data = np.genfromtxt(camera_file, delimiter=',', skip_header=1, dtype=np.float64)
@@ -223,7 +215,7 @@ go_frame = go_frame.astype(int)  # Convert go_frame to integer type
 ### Read the ellipse center XY file  
 ellipse_center_XY_data = np.genfromtxt(clean_csv(ellipse_center_XY_file), delimiter=',', skip_header=1, dtype=np.float64)
 [eye_frame,eye_timestamp,eye_x,eye_y] = ellipse_center_XY_data[:, 0], ellipse_center_XY_data[:, 1], ellipse_center_XY_data[:, 2], ellipse_center_XY_data[:, 3]
-eye_frame = eye_frame.astype(int)  # Convert eye_frame to integer type
+eye_frames = eye_frame.astype(int)  # Convert eye_frame to integer type
 eye_x = interpolate_nans(eye_x)  # Interpolate NaN values in eye_x
 eye_y = -1*interpolate_nans(eye_y)  # Interpolate NaN values in eye_y
 
@@ -233,8 +225,8 @@ origin_of_eye_coordinate_data = np.genfromtxt(clean_csv(origin_of_eye_coordinate
 origin_frame = origin_frame.astype(int)  # Convert origin_frame_r to integer type
 l_x = interpolate_nans(l_x)  # Interpolate NaN values in l_rx
 r_x = interpolate_nans(r_x)  # Interpolate NaN values in r_rx 
-l_y = interpolate_nans(l_y)  # Interpolate NaN values in l_ry
-r_y = interpolate_nans(r_y)  # Interpolate NaN values in r_ry
+l_y = -interpolate_nans(l_y)  # Interpolate NaN values in l_ry
+r_y = -interpolate_nans(r_y)  # Interpolate NaN values in r_ry
 
 
 ## Read the torsion data - this is used for torsion detection
@@ -251,9 +243,9 @@ vdaxis_data = np.genfromtxt(clean_csv(vdaxis_file),delimiter=',',skip_header=1,d
 vd_frame = vd_frame.astype(int)
 # Interpolate NaN values
 vd_lx = interpolate_nans(vd_lx)
-vd_ly = interpolate_nans(vd_ly)
+vd_ly = -interpolate_nans(vd_ly)
 vd_rx = interpolate_nans(vd_rx)
-vd_ry = interpolate_nans(vd_ry)
+vd_ry = -interpolate_nans(vd_ry)
 
         
 ### Read the IMU data for the accelerometer and gyroscope
@@ -327,36 +319,28 @@ if len(cue_frame) != len(go_frame):
         print(f"Warning: {len(cue_frame)} cue onsets but {len(go_frame)} GO rows; truncating GO to {n}.")
         go_frame, go_time = go_frame[:n], go_time[:n]
 
-d_frames = np.diff(go_frame)    # successive differences (frames)
-d_sec = d_frames / ttl_freq
+################################################################# calibrate eye position ######################################################
+############################################################################################################################################### 
+eye_pos_cal = calibrate_eye_position(l_x, l_y, r_x, r_y,
+        eye_x, eye_y,
+        SessionConfig,
+)
 
-fig =plt.figure(figsize=(8,3))
-plt.plot(d_sec, marker='o')
-plt.xlabel('Stimulus index')
-plt.ylabel('Δtime (s) to next stim')
-plt.title('Seconds between successive Go Stims')
-plt.grid(alpha=.3)
-plt.tight_layout()
-plt.show()
-
-# optional: save alongside other figures
-prob_fname = f"{session_name}_{eye_name}_Stim_Interval.png"
-fig.savefig(results_dir / prob_fname, dpi=300, bbox_inches='tight')
-
-# --------------------------------------------------------------
-# ONE analyse-&-plot call for the Eye saccades
+################################################################# detect saccades ######################################################
+############################################################################################################################################### 
 saccades = detect_saccades(
-    l_x, l_y, r_x, r_y,
-    eye_x, eye_y,
-    eye_frame,
-    config,
+    eye_pos_cal,
+    eye_frames,
+    SaccadeConfig,
+    SessionConfig,
     vd_axis_lx=vd_lx, vd_axis_ly=vd_ly,
     vd_axis_rx=vd_rx, vd_axis_ry=vd_ry,
     torsion_angle=torsion,
 )
-
 print("Detected", len(saccades["saccade_indices_xy"]), "saccades")
 
+################################################################# sort saccades by stim ######################################################
+############################################################################################################################################### 
 
 saccades["stim_frames"], stim_type = organize_stims(
     go_frame,
@@ -365,36 +349,22 @@ saccades["stim_frames"], stim_type = organize_stims(
 )
 
 sort_plot_saccades(
+    SessionConfig,
+    SaccadeConfig,
     saccades,
-    saccade_window= saccade_win*ttl_freq,
-    session_path = folder_path,
-    stim_type    = stim_type,
-    eye_name     = eye_name,
-
+    stim_type  = stim_type,
 )
 
-# ============================================================
-# Timeline plot: saccades (grey) + colour-coded stimuli
-# ============================================================
-# -----------------------------------------------------------------
-# Assumes these objects already exist in the workspace
-# -----------------------------------------------------------------
-# right["saccade_frames"]   – Bonsai frame IDs of all saccades
-# go_frame                  – Bonsai frame IDs of stimuli
-# go_dir_x, go_dir_y        – direction codes (can be None)
-# ttl_freq                  – camera TTL rate (Hz)
-# results_dir               – Path(folder_path) / "Results"
-# -----------------------------------------------------------------
-
-# 1) prep data ----------------------------------------------------
+session_path = SessionConfig.folder_path
+saccade_window= SaccadeConfig.saccade_win*SessionConfig.ttl_freq
+eye_name     = SessionConfig.eye_name
 saccade_frames = np.asarray(saccades["saccade_frames_xy"], dtype=int)
 
-# fallback arrays if dir arrays are missing
-gx = go_dir_x if (go_dir_x is not None) else np.zeros_like(go_frame)
-gy = go_dir_y if (go_dir_y is not None) else np.zeros_like(go_frame)
+gx = go_direction_x if (go_direction_x is not None) else np.zeros_like(go_frame)
+gy = go_direction_y if (go_direction_y is not None) else np.zeros_like(go_frame)
 
 
-# ── 1-bis. count how many of each stimulus -----------------------------
+# ──  count how many of each stimulus -----------------------------
 eps = 1e-6                      # tolerance for “zero”
 is_left   = (np.abs(gy) < eps) & (gx < -eps)
 is_right  = (np.abs(gy) < eps) & (gx >  eps)
@@ -420,13 +390,12 @@ for x, y in zip(gx, gy):
 
 # sort frames & colours together
 order      = np.argsort(go_frame)
-t_stim     = go_frame[order] / ttl_freq
+t_stim     = go_frame[order] / SessionConfig.ttl_freq
 colors     = [colors[i] for i in order]
 
 # convert saccade frames to seconds
-t_sacc = np.sort(saccade_frames) / ttl_freq
+t_sacc = np.sort(saccade_frames) / SessionConfig.ttl_freq
 
-# 2) plot ---------------------------------------------------------
 fig, ax = plt.subplots(figsize=(12, 2.5))
 
 # saccades: grey vertical ticks at y = 0
@@ -463,16 +432,14 @@ plt.tight_layout()
 
 
 # optional: save alongside other figures
-prob_fname = f"{session_name}_{eye_name}_timeline_saccade_vs_stim.png"
+prob_fname = f"{SessionConfig.session_name}_{eye_name}_timeline_saccade_vs_stim.png"
 fig.savefig(results_dir / prob_fname, dpi=300, bbox_inches='tight')
 
-# ============================================================
-#  Probability of ≥1 saccade within 0.5 s of each stimulus
+##########################################Task engagement: Probability of ≥1 saccade within 0.5 s of each stimulus #########################
+############################################################################################################################################### 
 
-
-# ----- parameters -------------------------------------------
-win     = saccade_win                  # seconds after onset
-w_frames = int(win * ttl_freq)  # convert to frames
+win     = SaccadeConfig.saccade_win                  # seconds after onset
+w_frames = int(win * SessionConfig.ttl_freq)  # convert to frames
 
 # direction masks
 gx = go_direction_x if go_direction_x is not None else np.zeros_like(go_frame)
@@ -501,7 +468,6 @@ for label, (mask, col) in dir_info.items():
     colors.append(col)
     print(f"{label:5s}: {prob*100:5.1f}%  ({sum(has_sacc)}/{n_stim} stimuli)")
 
-# ----- bar chart --------------------------------------------
 fig, ax = plt.subplots(figsize=(6,4))
 ax.bar(labels, probs, color=colors, edgecolor='k')
 ax.set_ylim(0, 1)
@@ -510,13 +476,13 @@ ax.set_title(f"Probability of a saccade in first {win} s after stimulus")
 ax.grid(axis='y', alpha=.3)
 plt.tight_layout()
 
-# ----- save (optional) --------------------------------------
-
-
 # optional: save alongside other figures
-prob_fname = f"{session_name}_{eye_name}_saccade_prob_within_{win*1000:.0f}ms.png"
+prob_fname = f"{SessionConfig.session_name}_{SessionConfig.eye_name}_saccade_prob_within_{win*1000:.0f}ms.png"
 fig.savefig(results_dir / prob_fname, dpi=300, bbox_inches='tight')
 
+
+########################################## Fixation: Plot eye position during fixation #########################
+############################################################################################################################################### 
 ## For each go frame, look at the last available frame before the go frame in the eye position traces.
 eye_position_during_fixation=[]
 eye_position_during_fixation_success = []
@@ -543,7 +509,6 @@ spread_all = np.std(eye_pos_all, axis=0)
 ratio_spread = spread_fixation / spread_all
 print(f"Ratio of spread during fixation to all eye positions: {ratio_spread}")
 
-
 # Plot all the eye positions during the session first and then the eye positions during fixation
 fig = plt.figure(figsize=(8, 6))
 plt.scatter(saccades["eye_pos"][:, 0], saccades["eye_pos"][:, 1], color='red', alpha=0.1, label='All Eye Positions')
@@ -560,13 +525,15 @@ rng = np.random.default_rng(123)  # set a seed for reproducibility
 cue_frame_jit = (cue_frame + rng.integers(0, 101, size=cue_frame.shape)).astype(int)
 cue_time_jit  = cue_time + rng.uniform(0.0, 5.0, size=cue_time.shape)
 
+##########################################     Fixation: compare eye movement during fixation vs random other times #########################
+###############################################################################################################################################  
 (pairs_cf, pairs_gf, pairs_ct, pairs_gt, pairs_dt, valid_trials,fig,ax)= plot_eye_fixations_between_cue_and_go_by_trial(
     eye_frame=eye_frame, eye_pos=saccades["eye_pos"], eye_timestamp=eye_timestamp,
     cue_frame=cue_frame, cue_time=cue_time,
     #cue_frame=cue_frame_jit, cue_time=cue_time_jit,    
     go_frame=go_frame,  go_time=go_time,
     max_interval_s=1,
-    results_dir=results_dir, session_name=session_name, eye_name=eye_name
+    results_dir=results_dir, session_name=SessionConfig.session_name, eye_name=SessionConfig.eye_name
 )
 
 # Now quantify stability vs random (and show a small paired scatter summary)
@@ -579,86 +546,9 @@ stats = quantify_fixation_stability_vs_random(
     rng_seed=0
 )
 
-## This section is only for the fixation experiments. Might throw an error if the data is not from a fixation experiment.
-fixation_experiment = False
-#----------------------------------------------------------------------------------------------------------
-## Divide the successful fixation trials based on how long it took the animal to reach fixation point. We calculate this from the difference between the cue frame and go_frame.
-if fixation_experiment:
-    fixation_time_theshold = 0.75  # seconds
-    total_fixation_time_per_trial = go_time - cue_time
-    #plt.hist(total_fixation_time_per_trial, bins=20, color='gray', alpha=0.7)
-    mask_short_fixation = total_fixation_time_per_trial <= fixation_time_theshold
-    mask_long_fixation = total_fixation_time_per_trial > fixation_time_theshold
-    short_fixation_frames = []
-    for i, f in enumerate(cue_frame[mask_short_fixation]):
-        short_fixation_frames.append(eye_frame[np.where(eye_frame>=f)[0][0]:np.where(eye_frame<=go_frame[mask_short_fixation][i])[0][-1]])
-    short_fixation_frames = np.array(short_fixation_frames, dtype=object)  # array of arrays
-    short_fixation_eye_positions = []
-    for frames in short_fixation_frames:
-        positions = []
-        for fr in frames:
-            pos = saccades["eye_pos"][np.where(eye_frame == fr)[0]]
-            if len(pos) > 0:
-                positions.append(pos[0])
-        positions = np.array(positions)
-    # positions = positions - np.mean(positions, axis=0)  # center the positions around the mean
-        short_fixation_eye_positions.append(positions)
-    short_fixation_eye_positions = np.array(short_fixation_eye_positions, dtype=object)  # array of arrays
-    long_fixation_frames = []
-    for i, f in enumerate(cue_frame[mask_long_fixation]):
-        long_fixation_frames.append(eye_frame[np.where(eye_frame>=f)[0][0]:np.where(eye_frame<=go_frame[mask_long_fixation][i])[0][-1]])
-    long_fixation_frames = np.array(long_fixation_frames, dtype=object)  # array of arrays
-    long_fixation_eye_positions = []    
-    for frames in long_fixation_frames:
-        positions = []
-        for fr in frames:
-            pos = saccades["eye_pos"][np.where(eye_frame == fr)[0]] 
-            if len(pos) > 0:
-                positions.append(pos[0])
-        positions = np.array(positions)
-    # positions = positions - np.mean(positions, axis=0)  # center the positions around the mean
-        long_fixation_eye_positions.append(np.array(positions))
-    long_fixation_eye_positions = np.array(long_fixation_eye_positions, dtype=object)  # array of arrays
-    # Plot the eye positions during short and long fixation trials
-    #fig = plt.figure(figsize=(12, 5))
-    short_fixation_all_positions = np.vstack(short_fixation_eye_positions)
-    long_fixation_all_positions = np.vstack(long_fixation_eye_positions)
+########################################## Task performance: Trial success moving average #########################
+############################################################################################################################################### 
 
-    ## Let's look at some randomly selected windows from the whole sessions for control
-    control_window_eye_positions = []
-    control_window_size = int(fixation_time_theshold * ttl_freq)  # in frames
-    control_window_start = np.random.choice
-
-
-
-    #----------------------------------------------------------------------------------------------------------
-    ## This commented section is for side-by-side plots
-    #----------------------------------------------------------------------------------------------------------
-    # fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
-    # ax1.scatter(short_fixation_all_positions[:, 0], short_fixation_all_positions[:, 1], color='blue', alpha=0.3)
-    # ax1.set_title(f'Eye Positions During Short Fixation Trials (<= {fixation_time_theshold}s)')
-    # ax1.set_xlabel('X Position (deg)')
-    # ax1.set_ylabel('Y Position (deg)')  
-    # ax1.grid()
-    # ax2.scatter(long_fixation_all_positions[:, 0], long_fixation_all_positions[:, 1], color='orange', alpha=0.3)
-    # ax2.set_title(f'Eye Positions During Long Fixation Trials (> {fixation_time_theshold}s)')
-    # ax2.set_xlabel('X Position (deg)')
-    # ax2.set_ylabel('Y Position (deg)')  
-    # ax2.grid()
-    # plt.show()
-    #----------------------------------------------------------------------------------------------------------
-    # This section is for overlayed plots
-    #----------------------------------------------------------------------------------------------------------
-    fig = plt.figure(figsize=(8, 6))
-    plt.scatter(saccades["eye_pos"][:, 0], saccades["eye_pos"][:, 1], color='red', alpha=0.1, label='All Eye Positions')
-    plt.scatter(long_fixation_all_positions[:, 0], long_fixation_all_positions[:, 1], color='orange', alpha=0.3, label=f'Long Fixation (> {fixation_time_theshold}s)')
-    plt.scatter(short_fixation_all_positions[:, 0], short_fixation_all_positions[:, 1], color='blue', alpha=0.3, label=f'Short Fixation (<= {fixation_time_theshold}s)')
-    plt.xlabel('X Position (deg)')
-    plt.ylabel('Y Position (deg)')
-    plt.title('Eye Positions During Short and Long Fixation Trials')
-    plt.legend()
-    plt.grid()
-    plt.show()
 
 ## Plot the moving average of the trial success rate over a sliding window of 20 trials
 window_size = 10
@@ -698,7 +588,7 @@ ax.grid(axis='y', alpha=0.3)
 plt.tight_layout()
 plt.show()
 # Save the figure
-trial_outcome_fname = f"{session_name}_{eye_name}_Trial_Outcomes.png"   
+trial_outcome_fname = f"{SessionConfig.session_name}_{SessionConfig.eye_name}_Trial_Outcomes.png"
 fig.savefig(results_dir / trial_outcome_fname, dpi=300, bbox_inches='tight')
 
 
