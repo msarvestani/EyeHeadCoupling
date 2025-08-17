@@ -22,6 +22,17 @@ Tools for studying the relationship between eye and head movements in rats and t
    conda activate EyeHeadCoupling
    ```
 
+## Session Manifest
+Session metadata lives in `data/session_manifest.yml` and maps session identifiers to their settings:
+```yaml
+sessions:
+  session_01:
+    session_path: /data/session_01
+    results_dir: /data/session_01/results
+```
+
+Use `utils.session_loader.load_session` to access entries.
+
 ## Usage
 - Run analysis scripts from `Python/analysis/`.
 - Launch Jupyter notebooks from `Python/notebooks/`.
