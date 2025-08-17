@@ -1,4 +1,0 @@
-sessions:
-  demo_session:
-    data_path: /path/to/demo
-    description: Demo session for testing

@@ -6,7 +6,7 @@ actual analysis routine for a single recording session.
 """
 from __future__ import annotations
 
-from session_loader import list_sessions, list_sessions_by_type
+from utils.session_loader import list_sessions, list_sessions_by_type
 
 
 def analyze_session(session_name: str) -> None:
