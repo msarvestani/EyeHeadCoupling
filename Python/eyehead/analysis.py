@@ -356,15 +356,17 @@ def sort_plot_saccades(
 
         if torsion_present:
             idx_buf_torsion: list[int] = []
-            sorted_pairs_theta = sorted(zip(saccade_frames_theta, saccade_indices_theta))
+            sorted_pairs_theta = sorted(
+                zip(saccade_frames_theta, range(len(saccade_indices_theta)))
+            )
             for f in frames:
                 lower_bound = max(f + plot_window[0], 0)
                 upper_bound = min(f + plot_window[-1], saccade_frames_theta.max())
-                for sf, idx in sorted_pairs_theta:
+                for sf, pos in sorted_pairs_theta:
                     if sf < lower_bound:
                         continue
                     elif sf <= upper_bound:
-                        idx_buf_torsion.append(idx)
+                        idx_buf_torsion.append(pos)
                         break
                     else:
                         break
