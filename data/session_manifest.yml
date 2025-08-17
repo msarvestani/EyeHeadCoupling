@@ -1,0 +1,10 @@
+- session_id: session_01
+  experiment_type: baseline
+  data_path: /data/session_01
+  subject_id: subj_01
+  date: 2023-06-15
+- session_id: session_02
+  experiment_type: stimulation
+  data_path: /data/session_02
+  subject_id: subj_02
+  date: 2023-06-16
