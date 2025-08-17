@@ -13,8 +13,8 @@ from utils.session_loader import load_session
 def main(session_id: str) -> None:
     """Run the analysis for a given session identifier."""
     session = load_session(session_id)
-    folder_path = Path(session["session_path"])
-    results_dir = Path(session["results_dir"])
+    folder_path = Path(session.session_path)
+    results_dir = Path(session.results_dir)
     results_dir.mkdir(parents=True, exist_ok=True)
 
     # The rest of the analysis would operate on ``folder_path`` and
