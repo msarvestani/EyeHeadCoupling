@@ -75,6 +75,9 @@ def load_session(session_id: str) -> SessionConfig:
 
     folder = data.get("folder_path") or data.get("session_path")
     results = data.get("results_dir")
+    if results is None and folder:
+        session_folder = Path(folder).name
+        results = Path(r"X:/Analysis/EyeHeadCoupling") / session_folder
     known_keys = {
         "session_name",
         "results_dir",

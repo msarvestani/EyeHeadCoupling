@@ -2,12 +2,10 @@ sessions:
   session_01:
     experiment_type: fixation
     session_path: r"X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-08-06T16_40_40\\"
-    results_dir: /data/session_01/results
     subject_id: Paris
     date: 2025-08-06
   session_02:
     experiment_type: stimulation
     session_path: /data/session_02
-    results_dir: /data/session_02/results
     subject_id: subj_02
     date: 2023-06-16
