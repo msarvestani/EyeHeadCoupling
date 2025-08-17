@@ -27,6 +27,7 @@ class SessionConfig:
     eye_name: Optional[str] = None
     animal_name: Optional[str] = None
     animal_id: Optional[str] = None
+
     ttl_freq: Optional[float] = None
     calibration_factor: Optional[Any] = None
     folder_path: Optional[Path] = None
@@ -103,6 +104,7 @@ def load_session(session_id: str) -> SessionConfig:
         eye_name=data.get("eye_name") or data.get("camera_side"),
         animal_name=data.get("animal_name"),
         animal_id=data.get("animal_id"),
+
         ttl_freq=data.get("ttl_freq"),
         calibration_factor=data.get("calibration_factor"),
         folder_path=Path(folder) if folder else None,

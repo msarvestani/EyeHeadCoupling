@@ -16,4 +16,5 @@ def test_load_session() -> None:
     assert cfg.results_dir == Path("X:/Analysis/EyeHeadCoupling/session_01")
     assert cfg.animal_name == "Paris"
     assert cfg.animal_id == "Tsh001"
+
     assert cfg.camera_side == "L"
