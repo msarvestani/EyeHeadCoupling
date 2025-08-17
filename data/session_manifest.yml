@@ -5,7 +5,7 @@ sessions:
     date: 2025-08-06
     animal_name: Paris
     animal_id: Tsh001
-    calibration_factor = 3.76
+    calibration_factor : 3.76
     camera_side: L
   session_02:
     experiment_type: stimulation
