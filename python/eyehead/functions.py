@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 
 
@@ -42,6 +43,7 @@ class SaccadeDetectionConfig:
     saccade_threshold_torsion: Optional[float] = None
 
 
+
 def get_session_date_from_path(path):
     match = re.search(r"\d{4}-\d{2}-\d{2}", path)
     if match:
@@ -54,12 +56,17 @@ def determine_camera_side(path, cutoff_date_str="2025-06-30"):
     cutoff_date = datetime.strptime(cutoff_date_str, "%Y-%m-%d")
     return "L" if session_date >= cutoff_date else "R"
 
+
+
+# Prompt the user to select a folder
 def select_folder():
     root = tk.Tk()
     root.withdraw()  # Hide the main window
     directory = filedialog.askdirectory()  # Open the file selection dialog
     return directory
 
+
+# Prompt the user to open a file 
 def select_file():
     root = tk.Tk()
     root.withdraw()  # Hide the main window
@@ -92,6 +99,7 @@ def remove_parentheses_chars(line):
     # Remove only '(' and ')' characters
     return line.replace('(', '').replace(')', '').replace('True', '1').replace('False', '0')
 
+
 def clean_csv(filename):
     with open(filename, 'r') as f:
         lines = [remove_parentheses_chars(line) for line in f]
@@ -99,17 +107,18 @@ def clean_csv(filename):
         cleaned = StringIO(''.join(lines))
         return cleaned
 
+
+# Butterworth filter to remove high frequency noise
 def butter_noncausal(signal, fs, cutoff_freq=1, order=4):
     sos = butter(order, cutoff_freq/(fs/2), btype='low', output='sos')  # 50 Hz cutoff frequency
     return sosfiltfilt(sos, signal)   
 
-def interpolate_nans(arr: np.ndarray) -> np.ndarray:
-    """Linearly interpolate NaN values in *arr* in-place."""
-    arr = np.asarray(arr, dtype=float)
+
+def interpolate_nans(arr):
     nans = np.isnan(arr)
-    if np.any(nans):
-        x = np.arange(len(arr))
-        arr[nans] = np.interp(x[nans], x[~nans], arr[~nans])
+    x = np.arange(len(arr))
+    arr[nans] = np.interp(x[nans], x[~nans], arr[~nans])
+
     return arr
 
 def rotation_matrix(angle_rad):
@@ -163,6 +172,7 @@ def detect_saccades(
     marker1_x, marker1_y, marker2_x, marker2_y,
     gaze_x, gaze_y,
     eye_frames,
+
     config: SaccadeDetectionConfig,
     vd_axis_lx=None, vd_axis_ly=None, vd_axis_rx=None, vd_axis_ry=None,
     torsion_angle=None,
@@ -207,7 +217,9 @@ def detect_saccades(
     eye_camera[:, 0] /= fx
     eye_camera[:, 1] /= fy
 
-    # 2. instantaneous velocity → speed
+
+    
+    # 2. instantaneous velocity  →  speed
     dx = np.ediff1d(eye_camera[:, 0], to_begin=0)
     dy = np.ediff1d(eye_camera[:, 1], to_begin=0)
     xy_speed = np.sqrt(dx**2 + dy**2)
@@ -235,6 +247,7 @@ def detect_saccades(
     saccade_frames_theta = eye_frames[saccade_indices_theta]
 
     # 5. Package eye positions and velocity into output
+
     if torsion_angle is not None:
         eye_pos = np.column_stack([eye_camera, torsion_angle])
         eye_vel = np.column_stack([dx, dy, dtheta])
@@ -254,6 +267,45 @@ def detect_saccades(
         saccade_indices_xy = saccade_indices_xy[mask]
         saccade_frames_xy = eye_frames[saccade_indices_xy]
 
+
+
+    # Plot saccade and threshold to make sure it's detected
+    fig, (ax, ax2) = plt.subplots(2, 1, figsize=(12, 8), sharex=True)
+
+    frames = np.arange(len(xy_speed))
+
+    # ─── Plot XY (translational) saccades ───
+    ax.plot(frames, xy_speed, linewidth=0.8, label='Speed (°/frame)')
+    ax.scatter(saccade_indices_xy, xy_speed[saccade_indices_xy],
+            color='tab:red', s=12, label='Saccade idx')
+    ax.axhline(saccade_threshold, color='tab:orange',
+            linestyle='--', label=f'Threshold = {saccade_threshold}')
+    ax.set_ylabel('Speed (° / frame)')
+    ax.set_title('Instantaneous XY speed with detected saccade frames')
+    ax.legend()
+    ax.grid(alpha=.3)
+
+    # ─── Plot torsional saccades ───
+    ax2.plot(frames, torsion_speed, linewidth=0.8, label='Torsion Speed (°/frame)')
+    ax2.scatter(saccade_indices_theta, torsion_speed[saccade_indices_theta],
+                color='tab:purple', s=12, label='Torsion idx')
+    ax2.axhline(saccade_threshold_torsion, color='tab:purple',
+                linestyle='--', label=f'Threshold = {saccade_threshold_torsion}')
+    ax2.set_xlabel('Frame number')
+    ax2.set_ylabel('Torsion Speed (° / frame)')
+    ax2.set_title('Instantaneous torsion speed with detected torsional saccades')
+    ax2.legend()
+    ax2.grid(alpha=.3)
+
+    plt.tight_layout()
+    plt.show()
+
+
+    # save alongside other figures
+    prob_fname = f"{session_name}_saccades.png"
+    fig.savefig(results_dir / prob_fname, dpi=300, bbox_inches='tight')
+
+
     return {
         "eye_pos": eye_pos,
         "eye_vel": eye_vel,
@@ -262,6 +314,7 @@ def detect_saccades(
         "saccade_indices_theta": saccade_indices_theta,
         "saccade_frames_theta": saccade_frames_theta,
     }
+
 
 def organize_stims(
     go_frame, 
@@ -374,15 +427,6 @@ def sort_plot_saccades(
                         angles='xy', scale_units='xy', scale=1,
                         color=cols, alpha=.5)
 
-    # PCA arrows (unchanged)
-    # pca.fit(eye_pos_diff[saccade_indices] /
-    #         np.linalg.norm(eye_pos_diff[saccade_indices], axis=1, keepdims=True))
-    # for i, (vec, var) in enumerate(zip(pca.components_, pca.explained_variance_ratio_)):
-    #     ax_quiver.arrow(np.mean(x_all), np.mean(y_all),
-    #                     *(vec * 10 * np.sqrt(var)),
-    #                     color=['k', 'b'][i], width=0.1,
-    #                     label=f'PC{i+1} ({var:.2f} var)')
-    # ax_quiver.legend()
 
     plot_angle_distribution(angle_all, ax_polar)
     plot_linear_histogram(angle_all, ax_linear)
@@ -502,6 +546,7 @@ def sort_plot_saccades(
         fig.tight_layout()
         fname = f"{session_name}_{eye_name}_{label.replace('/','-')}.png"
         fig.savefig(results_dir / fname, dpi=300, bbox_inches='tight')
+
 
 def plot_eye_fixations_between_cue_and_go_by_trial(
     eye_frame, eye_pos, eye_timestamp,
@@ -791,3 +836,4 @@ def peristim_change(stim_frames):
     prob_bin = counts / len(stim_frames)  # saccades per bin per stim
     change = 100 * (prob_bin - baseline_rate) / baseline_rate
     return change
+
