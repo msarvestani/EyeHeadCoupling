@@ -139,6 +139,15 @@ def load_session_data(config: SessionConfig) -> SessionData:
     data.camera = _load_csv("camera")
     data.go = _load_csv("go")
 
+    if data.go is not None:
+        data.go_frame = data.go[:, 0].astype(int)
+        data.go_time = data.go[:, 1]
+        data.go_direction_x = data.go[:, 2]
+        data.go_direction_y = data.go[:, 3]
+        # Optional: combined direction if present
+        if data.go.shape[1] > 4:
+            data.go_direction = data.go[:, 4]
+
     data.ellipse_center_xy = _load_csv("ellipse_center_xy", required=True, per_eye=True)
     if data.ellipse_center_xy is not None:
         data.eye_frame = data.ellipse_center_xy[:, 0].astype(int)
