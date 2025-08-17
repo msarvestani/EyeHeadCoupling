@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from session_loader import load_session
+from utils.session_loader import load_session
 
 def main(session_id: str) -> None:
     """Run the analysis for a given session identifier."""
