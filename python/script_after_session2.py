@@ -167,175 +167,34 @@ SessionConfig = SessionConfig(
 
 
 
-# Scan the folder for specific files
-for f in os.listdir(folder_path):
-    f_lower = f.lower()
-    full_path = os.path.join(folder_path, f)
+# Load all session files into a dataclass
+session_data = load_session_data(SessionConfig)
 
-    if 'imu' in f_lower:
-        IMU_file = full_path
-    if 'camera' in f_lower:
-        camera_file = full_path
-    if 'go' in f_lower:
-        go_file = full_path
-    if f"ellipse_center_XY_{SessionConfig.camera_side}".lower() in f_lower:
-        ellipse_center_XY_file = full_path
-    if f"origin_of_eyecoordinate_{SessionConfig.camera_side}".lower() in f_lower:
-        origin_of_eye_coordinate_file = full_path
-    if f"vdaxis_{SessionConfig.camera_side}".lower() in f_lower:
-        vdaxis_file = full_path
-    if f"torsion_{SessionConfig.camera_side}".lower() in f_lower:
-        torsion_file = full_path
-    if 'endoftrial' in f_lower:
-        end_of_trial_file = full_path
-    if 'cue' in f_lower:
-        cue_file = full_path
+# Alias frequently used arrays for convenience
+go_frame = session_data.go_frame
+go_time = session_data.go_time
+go_direction_x = session_data.go_direction_x
+go_direction_y = session_data.go_direction_y
+eye_frame = session_data.eye_frame
+eye_timestamp = session_data.eye_timestamp
+end_of_trial_frame = session_data.end_of_trial_frame
+trial_success = session_data.trial_success
+cue_frame = session_data.cue_frame
+cue_time = session_data.cue_time
 
-
-
-################################################################# Import data ################################################################# 
-###############################################################################################################################################  
-
-## Read the camera data and map between camera TTL (for saccades) and Bonsai TTLs (for frames)
-camera_data = np.genfromtxt(camera_file, delimiter=',', skip_header=1, dtype=np.float64)
-[bonsai_frame, bonsai_time] = camera_data[:, 0], camera_data[:, 1]
-bonsai_frame = bonsai_frame.astype(int)  # Convert bonsai_frame to integer type
-
-
-### Read the go file for the start of stim in the trial 
-new_go_data_format=0
-go_data = np.genfromtxt(clean_csv(go_file), delimiter=',', skip_header=1, dtype=np.float64)
-if go_data.shape[1]>3:
-    new_go_data_format = 1
-    [go_frame, go_time, go_direction_x,go_direction_y] = go_data[:, 0], go_data[:, 1], go_data[:, 2], go_data[:,3]
-else:
-    [go_frame, go_time, go_direction] = go_data[:, 0], go_data[:, 1], go_data[:, 2]
-go_frame = go_frame.astype(int)  # Convert go_frame to integer type
-
-### Read the ellipse center XY file  
-ellipse_center_XY_data = np.genfromtxt(clean_csv(ellipse_center_XY_file), delimiter=',', skip_header=1, dtype=np.float64)
-[eye_frame,eye_timestamp,eye_x,eye_y] = ellipse_center_XY_data[:, 0], ellipse_center_XY_data[:, 1], ellipse_center_XY_data[:, 2], ellipse_center_XY_data[:, 3]
-eye_frames = eye_frame.astype(int)  # Convert eye_frame to integer type
-eye_x = interpolate_nans(eye_x)  # Interpolate NaN values in eye_x
-eye_y = -1*interpolate_nans(eye_y)  # Interpolate NaN values in eye_y
-
-### Read the origin of eye coordinate file
-origin_of_eye_coordinate_data = np.genfromtxt(clean_csv(origin_of_eye_coordinate_file), delimiter=',', skip_header=1, dtype=np.float64)
-[origin_frame,o_ts,l_x,l_y,r_x,r_y] = origin_of_eye_coordinate_data[:, 0], origin_of_eye_coordinate_data[:, 1], origin_of_eye_coordinate_data[:, 2], origin_of_eye_coordinate_data[:, 3], origin_of_eye_coordinate_data[:, 4], origin_of_eye_coordinate_data[:, 5]
-origin_frame = origin_frame.astype(int)  # Convert origin_frame_r to integer type
-l_x = interpolate_nans(l_x)  # Interpolate NaN values in l_rx
-r_x = interpolate_nans(r_x)  # Interpolate NaN values in r_rx 
-l_y = -interpolate_nans(l_y)  # Interpolate NaN values in l_ry
-r_y = -interpolate_nans(r_y)  # Interpolate NaN values in r_ry
-
-
-## Read the torsion data - this is used for torsion detection
-torsion_data = np.genfromtxt(clean_csv(torsion_file), delimiter=',', skip_header=1, dtype=np.float64)
-[torsion_frame, torsion_ts, torsion] = torsion_data[:, 0], torsion_data[:, 1], torsion_data[:, 2]
-torsion_frame = torsion_frame.astype(int)   # Convert torsion_frame to integer type
-# Interpolate NaN values        
-torsion = interpolate_nans(torsion)
-
-
-## Read the vertical (VD) axis data - this is used for blink detection
-vdaxis_data = np.genfromtxt(clean_csv(vdaxis_file),delimiter=',',skip_header=1,dtype=np.float64)
-[vd_frame,vd_ts,vd_lx,vd_ly,vd_rx,vd_ry] = vdaxis_data[:,0],vdaxis_data[:,1],vdaxis_data[:,2],vdaxis_data[:,3],vdaxis_data[:,4],vdaxis_data[:,5]
-vd_frame = vd_frame.astype(int)
-# Interpolate NaN values
-vd_lx = interpolate_nans(vd_lx)
-vd_ly = -interpolate_nans(vd_ly)
-vd_rx = interpolate_nans(vd_rx)
-vd_ry = -interpolate_nans(vd_ry)
-
-        
-### Read the IMU data for the accelerometer and gyroscope
-imu_data = np.genfromtxt(IMU_file, delimiter=',', skip_header=1, dtype=np.float64)
-[imu_time,a_x,a_y,a_z,g_x,g_y,g_z,m_x,m_y,m_z] = imu_data[:, 0], imu_data[:, 1], imu_data[:, 2], imu_data[:, 3], imu_data[:, 4], imu_data[:, 5], imu_data[:, 6], imu_data[:, 7], imu_data[:, 8], imu_data[:, 9]
-imu_time = imu_time.astype(np.float64)  # Ensure imu_time is in float64 format
-# Interpolate NaN values in IMU data
-a_x = interpolate_nans(a_x)
-a_y = interpolate_nans(a_y)
-a_z = interpolate_nans(a_z)
-g_x = interpolate_nans(g_x)
-g_y = interpolate_nans(g_y)
-g_z = interpolate_nans(g_z)
-m_x = interpolate_nans(m_x)
-m_y = interpolate_nans(m_y)
-m_z = interpolate_nans(m_z)
-
-
-### Read the endoftrial file- This file tells us when the trial ends, stim direction, eye movement direction, torsion angle, and whether the trial was successful
-try:
-    end_of_trial_data = np.genfromtxt(clean_csv(end_of_trial_file), delimiter=',', skip_header=1, dtype=np.float64)
-    [end_of_trial_frame, end_of_trial_ts, trial_stim_direction, trial_eye_movement_direction, trial_torsion_angle, trial_success] = end_of_trial_data[:, 0], end_of_trial_data[:, 1], end_of_trial_data[:, 2], end_of_trial_data[:, 3], end_of_trial_data[:, 4], end_of_trial_data[:, 5]
-    end_of_trial_frame = end_of_trial_frame.astype(int)  # Convert end_of_trial_frame to integer type
-    # Interpolate NaN values in trial_torsion_angle
-    trial_torsion_angle = interpolate_nans(trial_torsion_angle)
-    trial_eye_movement_direction = interpolate_nans(trial_eye_movement_direction)
-except IndexError:
-    end_of_trial_data = np.genfromtxt(clean_csv(end_of_trial_file), delimiter=',', skip_header=1, dtype=np.float64)
-    [end_of_trial_frame, end_of_trial_ts, trial_stim_direction, trial_eye_movement_direction, trial_success] = end_of_trial_data[:, 0], end_of_trial_data[:, 1], end_of_trial_data[:, 2], end_of_trial_data[:, 3], end_of_trial_data[:, 4]
-    end_of_trial_frame = end_of_trial_frame.astype(int)  # Convert end_of_trial_frame to integer type
-
-    trial_eye_movement_direction = interpolate_nans(trial_eye_movement_direction)
-except ValueError:
-    print("No end of trial data found. Skipping this step.")
-for t in range(len(trial_success)):
-    if trial_success[t] == 0:
-        if trial_eye_movement_direction[t] != -1:
-            trial_success[t] = -1   # Incorrect trial
-
-# --- Read the cue file (every-frame logging) and keep only trial onsets ---
-cue_data = np.genfromtxt(clean_csv(cue_file), delimiter=',', skip_header=1, dtype=np.float64)
-
-cue_frame_raw     = cue_data[:, 0].astype(int)
-cue_time_raw      = cue_data[:, 1].astype(float)
-cue_direction_raw = cue_data[:, 2]  # keep dtype as-is (often int/float)
-
-# Sort by time to be safe (carry frames/directions along)
-order = np.argsort(cue_time_raw)
-cue_time_raw      = cue_time_raw[order]
-cue_frame_raw     = cue_frame_raw[order]
-cue_direction_raw = cue_direction_raw[order]
-
-# Define what counts as a 'new trial' gap between consecutive cue rows
-TRIAL_GAP_S = 1.5  # <-- adjust to 2–3 if your inter-trial gap is longer
-
-# Keep only the FIRST row after each large time jump (trial onset)
-onset_idx = np.r_[0, np.where(np.diff(cue_time_raw) > TRIAL_GAP_S)[0] + 1]
-cue_frame     = cue_frame_raw[onset_idx]
-cue_time      = cue_time_raw[onset_idx]
-cue_direction = cue_direction_raw[onset_idx]
-
-print(f"Detected {cue_frame.size} cue onsets from {cue_frame_raw.size} cue rows (gap > {TRIAL_GAP_S}s).")
-
-# --- Align lengths with GO events (1 line per trial) ---
-if len(cue_frame) != len(go_frame):
-    n = min(len(cue_frame), len(go_frame))
-    if len(cue_frame) > len(go_frame):
-        print(f"Warning: {len(cue_frame)} cue onsets but {len(go_frame)} GO rows; truncating cues to {n}.")
-        cue_frame, cue_time, cue_direction = cue_frame[:n], cue_time[:n], cue_direction[:n]
-    else:
-        print(f"Warning: {len(cue_frame)} cue onsets but {len(go_frame)} GO rows; truncating GO to {n}.")
-        go_frame, go_time = go_frame[:n], go_time[:n]
 
 ################################################################# calibrate eye position ######################################################
 ############################################################################################################################################### 
-eye_pos_cal = calibrate_eye_position(l_x, l_y, r_x, r_y,
-        eye_x, eye_y,
-        SessionConfig,
-)
+eye_pos_cal = calibrate_eye_position(session_data, SessionConfig)
 
 ################################################################# detect saccades ######################################################
 ############################################################################################################################################### 
 saccades = detect_saccades(
     eye_pos_cal,
-    eye_frames,
+    eye_frame,
     SaccadeConfig,
     SessionConfig,
-    vd_axis_lx=vd_lx, vd_axis_ly=vd_ly,
-    vd_axis_rx=vd_rx, vd_axis_ry=vd_ry,
-    torsion_angle=torsion,
+    data=session_data,
 )
 print("Detected", len(saccades["saccade_indices_xy"]), "saccades")
 

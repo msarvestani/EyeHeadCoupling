@@ -54,6 +54,310 @@ class SessionConfig:
     folder_path: Optional[str] = None
     # Add other session-related parameters as needed
 
+
+@dataclass
+class SessionData:
+    """Container for arrays loaded from a Bonsai session.
+
+    Each field holds the raw numeric data from a corresponding CSV file
+    produced during an experiment.  Fields are ``None`` when the
+    associated file is absent in ``SessionConfig.folder_path``.
+
+    Attributes
+    ----------
+    camera: np.ndarray | None
+        Camera TTL timing information.
+    go: np.ndarray | None
+        GO cue timing and direction.
+    ellipse_center_xy: np.ndarray | None
+        Eye centre coordinates.
+    origin_of_eye_coordinate: np.ndarray | None
+        Eye coordinate origin markers.
+    torsion: np.ndarray | None
+        Eye torsion measurements.
+    vdaxis: np.ndarray | None
+        Vertical/diameter axis markers for blink detection.
+    imu: np.ndarray | None
+        IMU accelerometer/gyroscope readings.
+    end_of_trial: np.ndarray | None
+        Summary information for each completed trial.
+    cue: np.ndarray | None
+        Every-frame cue logging used to extract trial onsets.
+    """
+
+    camera: Optional[np.ndarray] = None
+    go: Optional[np.ndarray] = None
+    ellipse_center_xy: Optional[np.ndarray] = None
+    origin_of_eye_coordinate: Optional[np.ndarray] = None
+    torsion: Optional[np.ndarray] = None
+    vdaxis: Optional[np.ndarray] = None
+    imu: Optional[np.ndarray] = None
+    end_of_trial: Optional[np.ndarray] = None
+    cue: Optional[np.ndarray] = None
+
+    # Derived per-column slices -------------------------------------------------
+    bonsai_frame: Optional[np.ndarray] = None
+    bonsai_time: Optional[np.ndarray] = None
+
+    go_frame: Optional[np.ndarray] = None
+    go_time: Optional[np.ndarray] = None
+    go_direction_x: Optional[np.ndarray] = None
+    go_direction_y: Optional[np.ndarray] = None
+    go_direction: Optional[np.ndarray] = None
+
+    eye_frame: Optional[np.ndarray] = None
+    eye_timestamp: Optional[np.ndarray] = None
+    eye_x: Optional[np.ndarray] = None
+    eye_y: Optional[np.ndarray] = None
+
+    origin_frame: Optional[np.ndarray] = None
+    o_ts: Optional[np.ndarray] = None
+    l_x: Optional[np.ndarray] = None
+    l_y: Optional[np.ndarray] = None
+    r_x: Optional[np.ndarray] = None
+    r_y: Optional[np.ndarray] = None
+
+    torsion_frame: Optional[np.ndarray] = None
+    torsion_ts: Optional[np.ndarray] = None
+    torsion_angle: Optional[np.ndarray] = None
+
+    vd_frame: Optional[np.ndarray] = None
+    vd_ts: Optional[np.ndarray] = None
+    vd_lx: Optional[np.ndarray] = None
+    vd_ly: Optional[np.ndarray] = None
+    vd_rx: Optional[np.ndarray] = None
+    vd_ry: Optional[np.ndarray] = None
+
+    imu_time: Optional[np.ndarray] = None
+    a_x: Optional[np.ndarray] = None
+    a_y: Optional[np.ndarray] = None
+    a_z: Optional[np.ndarray] = None
+    g_x: Optional[np.ndarray] = None
+    g_y: Optional[np.ndarray] = None
+    g_z: Optional[np.ndarray] = None
+    m_x: Optional[np.ndarray] = None
+    m_y: Optional[np.ndarray] = None
+    m_z: Optional[np.ndarray] = None
+
+    end_of_trial_frame: Optional[np.ndarray] = None
+    end_of_trial_ts: Optional[np.ndarray] = None
+    trial_stim_direction: Optional[np.ndarray] = None
+    trial_eye_movement_direction: Optional[np.ndarray] = None
+    trial_torsion_angle: Optional[np.ndarray] = None
+    trial_success: Optional[np.ndarray] = None
+
+    cue_frame: Optional[np.ndarray] = None
+    cue_time: Optional[np.ndarray] = None
+    cue_direction: Optional[np.ndarray] = None
+
+
+def load_session_data(config: SessionConfig) -> SessionData:
+    """Load all Bonsai-generated CSV files for a session.
+
+    Parameters
+    ----------
+    config : SessionConfig
+        Contains the ``folder_path`` pointing to the directory with the
+        exported files and the ``camera_side`` (``"L"`` or ``"R"``) used
+        in file naming.
+
+    Returns
+    -------
+    SessionData
+        A dataclass where each field holds the numeric array read from
+        the corresponding file.
+
+    Assumptions
+    -----------
+    Filenames are expected to contain identifying substrings such as
+    ``"imu"``, ``"camera"``, ``"go"``, ``"torsion"`` or the side-specific
+    names like ``"ellipse_center_XY_L"``.  Data are loaded with
+    :func:`numpy.genfromtxt`, and :func:`interpolate_nans` fills missing
+    samples in relevant columns.
+    """
+
+    folder = Path(config.folder_path)
+    files = {}
+    for f in folder.iterdir():
+        name = f.name.lower()
+        if "imu" in name:
+            files["imu"] = f
+        elif "camera" in name:
+            files["camera"] = f
+        elif "go" in name:
+            files["go"] = f
+        elif f"ellipse_center_xy_{config.camera_side}".lower() in name:
+            files["ellipse_center"] = f
+        elif f"origin_of_eyecoordinate_{config.camera_side}".lower() in name:
+            files["origin"] = f
+        elif f"vdaxis_{config.camera_side}".lower() in name:
+            files["vdaxis"] = f
+        elif f"torsion_{config.camera_side}".lower() in name:
+            files["torsion"] = f
+        elif "endoftrial" in name:
+            files["end_of_trial"] = f
+        elif "cue" in name:
+            files["cue"] = f
+
+    data = SessionData()
+
+    if "camera" in files:
+        data.camera = np.genfromtxt(files["camera"], delimiter=",", skip_header=1, dtype=np.float64)
+        if data.camera.size:
+            data.bonsai_frame = data.camera[:, 0].astype(int)
+            data.bonsai_time = data.camera[:, 1]
+
+    if "go" in files:
+        data.go = np.genfromtxt(clean_csv(files["go"]), delimiter=",", skip_header=1, dtype=np.float64)
+        if data.go.size:
+            data.go_frame = data.go[:, 0].astype(int)
+            data.go_time = data.go[:, 1]
+            if data.go.shape[1] > 3:
+                data.go_direction_x = data.go[:, 2]
+                data.go_direction_y = data.go[:, 3]
+            else:
+                data.go_direction = data.go[:, 2]
+
+    if "ellipse_center" in files:
+        ec = np.genfromtxt(clean_csv(files["ellipse_center"]), delimiter=",", skip_header=1, dtype=np.float64)
+        if ec.size:
+            ec[:, 2] = interpolate_nans(ec[:, 2])
+            ec[:, 3] = -interpolate_nans(ec[:, 3])
+        data.ellipse_center_xy = ec
+        if ec.size:
+            data.eye_frame = ec[:, 0].astype(int)
+            data.eye_timestamp = ec[:, 1]
+            data.eye_x = ec[:, 2]
+            data.eye_y = ec[:, 3]
+
+    if "origin" in files:
+        oc = np.genfromtxt(clean_csv(files["origin"]), delimiter=",", skip_header=1, dtype=np.float64)
+        if oc.size:
+            oc[:, 2] = interpolate_nans(oc[:, 2])
+            oc[:, 3] = -interpolate_nans(oc[:, 3])
+            oc[:, 4] = interpolate_nans(oc[:, 4])
+            oc[:, 5] = -interpolate_nans(oc[:, 5])
+        data.origin_of_eye_coordinate = oc
+        if oc.size:
+            data.origin_frame = oc[:, 0].astype(int)
+            data.o_ts = oc[:, 1]
+            data.l_x = oc[:, 2]
+            data.l_y = oc[:, 3]
+            data.r_x = oc[:, 4]
+            data.r_y = oc[:, 5]
+
+    if "torsion" in files:
+        tors = np.genfromtxt(clean_csv(files["torsion"]), delimiter=",", skip_header=1, dtype=np.float64)
+        if tors.size:
+            tors[:, 2] = interpolate_nans(tors[:, 2])
+        data.torsion = tors
+        if tors.size:
+            data.torsion_frame = tors[:, 0].astype(int)
+            data.torsion_ts = tors[:, 1]
+            data.torsion_angle = tors[:, 2]
+
+    if "vdaxis" in files:
+        vd = np.genfromtxt(clean_csv(files["vdaxis"]), delimiter=",", skip_header=1, dtype=np.float64)
+        if vd.size:
+            vd[:, 2] = interpolate_nans(vd[:, 2])
+            vd[:, 3] = -interpolate_nans(vd[:, 3])
+            vd[:, 4] = interpolate_nans(vd[:, 4])
+            vd[:, 5] = -interpolate_nans(vd[:, 5])
+        data.vdaxis = vd
+        if vd.size:
+            data.vd_frame = vd[:, 0].astype(int)
+            data.vd_ts = vd[:, 1]
+            data.vd_lx = vd[:, 2]
+            data.vd_ly = vd[:, 3]
+            data.vd_rx = vd[:, 4]
+            data.vd_ry = vd[:, 5]
+
+    if "imu" in files:
+        imu = np.genfromtxt(files["imu"], delimiter=",", skip_header=1, dtype=np.float64)
+        if imu.size:
+            for i in range(1, imu.shape[1]):
+                imu[:, i] = interpolate_nans(imu[:, i])
+        data.imu = imu
+        if imu.size:
+            data.imu_time = imu[:, 0].astype(float)
+            data.a_x = imu[:, 1]
+            data.a_y = imu[:, 2]
+            data.a_z = imu[:, 3]
+            data.g_x = imu[:, 4]
+            data.g_y = imu[:, 5]
+            data.g_z = imu[:, 6]
+            data.m_x = imu[:, 7]
+            data.m_y = imu[:, 8]
+            data.m_z = imu[:, 9]
+
+    if "end_of_trial" in files:
+        try:
+            eot = np.genfromtxt(clean_csv(files["end_of_trial"]), delimiter=",", skip_header=1, dtype=np.float64)
+            if eot.ndim == 1:
+                eot = eot[np.newaxis, :]
+            data.end_of_trial = eot
+            data.end_of_trial_frame = eot[:, 0].astype(int)
+            data.end_of_trial_ts = eot[:, 1]
+            data.trial_stim_direction = eot[:, 2]
+            if eot.shape[1] > 5:
+                data.trial_eye_movement_direction = interpolate_nans(eot[:, 3])
+                data.trial_torsion_angle = interpolate_nans(eot[:, 4])
+                data.trial_success = eot[:, 5]
+            else:
+                data.trial_eye_movement_direction = interpolate_nans(eot[:, 3])
+                data.trial_success = eot[:, 4]
+            for t in range(len(data.trial_success)):
+                if data.trial_success[t] == 0 and data.trial_eye_movement_direction[t] != -1:
+                    data.trial_success[t] = -1
+        except Exception:
+            data.end_of_trial = None
+
+    if "cue" in files:
+        cue = np.genfromtxt(clean_csv(files["cue"]), delimiter=",", skip_header=1, dtype=np.float64)
+        data.cue = cue
+        if cue.size:
+            cue_frame_raw = cue[:, 0].astype(int)
+            cue_time_raw = cue[:, 1].astype(float)
+            cue_direction_raw = cue[:, 2]
+
+            order = np.argsort(cue_time_raw)
+            cue_frame_raw = cue_frame_raw[order]
+            cue_time_raw = cue_time_raw[order]
+            cue_direction_raw = cue_direction_raw[order]
+
+            TRIAL_GAP_S = 1.5
+            onset_idx = np.r_[0, np.where(np.diff(cue_time_raw) > TRIAL_GAP_S)[0] + 1]
+            data.cue_frame = cue_frame_raw[onset_idx]
+            data.cue_time = cue_time_raw[onset_idx]
+            data.cue_direction = cue_direction_raw[onset_idx]
+
+            print(
+                f"Detected {data.cue_frame.size} cue onsets from {cue_frame_raw.size} cue rows (gap > {TRIAL_GAP_S}s)."
+            )
+
+            if data.go_frame is not None and len(data.cue_frame) != len(data.go_frame):
+                n = min(len(data.cue_frame), len(data.go_frame))
+                if len(data.cue_frame) > len(data.go_frame):
+                    print(
+                        f"Warning: {len(data.cue_frame)} cue onsets but {len(data.go_frame)} GO rows; truncating cues to {n}."
+                    )
+                    data.cue_frame = data.cue_frame[:n]
+                    data.cue_time = data.cue_time[:n]
+                    data.cue_direction = data.cue_direction[:n]
+                else:
+                    print(
+                        f"Warning: {len(data.cue_frame)} cue onsets but {len(data.go_frame)} GO rows; truncating GO to {n}."
+                    )
+                    data.go_frame = data.go_frame[:n]
+                    data.go_time = data.go_time[:n]
+                    if data.go_direction_x is not None:
+                        data.go_direction_x = data.go_direction_x[:n]
+                        data.go_direction_y = data.go_direction_y[:n]
+                    else:
+                        data.go_direction = data.go_direction[:n]
+
+    return data
+
 def get_session_date_from_path(path):
     match = re.search(r"\d{4}-\d{2}-\d{2}", path)
     if match:
@@ -178,22 +482,32 @@ def plot_linear_histogram(angles, ax, num_bins=18):
     ax.set_ylabel("Normalised count")
     ax.set_title("Linear angle histogram")    
 
-def calibrate_eye_position(marker1_x, marker1_y, marker2_x, marker2_y,
-        gaze_x, gaze_y,
-        SessionConfig,
-        ):
-    
-    """Detect saccades from eye tracking data.
+def calibrate_eye_position(
+    data: SessionData,
+    SessionConfig,
+):
+    """Calibrate eye position using eyelid markers and gaze samples.
 
     Parameters
-    ----------   
-        marker1_x, marker1_y, marker2_x, marker2_y : array_like
-        Coordinates of the eyelid markers.
-    gaze_x, gaze_y : array_like
-        Gaze position from Bonsai.
-    config : :class:`SaccadeDetectionConfig`
-        Parameters controlling the detection.
+    ----------
+    data : SessionData
+        Loaded session arrays containing eyelid marker positions and
+        gaze coordinates.
+    SessionConfig : SessionConfig
+        Configuration describing calibration factors.
+
+    Returns
+    -------
+    np.ndarray
+        Eye position in degrees for each frame.
     """
+
+    oc = data.origin_of_eye_coordinate
+    ec = data.ellipse_center_xy
+
+    marker1_x, marker1_y = oc[:, 2], oc[:, 3]
+    marker2_x, marker2_y = oc[:, 4], oc[:, 5]
+    gaze_x, gaze_y = ec[:, 2], ec[:, 3]
 
     # 1. eye-centred coordinates → degrees
     eye_origin = np.column_stack(((marker1_x + marker2_x) / 2.0,
@@ -217,27 +531,41 @@ def calibrate_eye_position(marker1_x, marker1_y, marker2_x, marker2_y,
     eye_camera[:, 0] /= fx
     eye_camera[:, 1] /= fy
 
-    eye_camera_cal = eye_camera
-    return eye_camera_cal
+    return eye_camera
 
 def detect_saccades(
     eye_pos_cal,
     eye_frames,
     SaccadeConfig,
     SessionConfig,
-    vd_axis_lx=None, vd_axis_ly=None, vd_axis_rx=None, vd_axis_ry=None,
-    torsion_angle=None,
+    data: SessionData | None = None,
 ):
     """Detect saccades from eye tracking data.
 
     Parameters
     ----------
-
-    vd_axis_lx, vd_axis_ly, vd_axis_rx, vd_axis_ry : array_like, optional
-        Vertical displacement axis of the eyelids, used for blink detection.
-    torsion_angle : array_like, optional
-        Torsion angle of the eye.
+    eye_pos_cal : np.ndarray
+        Calibrated eye position (degrees) for each frame.
+    eye_frames : array_like
+        Frame numbers matching ``eye_pos_cal``.
+    SaccadeConfig : SaccadeConfig
+        Parameters controlling detection thresholds.
+    SessionConfig : SessionConfig
+        Configuration for the session, used when saving plots.
+    data : SessionData, optional
+        Source of torsion and vertical axis information for blink
+        detection. If ``None``, torsion and blink suppression are
+        skipped.
     """
+
+    torsion_angle = None
+    vd_axis_lx = vd_axis_ly = vd_axis_rx = vd_axis_ry = None
+    if data is not None:
+        if data.torsion is not None:
+            torsion_angle = data.torsion[:, 2]
+        if data.vdaxis is not None:
+            vd_axis_lx, vd_axis_ly = data.vdaxis[:, 2], data.vdaxis[:, 3]
+            vd_axis_rx, vd_axis_ry = data.vdaxis[:, 4], data.vdaxis[:, 5]
 
     # 2. instantaneous velocity  →  speed
     dx = np.ediff1d(eye_pos_cal[:, 0], to_begin=0)
