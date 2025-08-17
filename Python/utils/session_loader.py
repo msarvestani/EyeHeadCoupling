@@ -25,6 +25,7 @@ class SessionConfig:
     results_dir: Optional[Path] = None
     camera_side: Optional[str] = None
     eye_name: Optional[str] = None
+    animal_name: Optional[str] = None
     ttl_freq: Optional[float] = None
     calibration_factor: Optional[Any] = None
     folder_path: Optional[Path] = None
@@ -83,6 +84,7 @@ def load_session(session_id: str) -> SessionConfig:
         "results_dir",
         "camera_side",
         "eye_name",
+        "animal_name",
         "ttl_freq",
         "calibration_factor",
         "folder_path",
@@ -96,7 +98,8 @@ def load_session(session_id: str) -> SessionConfig:
         session_name=data.get("session_name", session_id),
         results_dir=Path(results) if results else None,
         camera_side=data.get("camera_side"),
-        eye_name=data.get("eye_name"),
+        eye_name=data.get("eye_name") or data.get("camera_side"),
+        animal_name=data.get("animal_name"),
         ttl_freq=data.get("ttl_freq"),
         calibration_factor=data.get("calibration_factor"),
         folder_path=Path(folder) if folder else None,
