@@ -1,35 +1,61 @@
-import numpy as np
-import re
-from datetime import datetime
-from io import StringIO
-import tkinter as tk
-from tkinter import filedialog
-from pathlib import Path
-from itertools import cycle
+
+from __future__ import annotations
+
+
+import sys
 import os
-from matplotlib import cm
-import matplotlib
-import matplotlib.pyplot as plt
-from scipy.signal import butter, sosfiltfilt, medfilt
+import numpy as np
+import pandas as pd
 from scipy.fft import fft
-from scipy.signal import ShortTimeFFT, hilbert
+from scipy.signal import ShortTimeFFT, butter, hilbert, sosfiltfilt, medfilt
 from scipy.signal.windows import gaussian
 import scipy.stats as stats
 from scipy.spatial import ConvexHull
-from matplotlib.collections import LineCollection
-from matplotlib.patches import FancyArrowPatch
+import matplotlib.pyplot as plt
+from matplotlib.ticker import ScalarFormatter
+import tkinter as tk
+from tkinter import filedialog
 from sklearn.decomposition import PCA
+from io import StringIO
+from matplotlib import gridspec
+from pathlib import Path
+import matplotlib.lines as mlines
+import matplotlib.gridspec as gridspec
+import re
+from datetime import datetime
+from matplotlib.patches import FancyArrowPatch
+from itertools import cycle
+from matplotlib import cm
+from matplotlib.collections import LineCollection
+import matplotlib
+from dataclasses import dataclass
+from typing import Optional, Union
+
+
+
+@dataclass
+class SaccadeDetectionConfig:
+    """Configuration parameters for :func:`detect_saccades`."""
+    calibration_factor: Union[float, np.ndarray]
+    blink_velocity_threshold: float
+    saccade_threshold: float
+    blink_detection: int = 0
+    saccade_threshold_torsion: Optional[float] = None
+
+
+
 def get_session_date_from_path(path):
     match = re.search(r"\d{4}-\d{2}-\d{2}", path)
     if match:
         return datetime.strptime(match.group(), "%Y-%m-%d")
     else:
         raise ValueError("No valid date (YYYY-MM-DD) found in path")
-    
+
 def determine_camera_side(path, cutoff_date_str="2025-06-30"):
     session_date = get_session_date_from_path(path)
     cutoff_date = datetime.strptime(cutoff_date_str, "%Y-%m-%d")
     return "L" if session_date >= cutoff_date else "R"
+
 
 
 # Prompt the user to select a folder
@@ -38,6 +64,7 @@ def select_folder():
     root.withdraw()  # Hide the main window
     directory = filedialog.askdirectory()  # Open the file selection dialog
     return directory
+
 
 # Prompt the user to open a file 
 def select_file():
@@ -68,14 +95,11 @@ def choose_option(option1, option2, option3, option4):
 
     return result['value']
 
-# Prompt the user to choose the type of visual stim
-#stim_type = choose_option("None","LR","UD","Interleaved")
-
-
-# Function to remove parentheses characters from a line
 def remove_parentheses_chars(line):
     # Remove only '(' and ')' characters
     return line.replace('(', '').replace(')', '').replace('True', '1').replace('False', '0')
+
+
 def clean_csv(filename):
     with open(filename, 'r') as f:
         lines = [remove_parentheses_chars(line) for line in f]
@@ -83,23 +107,23 @@ def clean_csv(filename):
         cleaned = StringIO(''.join(lines))
         return cleaned
 
+
 # Butterworth filter to remove high frequency noise
 def butter_noncausal(signal, fs, cutoff_freq=1, order=4):
     sos = butter(order, cutoff_freq/(fs/2), btype='low', output='sos')  # 50 Hz cutoff frequency
     return sosfiltfilt(sos, signal)   
 
+
 def interpolate_nans(arr):
     nans = np.isnan(arr)
     x = np.arange(len(arr))
     arr[nans] = np.interp(x[nans], x[~nans], arr[~nans])
+
     return arr
 
 def rotation_matrix(angle_rad):
     return np.array([[np.cos(angle_rad), -np.sin(angle_rad)],
                      [np.sin(angle_rad), np.cos(angle_rad)]])
-
-
-pca = PCA(n_components=2)
 
 def vector_to_rgb(angle, absolute): ##Got it from https://stackoverflow.com/questions/19576495/color-matplotlib-quiver-field-according-to-magnitude-and-direction
     global max_abs
@@ -115,7 +139,6 @@ def vector_to_rgb(angle, absolute): ##Got it from https://stackoverflow.com/ques
     return matplotlib.colors.hsv_to_rgb((angle / 2 / np.pi, 
                                          1, 
                                          1))
-
 
 def plot_angle_distribution(angle, ax_polar, num_bins=18):
     """
@@ -149,46 +172,51 @@ def detect_saccades(
     marker1_x, marker1_y, marker2_x, marker2_y,
     gaze_x, gaze_y,
     eye_frames,
-    calibration_factor,
-    blink_velocity_threshold, 
-    saccade_threshold,
-    blink_detection=0,
+
+    config: SaccadeDetectionConfig,
     vd_axis_lx=None, vd_axis_ly=None, vd_axis_rx=None, vd_axis_ry=None,
     torsion_angle=None,
-    saccade_threshold_torsion=None,  
 ):
-    ################# Analyze eye saccades function #################
-    """
-    #  Compute eye position in eye-centered coordinates.
-    # Filter and convert raw gaze to degrees using calibration factor.
-    # Compute eye position velocity to detect saccades.
-    # Identify saccades that exceed a velocity threshold.
-    # (Optional) Remove saccades likely caused by blinks.
-    """
-    
+    """Detect saccades from eye tracking data.
 
-    # 1. eye-centred coordinates  →  degrees
+    Parameters
+    ----------
+    marker1_x, marker1_y, marker2_x, marker2_y : array_like
+        Coordinates of the eyelid markers.
+    gaze_x, gaze_y : array_like
+        Gaze position from Bonsai.
+    eye_frames : array_like
+        Frame numbers associated with ``gaze_x``/``gaze_y``.
+    config : :class:`SaccadeDetectionConfig`
+        Parameters controlling the detection.
+    vd_axis_lx, vd_axis_ly, vd_axis_rx, vd_axis_ry : array_like, optional
+        Vertical displacement axis of the eyelids, used for blink detection.
+    torsion_angle : array_like, optional
+        Torsion angle of the eye.
+    """
+
+    # 1. eye-centred coordinates → degrees
     eye_origin = np.column_stack(((marker1_x + marker2_x) / 2.0,
-                                (marker1_y + marker2_y) / 2.0))
+                                  (marker1_y + marker2_y) / 2.0))
     eye_camera = np.column_stack((gaze_x - eye_origin[:, 0],
-                                gaze_y - eye_origin[:, 1])).astype(np.float64, copy=False)
-    
-    eye_angle = np.arctan2(marker2_y - marker1_y, marker2_x - marker1_x)
+                                  gaze_y - eye_origin[:, 1])).astype(np.float64, copy=False)
 
-    # tiny denoise
+    # small denoise
     eye_camera[:, 0] = medfilt(eye_camera[:, 0], kernel_size=3)
     eye_camera[:, 1] = medfilt(eye_camera[:, 1], kernel_size=3)
 
-    #read in 1 or 2 calibration factors
-    cal = np.asarray(calibration_factor, dtype=np.float64)
-
-    if cal.ndim == 0:                # scalar px/deg (same for X,Y)
+    # read in 1 or 2 calibration factors
+    cal = np.asarray(config.calibration_factor, dtype=np.float64)
+    if cal.ndim == 0:
         fx = fy = float(cal)
-    elif cal.shape == (2,):          # [fx, fy] per-axis px/deg
+    elif cal.shape == (2,):
         fx, fy = float(cal[0]), float(cal[1])
+    else:
+        raise ValueError("calibration_factor must be scalar or length-2 sequence")
 
     eye_camera[:, 0] /= fx
     eye_camera[:, 1] /= fy
+
 
     
     # 2. instantaneous velocity  →  speed
@@ -196,28 +224,30 @@ def detect_saccades(
     dy = np.ediff1d(eye_camera[:, 1], to_begin=0)
     xy_speed = np.sqrt(dx**2 + dy**2)
 
-    xy_mask = xy_speed >= saccade_threshold
+    xy_mask = xy_speed >= config.saccade_threshold
 
-    # 3. eye position velocity  based on torsion
+    # 3. torsional velocity
     if torsion_angle is not None:
-        torsion_angle = interpolate_nans(torsion_angle)
+        torsion_angle = interpolate_nans(np.asarray(torsion_angle, dtype=np.float64))
         dtheta = np.ediff1d(torsion_angle, to_begin=0)
         torsion_speed = np.abs(dtheta)
+        thresh = (config.saccade_threshold_torsion
+                  if config.saccade_threshold_torsion is not None else np.inf)
+        torsion_mask = torsion_speed >= thresh
     else:
         torsion_speed = np.zeros_like(xy_speed)
+        dtheta = torsion_speed
+        torsion_mask = np.zeros_like(xy_mask, dtype=bool)
 
-    # 4. Thresholding based on speed masks
-    torsion_mask = torsion_speed >= (saccade_threshold_torsion or np.inf)
-    
-    #5. Detect saccades based on xy_speed and torsion_speed
+    # 4. Detect saccade indices
+    saccade_indices_xy = np.where(xy_mask)[0]
+    saccade_frames_xy = eye_frames[saccade_indices_xy]
 
-    saccade_indices_xy = np.where(xy_mask)[0] # ← row indices (0…7158)
-    saccade_frames_xy = eye_frames[saccade_indices_xy] # ← absolute Bonsai frames
+    saccade_indices_theta = np.where(torsion_mask)[0]
+    saccade_frames_theta = eye_frames[saccade_indices_theta]
 
-    saccade_indices_theta = np.where(torsion_mask)[0] # ← row indices (0…7158)
-    saccade_frames_theta = eye_frames[saccade_indices_theta] # ← absolute Bonsai frames
+    # 5. Package eye positions and velocity into output
 
-    # 6. Package eye positions and velocity into output (can be 3D if torsion is included)
     if torsion_angle is not None:
         eye_pos = np.column_stack([eye_camera, torsion_angle])
         eye_vel = np.column_stack([dx, dy, dtheta])
@@ -225,7 +255,17 @@ def detect_saccades(
         eye_pos = eye_camera
         eye_vel = np.column_stack([dx, dy])
 
-
+    # 6. Optional blink removal
+    if (config.blink_detection and vd_axis_lx is not None and vd_axis_ly is not None
+            and vd_axis_rx is not None and vd_axis_ry is not None):
+        vd_axis_left = np.vstack([vd_axis_lx, vd_axis_ly]).T
+        vd_axis_right = np.vstack([vd_axis_rx, vd_axis_ry]).T
+        vd_axis_d = np.linalg.norm(vd_axis_right - vd_axis_left, axis=1)
+        vd_axis_vel = np.gradient(vd_axis_d)
+        blink_indices = np.where(np.abs(vd_axis_vel) > config.blink_velocity_threshold)[0]
+        mask = ~np.isin(saccade_indices_xy, blink_indices)
+        saccade_indices_xy = saccade_indices_xy[mask]
+        saccade_frames_xy = eye_frames[saccade_indices_xy]
 
 
 
@@ -266,24 +306,14 @@ def detect_saccades(
     fig.savefig(results_dir / prob_fname, dpi=300, bbox_inches='tight')
 
 
-    # 3. optional blink removal
-    if blink_detection:
-        vd_axis_left = np.vstack([vd_axis_lx, vd_axis_ly]).T
-        vd_axis_right = np.vstack([vd_axis_rx, vd_axis_ry]).T
-        vd_axis_d = np.linalg.norm(vd_axis_right - vd_axis_left, axis=1)
-        vd_axis_vel = np.gradient(vd_axis_d)
-        blink_indices = np.where(np.abs(vd_axis_vel) > blink_velocity_threshold)
-        saccade_indices_xy = saccade_indices_xy[~np.isin(saccade_indices_xy, blink_indices)]
-
     return {
-        "eye_pos":          eye_pos, #in degrees
-        "eye_vel":          eye_vel, #in degrees/second
-        "saccade_indices_xy":  saccade_indices_xy,
-        "saccade_frames_xy":   saccade_frames_xy,
-        "saccade_indices_theta":  saccade_indices_theta,
-        "saccade_frames_theta":   saccade_frames_theta,
-        }
-
+        "eye_pos": eye_pos,
+        "eye_vel": eye_vel,
+        "saccade_indices_xy": saccade_indices_xy,
+        "saccade_frames_xy": saccade_frames_xy,
+        "saccade_indices_theta": saccade_indices_theta,
+        "saccade_frames_theta": saccade_frames_theta,
+    }
 
 
 def organize_stims(
@@ -318,8 +348,6 @@ def organize_stims(
         stim_type = "None"
 
     return stim_frames, stim_type
-
-
 
 def sort_plot_saccades(
     #sorts saccades by stimulus onset
@@ -399,15 +427,6 @@ def sort_plot_saccades(
                         angles='xy', scale_units='xy', scale=1,
                         color=cols, alpha=.5)
 
-    # PCA arrows (unchanged)
-    # pca.fit(eye_pos_diff[saccade_indices] /
-    #         np.linalg.norm(eye_pos_diff[saccade_indices], axis=1, keepdims=True))
-    # for i, (vec, var) in enumerate(zip(pca.components_, pca.explained_variance_ratio_)):
-    #     ax_quiver.arrow(np.mean(x_all), np.mean(y_all),
-    #                     *(vec * 10 * np.sqrt(var)),
-    #                     color=['k', 'b'][i], width=0.1,
-    #                     label=f'PC{i+1} ({var:.2f} var)')
-    # ax_quiver.legend()
 
     plot_angle_distribution(angle_all, ax_polar)
     plot_linear_histogram(angle_all, ax_linear)
@@ -802,3 +821,19 @@ def quantify_fixation_stability_vs_random(
         },
         "figure": fig,
     }
+
+def peristim_change(stim_frames):
+    rel_times = []
+    for f0 in stim_frames:
+        nearby = saccade_frames[
+            (saccade_frames >= f0 - frame_win) &
+            (saccade_frames <= f0 + frame_win)
+        ]
+        rel_times.extend(nearby - f0)
+    rel_times = np.array(rel_times)
+
+    counts, _ = np.histogram(rel_times, bins=bins)
+    prob_bin = counts / len(stim_frames)  # saccades per bin per stim
+    change = 100 * (prob_bin - baseline_rate) / baseline_rate
+    return change
+

@@ -1,3 +1,4 @@
+
 from eyehead.functions import *
 
 import sys
@@ -28,6 +29,15 @@ from matplotlib import cm
 from matplotlib.collections import LineCollection
 import matplotlib
 
+
+# Configuration ------------------------------------------------------------
+config = SaccadeDetectionConfig(
+    calibration_factor=3.76,
+    blink_velocity_threshold=10.0,
+    saccade_threshold=1.0,
+    blink_detection=1,
+    saccade_threshold_torsion=None,
+)
 
 cal = 3.76  # Calibration factor for the pixels to degrees
 ttl_freq = 60  # TTL frequency in Hz
@@ -339,15 +349,14 @@ saccades = detect_saccades(
     l_x, l_y, r_x, r_y,
     eye_x, eye_y,
     eye_frame,
-    cal,
-    blink_detection = blink_detection,
-    vd_axis_lx = vd_lx, vd_axis_ly = vd_ly,
-    vd_axis_rx =vd_rx, vd_axis_ry = vd_ry,
-    saccade_threshold       = saccade_thresh,
-    blink_velocity_threshold= blink_thresh,
-    torsion_angle = torsion,
-    saccade_threshold_torsion = torsion_velocity_thresh,
+    config,
+    vd_axis_lx=vd_lx, vd_axis_ly=vd_ly,
+    vd_axis_rx=vd_rx, vd_axis_ry=vd_ry,
+    torsion_angle=torsion,
 )
+
+print("Detected", len(saccades["saccade_indices_xy"]), "saccades")
+
 
 saccades["stim_frames"], stim_type = organize_stims(
     go_frame,
@@ -762,3 +771,4 @@ ax.set_title('Comparison of Saccade Latencies by Trial Outcome')
 #ax.grid(axis='y', alpha='0.3')
 plt.tight_layout()
 plt.show()
+
