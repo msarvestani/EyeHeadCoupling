@@ -25,5 +25,3 @@ Tools for studying the relationship between eye and head movements in rats and t
 ## Usage
 - Run analysis scripts from `Python/analysis/`.
 - Launch Jupyter notebooks from `Python/notebooks/`.
-
-Contributions are welcome via pull requests.
