@@ -6,6 +6,7 @@ sessions:
     animal_name: Paris
     animal_id: Tsh001
     calibration_factor : 3.76
+    ttl_freq: 60
     camera_side: L
   session_02:
     experiment_type: stimulation
