@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Iterable, List
+from typing import Any, Dict, Iterable, List, Optional
 
 import os
 import yaml
@@ -14,12 +14,20 @@ import yaml
 class SessionConfig:
     """Configuration for a data collection session.
 
-    Parameters are stored in the ``params`` dictionary and can be
-    accessed as attributes.  For example, if ``params`` contains a key
-    ``"data_path"`` then ``config.data_path`` will return that value.
+    Commonly used attributes are exposed directly on the dataclass while
+    any additional ad-hoc values remain accessible via the ``params``
+    dictionary.  Unknown attribute access falls back to ``params`` so that
+    legacy fields continue to work.
     """
 
     session_id: str
+    session_name: Optional[str] = None
+    results_dir: Optional[Path] = None
+    camera_side: Optional[str] = None
+    eye_name: Optional[str] = None
+    ttl_freq: Optional[float] = None
+    calibration_factor: Optional[Any] = None
+    folder_path: Optional[Path] = None
     params: Dict[str, Any] = field(default_factory=dict)
 
     def __getattr__(self, item: str) -> Any:  # pragma: no cover - simple delegation
@@ -65,7 +73,32 @@ def load_session(session_id: str) -> SessionConfig:
     except KeyError as exc:
         raise KeyError(f"Unknown session id: {session_id}") from exc
 
-    return SessionConfig(session_id=session_id, params=data)
+    folder = data.get("folder_path") or data.get("session_path")
+    results = data.get("results_dir")
+    known_keys = {
+        "session_name",
+        "results_dir",
+        "camera_side",
+        "eye_name",
+        "ttl_freq",
+        "calibration_factor",
+        "folder_path",
+        "session_path",
+    }
+
+    params = {k: v for k, v in data.items() if k not in known_keys}
+
+    return SessionConfig(
+        session_id=session_id,
+        session_name=data.get("session_name", session_id),
+        results_dir=Path(results) if results else None,
+        camera_side=data.get("camera_side"),
+        eye_name=data.get("eye_name"),
+        ttl_freq=data.get("ttl_freq"),
+        calibration_factor=data.get("calibration_factor"),
+        folder_path=Path(folder) if folder else None,
+        params=params,
+    )
 
 
 _DATA_DIR = Path(

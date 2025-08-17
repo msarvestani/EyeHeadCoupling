@@ -12,5 +12,5 @@ from utils.session_loader import load_session
 def test_load_session() -> None:
     cfg = load_session("session_01")
     assert cfg.session_id == "session_01"
-    assert cfg.session_path == "/data/session_01"
-    assert cfg.results_dir == "/data/session_01/results"
+    assert cfg.folder_path == Path("/data/session_01")
+    assert cfg.results_dir == Path("/data/session_01/results")
