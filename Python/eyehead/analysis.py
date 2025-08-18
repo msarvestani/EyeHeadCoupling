@@ -449,7 +449,7 @@ def plot_eye_fixations_between_cue_and_go_by_trial(
     alpha_subset: float = 0.9,
     cmap_name: str = "tab20",
     results_dir: Optional[Path] = None,
-    session_name: Optional[str] = None,
+    animal_id: Optional[str] = None,
     eye_name: str = "Eye",
 ) -> Tuple[
     np.ndarray,
@@ -580,7 +580,7 @@ def plot_eye_fixations_between_cue_and_go_by_trial(
     if results_dir is not None:
         results_dir = Path(results_dir)
         results_dir.mkdir(exist_ok=True, parents=True)
-        fname = f"{session_name or 'session'}_{(eye_name or 'Eye').replace(' ', '')}_cue_go_timepaired.png"
+        fname = f"{animal_id}_{(eye_name or 'Eye').replace(' ', '')}_cue_go_timepaired.png"
         fig.savefig(results_dir / fname, dpi=300, bbox_inches="tight")
 
     return pairs_cf, pairs_gf, pairs_ct, pairs_gt, pairs_dt, valid_trials, fig, ax

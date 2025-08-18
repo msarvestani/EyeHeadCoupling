@@ -58,10 +58,11 @@ def main(session_id: str) -> pd.DataFrame:
             go_time=data.go_time,
             max_interval_s=1,
             results_dir=config.results_dir,
-            session_name=config.session_name,
+            animal_id=config.animal_id,
             eye_name=config.eye_name,
         )
     )
+    plt.show()
     plt.close(fig_pairs)
 
     stats = quantify_fixation_stability_vs_random(
@@ -77,8 +78,9 @@ def main(session_id: str) -> pd.DataFrame:
 
     if stats and stats.get("figure") is not None:
         fig = stats["figure"]
-        fname = f"{config.session_name}_{config.eye_name}_fixation_vs_random.png"
+        fname = f"{config.animal_id}_{config.eye_name}_fixation_vs_random.png"
         fig.savefig(config.results_dir / fname, dpi=300, bbox_inches="tight")
+        plt.show()
         plt.close(fig)
 
     summary = stats["summary"] if stats else {}
