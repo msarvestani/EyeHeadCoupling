@@ -17,7 +17,7 @@ sessions:
     camera_side: L
     params:
       saccade_config:
-        saccade_threshold: 0.8
+        saccade_threshold: 1.0
 
   session_02:
     experiment_type: fixation
