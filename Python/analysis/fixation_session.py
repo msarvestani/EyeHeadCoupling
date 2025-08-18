@@ -22,6 +22,7 @@ from eyehead import (
 )
 
 
+
 def main(session_id: str) -> pd.DataFrame:
     """Run fixation analysis for ``session_id``."""
     config = load_session(session_id)

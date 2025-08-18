@@ -24,6 +24,11 @@ from eyehead import (
     quantify_fixation_stability_vs_random,
 )
 
+from fixation_utils import (
+    plot_eye_fixations_between_cue_and_go_by_trial,
+    quantify_fixation_stability_vs_random,
+)
+
 import os
 import numpy as np
 import pandas as pd
