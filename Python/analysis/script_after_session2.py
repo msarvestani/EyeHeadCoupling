@@ -20,6 +20,8 @@ from eyehead import (
     select_folder,
     select_file,
     choose_option,
+    plot_eye_fixations_between_cue_and_go_by_trial,
+    quantify_fixation_stability_vs_random,
 )
 
 import os
