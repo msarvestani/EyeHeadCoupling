@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import MISSING, dataclass, field, fields
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
@@ -66,6 +66,9 @@ def load_session(session_id: str) -> SessionConfig:
     with manifest_path.open("r", encoding="utf-8") as fh:
         manifest: Dict[str, Any] = yaml.safe_load(fh) or {}
 
+    # Extract global defaults for saccade configuration, if provided.
+    global_saccade_cfg: Dict[str, Any] = manifest.get("saccade_config", {}) or {}
+
     # The manifest may either contain a top-level ``sessions`` key or map
     # session identifiers directly to their configuration.  Support both
     # layouts for flexibility.
@@ -92,9 +95,31 @@ def load_session(session_id: str) -> SessionConfig:
         "calibration_factor",
         "folder_path",
         "session_path",
+        "params",
     }
 
+    session_params: Dict[str, Any] = data.get("params") or {}
     params = {k: v for k, v in data.items() if k not in known_keys}
+    params.update(session_params)
+
+    # Merge global saccade defaults with any session-specific overrides and
+    # fill in missing keys from :class:`SaccadeConfig` defaults.
+    session_saccade_cfg: Dict[str, Any] = session_params.get("saccade_config", {})
+    merged_saccade_cfg = {**global_saccade_cfg, **session_saccade_cfg}
+
+    try:  # Import locally to avoid circular dependency during module import.
+        from eyehead.analysis import SaccadeConfig
+
+        for f in fields(SaccadeConfig):
+            if f.name not in merged_saccade_cfg:
+                if f.default is not MISSING:
+                    merged_saccade_cfg[f.name] = f.default
+                elif f.default_factory is not MISSING:  # pragma: no cover - defensive
+                    merged_saccade_cfg[f.name] = f.default_factory()
+    except Exception:  # pragma: no cover - fallback if import fails
+        pass
+
+    params["saccade_config"] = merged_saccade_cfg
 
     return SessionConfig(
         session_id=session_id,
