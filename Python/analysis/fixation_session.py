@@ -19,6 +19,7 @@ from eyehead import (
     load_session_data,
     plot_eye_fixations_between_cue_and_go_by_trial,
     quantify_fixation_stability_vs_random,
+    get_session_date_from_path,
 )
 
 
@@ -27,6 +28,13 @@ def main(session_id: str) -> pd.DataFrame:
     """Run fixation analysis for ``session_id``."""
     config = load_session(session_id)
     config.results_dir.mkdir(parents=True, exist_ok=True)
+
+    date_str = config.params.get("date")
+    if not date_str and config.folder_path is not None:
+        try:
+            date_str = get_session_date_from_path(str(config.folder_path)).strftime("%Y-%m-%d")
+        except Exception:
+            date_str = ""
 
     data = load_session_data(config)
     eye_pos_cal = calibrate_eye_position(data, config)
@@ -101,6 +109,7 @@ def main(session_id: str) -> pd.DataFrame:
     df = pd.DataFrame(
         {
             "session_id": [session_id],
+            "session_date": [date_str],
             "mean_step_fix": [ms_fix],
             "mean_step_rand": [ms_rnd],
             "mean_speed_fix": [sp_fix],
@@ -118,3 +127,4 @@ if __name__ == "__main__":
     parser.add_argument("session_id", help="Session identifier from session_manifest.yml")
     args = parser.parse_args()
     main(args.session_id)
+

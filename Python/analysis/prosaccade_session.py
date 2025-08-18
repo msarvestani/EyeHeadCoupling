@@ -16,6 +16,7 @@ from eyehead import (
     load_session_data,
     organize_stims,
     sort_saccades,
+    get_session_date_from_path,
 )
 
 
@@ -35,6 +36,13 @@ def main(session_id: str) -> pd.DataFrame:
     # even when the full analysis pipeline is not available.
     print(f"Session path: {folder_path}")
     print(f"Results directory: {results_dir}")
+
+    date_str = config.params.get("date")
+    if not date_str and folder_path is not None:
+        try:
+            date_str = get_session_date_from_path(str(folder_path)).strftime("%Y-%m-%d")
+        except Exception:
+            date_str = ""
 
     data = load_session_data(config)
     eye_pos_cal = calibrate_eye_position(data, config)
@@ -62,6 +70,7 @@ def main(session_id: str) -> pd.DataFrame:
     df = pd.DataFrame(
         {
             "session_id": [session_id] * len(indices),
+            "session_date": [date_str] * len(indices),
             "saccade_frame_xy": saccade_frames,
             "saccade_index_xy": indices,
         }
@@ -75,3 +84,4 @@ if __name__ == "__main__":
     parser.add_argument("session_id", help="Session identifier from session_manifest.yml")
     args = parser.parse_args()
     main(args.session_id)
+
