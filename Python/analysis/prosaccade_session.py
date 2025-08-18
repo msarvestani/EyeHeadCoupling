@@ -11,7 +11,6 @@ from utils.session_loader import load_session
 
 from eyehead import (
     SaccadeConfig,
-    SessionConfig,
     calibrate_eye_position,
     detect_saccades,
     load_session_data,
