@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import warnings
 from dataclasses import dataclass
 from typing import Dict, Optional
 from pathlib import Path
@@ -263,8 +264,14 @@ def sort_plot_saccades(
         t_all = eye_pos[saccade_indices_theta, 2]
 
     pad = 0.10
-    max_abs_x = np.max(np.abs(eye_pos[:, 0]))
-    max_abs_y = np.max(np.abs(eye_pos[:, 1]))
+    finite_x = eye_pos[:, 0][np.isfinite(eye_pos[:, 0])]
+    finite_y = eye_pos[:, 1][np.isfinite(eye_pos[:, 1])]
+    if finite_x.size == 0 or finite_y.size == 0:
+        warnings.warn(
+            "No finite eye position values found; defaulting axis limits to [-1, 1]."
+        )
+    max_abs_x = np.nanmax(np.abs(finite_x)) if finite_x.size else 1.0
+    max_abs_y = np.nanmax(np.abs(finite_y)) if finite_y.size else 1.0
     X_LIM = (-max_abs_x * (1 + pad), max_abs_x * (1 + pad))
     Y_LIM = (-max_abs_y * (1 + pad), max_abs_y * (1 + pad))
     abs_all = np.hypot(dx[saccade_indices_xy], dy[saccade_indices_xy])
