@@ -39,7 +39,7 @@ def main(session_id: str) -> pd.DataFrame:
         saccade_win=0.7,
     )
 
-    saccades, fig_saccades, _ = detect_saccades(
+    saccades, fig_saccades, ax_saccades = detect_saccades(
         eye_pos_cal,
         data.eye_frame,
         saccade_cfg,
@@ -48,7 +48,8 @@ def main(session_id: str) -> pd.DataFrame:
         plot=True,
     )
     plt.show()
-    plt.close(fig_saccades)
+    if fig_saccades is not None:
+        plt.close(fig_saccades)
 
     (
         pairs_cf,

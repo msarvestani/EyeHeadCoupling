@@ -217,7 +217,7 @@ eye_pos_cal = calibrate_eye_position(session_data, SessionConfig)
 
 ################################################################# detect saccades ######################################################
 ############################################################################################################################################### 
-saccades = detect_saccades(
+saccades, _, _ = detect_saccades(
     eye_pos_cal,
     eye_frame,
     SaccadeConfig,

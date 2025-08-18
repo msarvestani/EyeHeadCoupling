@@ -3,6 +3,7 @@ import sys
 import argparse
 from pathlib import Path
 import pandas as pd
+import matplotlib.pyplot as plt
 
 # Put the repo's “Python” folder on sys.path so `import eyehead` works
 sys.path.append(str(Path(__file__).resolve().parents[1]))
@@ -47,13 +48,16 @@ def main(session_id: str) -> pd.DataFrame:
         saccade_win=0.7,
     )
 
-    saccades = detect_saccades(
+    saccades, fig_saccades, _ = detect_saccades(
         eye_pos_cal,
         data.eye_frame,
         saccade_cfg,
         config,
         data=data,
+        plot=False,
     )
+    if fig_saccades is not None:
+        plt.close(fig_saccades)
     indices = saccades["saccade_indices_xy"]
     saccade_frames = saccades.get("saccade_frames_xy", [])
     print(f"Detected {len(indices)} saccades")
