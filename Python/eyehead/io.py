@@ -188,13 +188,13 @@ def load_session_data(config: SessionConfig) -> SessionData:
         data.end_of_trial_frame = arr[:, 0].astype(int)
         data.end_of_trial_ts = arr[:, 1].astype(float)
         if arr.shape[1] > 2:
-            data.trial_stim_direction = arr[:, 2]
+            data.trial_stim_direction = arr[:, 2].astype(float)
         if arr.shape[1] > 3:
-            data.trial_eye_movement_direction = arr[:, 3]
+            data.trial_eye_movement_direction = arr[:, 3].astype(float)
         if arr.shape[1] > 4:
-            data.trial_torsion_angle = arr[:, 4]
+            data.trial_torsion_angle = arr[:, 4].astype(float)
         if arr.shape[1] > 5:
-            data.trial_success = arr[:, 5]
+            data.trial_success = arr[:, 5].astype(int)
     data.cue = _load_csv("cue")
     if data.cue is not None:
         cue = data.cue
