@@ -74,8 +74,33 @@ def detect_saccades(
     saccade_config: SaccadeConfig,
     config: SessionConfig,
     data: SessionData | None = None,
-) -> Dict[str, np.ndarray]:
-    """Detect saccades from eye tracking data."""
+    plot: bool = False,
+) -> Dict[str, np.ndarray] | Tuple[Dict[str, np.ndarray], plt.Figure, plt.Axes]:
+    """Detect saccades from eye tracking data.
+
+    Parameters
+    ----------
+    eye_pos_cal:
+        Calibrated eye position samples.
+    eye_frames:
+        Corresponding frame numbers for ``eye_pos_cal``.
+    saccade_config:
+        Configuration for saccade detection.
+    config:
+        Session configuration object.
+    data:
+        Optional :class:`~eyehead.io.SessionData` with torsion and VD axis
+        information.
+    plot:
+        If ``True`` return the generated Matplotlib figure and axes in addition
+        to the detected saccades.
+
+    Returns
+    -------
+    Dict
+        Dictionary with detected saccade metrics.  If ``plot`` is ``True`` a
+        tuple ``(saccades, fig, ax)`` is returned instead.
+    """
     torsion_angle = None
     vd_axis_lx = vd_axis_ly = vd_axis_rx = vd_axis_ry = None
     if data is not None:
@@ -135,50 +160,7 @@ def detect_saccades(
         saccade_indices_xy = saccade_indices_xy[mask]
         saccade_frames_xy = eye_frames[saccade_indices_xy]
 
-    fig, (ax, ax2) = plt.subplots(2, 1, figsize=(12, 8), sharex=True)
-    frames = np.arange(len(xy_speed))
-    ax.plot(frames, xy_speed, linewidth=0.8, label="Speed (°/frame)")
-    ax.scatter(saccade_indices_xy, xy_speed[saccade_indices_xy], color="tab:red", s=12, label="Saccade idx")
-    ax.axhline(
-        saccade_config.saccade_threshold,
-        color="tab:orange",
-        linestyle="--",
-        label=f"Threshold = {saccade_config.saccade_threshold}",
-    )
-    ax.set_ylabel("Speed (° / frame)")
-    ax.set_title("Instantaneous XY speed with detected saccade frames")
-    ax.legend()
-    ax.grid(alpha=0.3)
-
-    ax2.plot(frames, torsion_speed, linewidth=0.8, label="Torsion Speed (°/frame)")
-    ax2.scatter(
-        saccade_indices_theta,
-        torsion_speed[saccade_indices_theta],
-        color="tab:purple",
-        s=12,
-        label="Torsion idx",
-    )
-    ax2.axhline(
-        saccade_config.saccade_threshold_torsion,
-        color="tab:purple",
-        linestyle="--",
-        label=f"Threshold = {saccade_config.saccade_threshold_torsion}",
-    )
-    ax2.set_xlabel("Frame number")
-    ax2.set_ylabel("Torsion Speed (° / frame)")
-    ax2.set_title("Instantaneous torsion speed with detected torsional saccades")
-    ax2.legend()
-    ax2.grid(alpha=0.3)
-
-    plt.tight_layout()
-    plt.show()
-
-    side_tag = f"_{config.camera_side}" if config.camera_side else ""
-    session_folder = Path(config.folder_path).name if config.folder_path else config.session_name
-    prob_fname = f"{session_folder}{side_tag}_saccades.png"
-    fig.savefig(config.results_dir / prob_fname, dpi=300, bbox_inches="tight")
-
-    return {
+    saccades = {
         "eye_pos": eye_pos,
         "eye_vel": eye_vel,
         "saccade_indices_xy": saccade_indices_xy,
@@ -186,6 +168,60 @@ def detect_saccades(
         "saccade_indices_theta": saccade_indices_theta,
         "saccade_frames_theta": saccade_frames_theta,
     }
+
+    if plot:
+        fig, (ax, ax2) = plt.subplots(2, 1, figsize=(12, 8), sharex=True)
+        frames = np.arange(len(xy_speed))
+        ax.plot(frames, xy_speed, linewidth=0.8, label="Speed (°/frame)")
+        ax.scatter(
+            saccade_indices_xy,
+            xy_speed[saccade_indices_xy],
+            color="tab:red",
+            s=12,
+            label="Saccade idx",
+        )
+        ax.axhline(
+            saccade_config.saccade_threshold,
+            color="tab:orange",
+            linestyle="--",
+            label=f"Threshold = {saccade_config.saccade_threshold}",
+        )
+        ax.set_ylabel("Speed (° / frame)")
+        ax.set_title("Instantaneous XY speed with detected saccade frames")
+        ax.legend()
+        ax.grid(alpha=0.3)
+
+        ax2.plot(frames, torsion_speed, linewidth=0.8, label="Torsion Speed (°/frame)")
+        ax2.scatter(
+            saccade_indices_theta,
+            torsion_speed[saccade_indices_theta],
+            color="tab:purple",
+            s=12,
+            label="Torsion idx",
+        )
+        ax2.axhline(
+            saccade_config.saccade_threshold_torsion,
+            color="tab:purple",
+            linestyle="--",
+            label=f"Threshold = {saccade_config.saccade_threshold_torsion}",
+        )
+        ax2.set_xlabel("Frame number")
+        ax2.set_ylabel("Torsion Speed (° / frame)")
+        ax2.set_title("Instantaneous torsion speed with detected torsional saccades")
+        ax2.legend()
+        ax2.grid(alpha=0.3)
+
+        plt.tight_layout()
+
+        side_tag = f"_{config.camera_side}" if config.camera_side else ""
+        session_folder = (
+            Path(config.folder_path).name if config.folder_path else config.session_name
+        )
+        prob_fname = f"{session_folder}{side_tag}_saccades.png"
+        fig.savefig(config.results_dir / prob_fname, dpi=300, bbox_inches="tight")
+        return saccades, fig, ax
+
+    return saccades
 
 
 def organize_stims(
