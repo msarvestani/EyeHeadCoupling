@@ -39,13 +39,16 @@ def main(session_id: str) -> pd.DataFrame:
         saccade_win=0.7,
     )
 
-    saccades = detect_saccades(
+    saccades, fig_saccades, _ = detect_saccades(
         eye_pos_cal,
         data.eye_frame,
         saccade_cfg,
         config,
         data=data,
+        plot=True,
     )
+    plt.show()
+    plt.close(fig_saccades)
 
     pairs_cf, pairs_gf, pairs_ct, pairs_gt, pairs_dt, valid_trials, fig_pairs, _ = (
         plot_eye_fixations_between_cue_and_go_by_trial(
