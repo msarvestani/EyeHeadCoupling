@@ -47,23 +47,32 @@ def main(session_id: str) -> pd.DataFrame:
         data=data,
     )
 
-    pairs_cf, pairs_gf, pairs_ct, pairs_gt, pairs_dt, valid_trials, fig_pairs, _ = (
-        plot_eye_fixations_between_cue_and_go_by_trial(
-            eye_frame=data.eye_frame,
-            eye_pos=saccades["eye_pos"],
-            eye_timestamp=data.eye_timestamp,
-            cue_frame=data.cue_frame,
-            cue_time=data.cue_time,
-            go_frame=data.go_frame,
-            go_time=data.go_time,
-            max_interval_s=1,
-            results_dir=config.results_dir,
-            animal_id=config.animal_id,
-            eye_name=config.eye_name,
-        )
+    (
+        pairs_cf,
+        pairs_gf,
+        pairs_ct,
+        pairs_gt,
+        pairs_dt,
+        valid_trials,
+        fig_pairs,
+        _,
+    ) = plot_eye_fixations_between_cue_and_go_by_trial(
+        eye_frame=data.eye_frame,
+        eye_pos=saccades["eye_pos"],
+        eye_timestamp=data.eye_timestamp,
+        cue_frame=data.cue_frame,
+        cue_time=data.cue_time,
+        go_frame=data.go_frame,
+        go_time=data.go_time,
+        max_interval_s=1,
+        results_dir=config.results_dir,
+        animal_id=config.animal_id,
+        eye_name=config.eye_name,
+        plot=True,
     )
     plt.show()
-    plt.close(fig_pairs)
+    if fig_pairs is not None:
+        plt.close(fig_pairs)
 
     stats = quantify_fixation_stability_vs_random(
         eye_timestamp=data.eye_timestamp,
