@@ -17,12 +17,10 @@ from eyehead import (
     calibrate_eye_position,
     detect_saccades,
     load_session_data,
-)
-
-from fixation_utils import (
     plot_eye_fixations_between_cue_and_go_by_trial,
     quantify_fixation_stability_vs_random,
 )
+
 
 
 def main(session_id: str) -> pd.DataFrame:
