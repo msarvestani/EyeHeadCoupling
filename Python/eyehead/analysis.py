@@ -381,13 +381,11 @@ def sort_plot_saccades(
             idx_use_t = np.array(idx_buf_torsion, dtype=int)
             for i in idx_use_t:
                 x, y = eye_pos[i, 0], eye_pos[i, 1]
-                end = (x + 0.5, y)
                 arrow = FancyArrowPatch(
                     (x, y),
-                    end,
-                    arrowstyle="-|>",
+                    (x, y),
                     connectionstyle=f"arc3,rad={0.3 * np.sign(dtheta[i])}",
-                    mutation_scale=max(10 * abs(dtheta[i]), 10),
+                    mutation_scale=10 * abs(dtheta[i]),
                     color="purple",
                     linewidth=1.5,
                 )
