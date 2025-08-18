@@ -15,7 +15,7 @@ from eyehead import (
     detect_saccades,
     load_session_data,
     organize_stims,
-    sort_plot_saccades,
+    sort_saccades,
 )
 
 
@@ -69,7 +69,7 @@ def main(session_id: str) -> pd.DataFrame:
             "saccade_index_xy": indices,
         }
     )
-    sort_plot_saccades(config, saccade_cfg, saccades, stim_type=stim_type)
+    sort_saccades(config, saccade_cfg, saccades, stim_type=stim_type, plot=True)
     return df
 
 

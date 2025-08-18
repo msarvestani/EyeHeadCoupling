@@ -221,13 +221,32 @@ def organize_stims(
     return stim_frames, stim_type
 
 
-def sort_plot_saccades(
+def sort_saccades(
     config: SessionConfig,
     saccade_config: SaccadeConfig,
     saccades: Dict[str, np.ndarray],
     stim_type: str = "None",
-) -> None:
-    """Sort saccades by stimulus and generate summary plots."""
+    plot: bool = False,
+) -> Dict[str, np.ndarray] | Tuple[Dict[str, np.ndarray], plt.Figure, Tuple[plt.Axes, plt.Axes, plt.Axes]]:
+    """Sort saccades by stimulus and optionally plot summaries.
+
+    Parameters
+    ----------
+    config, saccade_config, saccades, stim_type :
+        Same as in the original :func:`sort_plot_saccades`.
+    plot : bool, optional
+        When ``True`` the function generates the same diagnostic plots as
+        before and returns them alongside the sorted saccade indices.
+
+    Returns
+    -------
+    sorted_data : dict
+        Dictionary mapping stimulus labels to the indices of saccades
+        occurring within the configured window.
+    fig, axes : Figure and tuple of Axes
+        Only returned when ``plot=True``.  ``axes`` contains the main quiver,
+        polar and linear histogram axes of the summary plot.
+    """
     saccade_window_frames = saccade_config.saccade_win * config.ttl_freq
     session_path = config.folder_path
     eye_name = config.eye_name
@@ -295,44 +314,51 @@ def sort_plot_saccades(
     angle_all = np.arctan2(dy[saccade_indices_xy], dx[saccade_indices_xy])
     n_all = len(saccade_indices_xy)
 
-    fig = plt.figure(figsize=(11, 6))
-    gs = gridspec.GridSpec(2, 2, width_ratios=[3, 2])
-    ax_quiver = fig.add_subplot(gs[:, 0])
-    ax_polar = fig.add_subplot(gs[0, 1], polar=True)
-    ax_linear = fig.add_subplot(gs[1, 1])
+    sorted_data: Dict[str, np.ndarray] = {"All": saccade_indices_xy}
 
-    ax_quiver.set_xlim(*X_LIM)
-    ax_quiver.set_ylim(*Y_LIM)
-    ax_quiver.set_xlabel("X (°)")
-    ax_quiver.set_ylabel("Y (°)")
-    ax_quiver.set_title(
-        f"{session_name}\n" +
-        f"All translational saccades ({n_all}) — {eye_name}  (stim: {stim_type})\n" +
-        f"saccade_thresh = {saccade_config.saccade_threshold}, saccade_win = {saccade_config.saccade_win}s\n" +
-        f"blink_thresh = {saccade_config.blink_threshold}, blink_detection = {saccade_config.blink_detection}s\n"
-    )
+    if plot:
+        fig_all = plt.figure(figsize=(11, 6))
+        gs = gridspec.GridSpec(2, 2, width_ratios=[3, 2])
+        ax_quiver = fig_all.add_subplot(gs[:, 0])
+        ax_polar = fig_all.add_subplot(gs[0, 1], polar=True)
+        ax_linear = fig_all.add_subplot(gs[1, 1])
 
-    cols = np.array([vector_to_rgb(a) for a in angle_all])
-    ax_quiver.quiver(
-        x_all,
-        y_all,
-        dx[saccade_indices_xy],
-        dy[saccade_indices_xy],
-        angles="xy",
-        scale_units="xy",
-        scale=1,
-        color=cols,
-        alpha=0.5,
-    )
+        ax_quiver.set_xlim(*X_LIM)
+        ax_quiver.set_ylim(*Y_LIM)
+        ax_quiver.set_xlabel("X (°)")
+        ax_quiver.set_ylabel("Y (°)")
+        ax_quiver.set_title(
+            f"{session_name}\n"
+            + f"All translational saccades ({n_all}) — {eye_name}  (stim: {stim_type})\n"
+            + f"saccade_thresh = {saccade_config.saccade_threshold}, "
+            f"saccade_win = {saccade_config.saccade_win}s\n"
+            + f"blink_thresh = {saccade_config.blink_threshold}, "
+            f"blink_detection = {saccade_config.blink_detection}s\n"
+        )
 
-    plot_angle_distribution(angle_all, ax_polar)
-    plot_linear_histogram(angle_all, ax_linear)
-    plt.tight_layout()
+        cols = np.array([vector_to_rgb(a) for a in angle_all])
+        ax_quiver.quiver(
+            x_all,
+            y_all,
+            dx[saccade_indices_xy],
+            dy[saccade_indices_xy],
+            angles="xy",
+            scale_units="xy",
+            scale=1,
+            color=cols,
+            alpha=0.5,
+        )
 
-    all_fname = f"{session_name}_{eye_name}_ALL_{stim_type}.png"
-    fig.savefig(config.results_dir / all_fname, dpi=300, bbox_inches="tight")
-    plt.show()
-    plt.close(fig)
+        plot_angle_distribution(angle_all, ax_polar)
+        plot_linear_histogram(angle_all, ax_linear)
+        plt.tight_layout()
+
+        all_fname = f"{session_name}_{eye_name}_ALL_{stim_type}.png"
+        fig_all.savefig(config.results_dir / all_fname, dpi=300, bbox_inches="tight")
+        plt.show()
+    else:
+        fig_all = None
+        ax_quiver = ax_polar = ax_linear = None
 
     plot_window = np.arange(0, saccade_window_frames, 1)
 
@@ -355,82 +381,88 @@ def sort_plot_saccades(
         idx_use = np.array(idx_buf, dtype=int)
         if idx_use.size == 0:
             continue
+        sorted_data[label] = idx_use
         ang = np.arctan2(dy[idx_use], dx[idx_use])
         n_cond = len(idx_use)
 
-        fig = plt.figure(figsize=(9, 5))
-        gs = gridspec.GridSpec(3, 2, width_ratios=[3, 2])
-        ax_q = fig.add_subplot(gs[:, 0])
-        ax_p = fig.add_subplot(gs[0, 1], polar=True)
-        ax_l = fig.add_subplot(gs[1, 1])
-        ax_t = fig.add_subplot(gs[2, 1]) if torsion_present else None
+        if plot:
+            fig = plt.figure(figsize=(9, 5))
+            gs = gridspec.GridSpec(3, 2, width_ratios=[3, 2])
+            ax_q = fig.add_subplot(gs[:, 0])
+            ax_p = fig.add_subplot(gs[0, 1], polar=True)
+            ax_l = fig.add_subplot(gs[1, 1])
+            ax_t = fig.add_subplot(gs[2, 1]) if torsion_present else None
 
-        ax_q.set_xlim(*X_LIM)
-        ax_q.set_ylim(*Y_LIM)
-        ax_q.set_xlabel("X (°)")
-        ax_q.set_ylabel("Y (°)")
-        ax_q.set_title(f"{session_name}\n{eye_name} — {label} (n={n_cond})")
+            ax_q.set_xlim(*X_LIM)
+            ax_q.set_ylim(*Y_LIM)
+            ax_q.set_xlabel("X (°)")
+            ax_q.set_ylabel("Y (°)")
+            ax_q.set_title(f"{session_name}\n{eye_name} — {label} (n={n_cond})")
 
-        cols = np.array([vector_to_rgb(a) for a in ang])
-        ax_q.quiver(
-            eye_pos[idx_use, 0],
-            eye_pos[idx_use, 1],
-            dx[idx_use],
-            dy[idx_use],
-            angles="xy",
-            scale_units="xy",
-            scale=1,
-            color=cols,
-            alpha=0.5,
-        )
-
-        plot_angle_distribution(ang, ax_p)
-        plot_linear_histogram(ang, ax_l)
-
-        if torsion_present and saccade_indices_theta is not None:
-            idx_buf_torsion: list[int] = []
-            sorted_pairs_theta = sorted(
-                zip(saccade_frames_theta, saccade_indices_theta)
-            )
-            for f in frames:
-                lower_bound = max(f + plot_window[0], 0)
-                upper_bound = min(f + plot_window[-1], saccade_frames_theta.max())
-                for sf, idx in sorted_pairs_theta:
-                    if sf < lower_bound:
-                        continue
-                    elif sf <= upper_bound:
-                        idx_buf_torsion.append(idx)
-                        break
-                    else:
-                        break
-            idx_use_t = np.array(idx_buf_torsion, dtype=int)
-            for i in idx_use_t:
-                x, y = eye_pos[i, 0], eye_pos[i, 1]
-                arrow = FancyArrowPatch(
-                    (x, y),
-                    (x, y),
-                    connectionstyle=f"arc3,rad={0.3 * np.sign(dtheta[i])}",
-                    mutation_scale=10 * abs(dtheta[i]),
-                    color="purple",
-                    linewidth=1.5,
-                )
-                ax_q.add_patch(arrow)
-            ax_t.hist(
-                dtheta[idx_use_t],
-                bins=20,
-                color="purple",
+            cols = np.array([vector_to_rgb(a) for a in ang])
+            ax_q.quiver(
+                eye_pos[idx_use, 0],
+                eye_pos[idx_use, 1],
+                dx[idx_use],
+                dy[idx_use],
+                angles="xy",
+                scale_units="xy",
+                scale=1,
+                color=cols,
                 alpha=0.5,
-                edgecolor="k",
             )
-            ax_t.set_xlabel("Δθ (deg/frame)")
-            ax_t.set_ylabel("Count")
-            ax_t.set_xlim(-15, 15)
 
-        fig.tight_layout()
-        cond_fname = f"{session_name}_{eye_name}_{label}_{stim_type}.png"
-        fig.savefig(config.results_dir / cond_fname, dpi=300, bbox_inches="tight")
-        plt.show()
-        plt.close(fig)
+            plot_angle_distribution(ang, ax_p)
+            plot_linear_histogram(ang, ax_l)
+
+            if torsion_present and saccade_indices_theta is not None:
+                idx_buf_torsion: list[int] = []
+                sorted_pairs_theta = sorted(
+                    zip(saccade_frames_theta, saccade_indices_theta)
+                )
+                for f in frames:
+                    lower_bound = max(f + plot_window[0], 0)
+                    upper_bound = min(f + plot_window[-1], saccade_frames_theta.max())
+                    for sf, idx in sorted_pairs_theta:
+                        if sf < lower_bound:
+                            continue
+                        elif sf <= upper_bound:
+                            idx_buf_torsion.append(idx)
+                            break
+                        else:
+                            break
+                idx_use_t = np.array(idx_buf_torsion, dtype=int)
+                for i in idx_use_t:
+                    x, y = eye_pos[i, 0], eye_pos[i, 1]
+                    arrow = FancyArrowPatch(
+                        (x, y),
+                        (x, y),
+                        connectionstyle=f"arc3,rad={0.3 * np.sign(dtheta[i])}",
+                        mutation_scale=10 * abs(dtheta[i]),
+                        color="purple",
+                        linewidth=1.5,
+                    )
+                    ax_q.add_patch(arrow)
+                ax_t.hist(
+                    dtheta[idx_use_t],
+                    bins=20,
+                    color="purple",
+                    alpha=0.5,
+                    edgecolor="k",
+                )
+                ax_t.set_xlabel("Δθ (deg/frame)")
+                ax_t.set_ylabel("Count")
+                ax_t.set_xlim(-15, 15)
+
+            fig.tight_layout()
+            cond_fname = f"{session_name}_{eye_name}_{label}_{stim_type}.png"
+            fig.savefig(config.results_dir / cond_fname, dpi=300, bbox_inches="tight")
+            plt.show()
+            plt.close(fig)
+
+    if plot:
+        return sorted_data, fig_all, (ax_quiver, ax_polar, ax_linear)
+    return sorted_data
 
 
 def plot_eye_fixations_between_cue_and_go_by_trial(
@@ -766,7 +798,7 @@ __all__ = [
     "calibrate_eye_position",
     "detect_saccades",
     "organize_stims",
-    "sort_plot_saccades",
+    "sort_saccades",
     "plot_eye_fixations_between_cue_and_go_by_trial",
     "quantify_fixation_stability_vs_random",
 ]

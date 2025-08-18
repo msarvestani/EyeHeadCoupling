@@ -6,7 +6,7 @@ from .analysis import (
     calibrate_eye_position,
     detect_saccades,
     organize_stims,
-    sort_plot_saccades,
+    sort_saccades,
     plot_eye_fixations_between_cue_and_go_by_trial,
     quantify_fixation_stability_vs_random,
 )
@@ -33,7 +33,7 @@ __all__ = [
     "calibrate_eye_position",
     "detect_saccades",
     "organize_stims",
-    "sort_plot_saccades",
+    "sort_saccades",
     "plot_eye_fixations_between_cue_and_go_by_trial",
     "quantify_fixation_stability_vs_random",
     "butter_noncausal",

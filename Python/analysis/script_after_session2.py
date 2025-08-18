@@ -22,6 +22,7 @@ from eyehead import (
     choose_option,
     plot_eye_fixations_between_cue_and_go_by_trial,
     quantify_fixation_stability_vs_random,
+    sort_saccades,
 )
 
 from fixation_utils import (
@@ -230,15 +231,16 @@ print("Detected", len(saccades["saccade_indices_xy"]), "saccades")
 
 saccades["stim_frames"], stim_type = organize_stims(
     go_frame,
-    go_dir_x = go_direction_x,
-    go_dir_y = go_direction_y,
+    go_dir_x=go_direction_x,
+    go_dir_y=go_direction_y,
 )
 
-sort_plot_saccades(
+sort_saccades(
     SessionConfig,
     SaccadeConfig,
     saccades,
-    stim_type  = stim_type,
+    stim_type=stim_type,
+    plot=True,
 )
 
 session_path = SessionConfig.folder_path
