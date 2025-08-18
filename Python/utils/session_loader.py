@@ -167,9 +167,46 @@ def list_sessions_by_type(experiment_type: str) -> List[str]:
     )
 
 
+def list_sessions_from_manifest(experiment_type: str) -> List[str]:
+    """Return session IDs of a given ``experiment_type`` from the manifest.
+
+    Parameters
+    ----------
+    experiment_type:
+        Type of experiment to filter sessions by. The value is compared
+        directly against the ``"experiment_type"`` field of each manifest
+        entry.
+
+    Returns
+    -------
+    list of str
+        Sorted list of session identifiers whose ``experiment_type`` matches
+        ``experiment_type``. If the manifest file is missing or empty an empty
+        list is returned.
+    """
+
+    manifest_path = (
+        Path(__file__).resolve().parent.parent.parent / "data" / "session_manifest.yml"
+    )
+
+    try:
+        with manifest_path.open("r", encoding="utf-8") as fh:
+            manifest: Dict[str, Any] = yaml.safe_load(fh) or {}
+    except FileNotFoundError:  # pragma: no cover - defensive programming
+        return []
+
+    sessions: Dict[str, Any] = manifest.get("sessions", manifest)
+    return sorted(
+        session_id
+        for session_id, meta in sessions.items()
+        if meta.get("experiment_type") == experiment_type
+    )
+
+
 __all__ = [
     "SessionConfig",
     "load_session",
     "list_sessions",
     "list_sessions_by_type",
+    "list_sessions_from_manifest",
 ]
