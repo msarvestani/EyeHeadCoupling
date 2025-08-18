@@ -2,6 +2,8 @@ from __future__ import annotations
 import sys
 import argparse
 from pathlib import Path
+import pandas as pd
+
 # Put the repo's “Python” folder on sys.path so `import eyehead` works
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 from utils.session_loader import load_session
@@ -17,7 +19,7 @@ from eyehead import (
 )
 
 
-def main(session_id: str) -> None:
+def main(session_id: str) -> pd.DataFrame:
     """Run the full analysis pipeline for ``session_id``."""
     config = load_session(session_id)
     config.results_dir.mkdir(parents=True, exist_ok=True)
@@ -53,13 +55,22 @@ def main(session_id: str) -> None:
         data=data,
     )
     indices = saccades["saccade_indices_xy"]
+    saccade_frames = saccades.get("saccade_frames_xy", [])
     print(f"Detected {len(indices)} saccades")
     saccades["stim_frames"], stim_type = organize_stims(
         data.go_frame,
         go_dir_x=data.go_direction_x,
         go_dir_y=data.go_direction_y,
     )
+    df = pd.DataFrame(
+        {
+            "session_id": [session_id] * len(indices),
+            "saccade_frame_xy": saccade_frames,
+            "saccade_index_xy": indices,
+        }
+    )
     sort_plot_saccades(config, saccade_cfg, saccades, stim_type=stim_type)
+    return df
 
 
 if __name__ == "__main__":
