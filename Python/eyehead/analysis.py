@@ -261,6 +261,7 @@ def sort_plot_saccades(
     abs_all = np.hypot(dx[saccade_indices_xy], dy[saccade_indices_xy])
     max_abs = abs_all.max()
 
+
     angle_all = np.arctan2(dy[saccade_indices_xy], dx[saccade_indices_xy])
     n_all = len(saccade_indices_xy)
 
@@ -281,7 +282,7 @@ def sort_plot_saccades(
         f"blink_thresh = {saccade_config.blink_threshold}, blink_detection = {saccade_config.blink_detection}s\n"
     )
 
-    cols = np.array([vector_to_rgb(a, m, max_abs) for a, m in zip(angle_all, abs_all)])
+    cols = np.array([vector_to_rgb(a) for a in angle_all])
     ax_quiver.quiver(
         x_all,
         y_all,
@@ -323,7 +324,6 @@ def sort_plot_saccades(
         if idx_use.size == 0:
             continue
         ang = np.arctan2(dy[idx_use], dx[idx_use])
-        mag = np.hypot(dx[idx_use], dy[idx_use])
         n_cond = len(idx_use)
 
         fig = plt.figure(figsize=(9, 5))
@@ -339,7 +339,7 @@ def sort_plot_saccades(
         ax_q.set_ylabel("Y (°)")
         ax_q.set_title(f"{session_name}\n{eye_name} — {label} (n={n_cond})")
 
-        cols = np.array([vector_to_rgb(a, m, max_abs) for a, m in zip(ang, mag)])
+        cols = np.array([vector_to_rgb(a) for a in ang])
         ax_q.quiver(
             eye_pos[idx_use, 0],
             eye_pos[idx_use, 1],
