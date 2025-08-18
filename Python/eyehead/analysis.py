@@ -519,6 +519,8 @@ def plot_eye_fixations_between_cue_and_go_by_trial(
     results_dir: Optional[Path] = None,
     animal_id: Optional[str] = None,
     eye_name: str = "Eye",
+    *,
+    plot: bool = False,
 ) -> Tuple[
     np.ndarray,
     np.ndarray,
@@ -526,8 +528,8 @@ def plot_eye_fixations_between_cue_and_go_by_trial(
     np.ndarray,
     np.ndarray,
     np.ndarray,
-    plt.Figure,
-    plt.Axes,
+    Optional[plt.Figure],
+    Optional[plt.Axes],
 ]:
     """Pair cue and go events and visualise eye position traces.
 
@@ -551,10 +553,13 @@ def plot_eye_fixations_between_cue_and_go_by_trial(
         Colormap used to colour individual trials.
     results_dir : Path, optional
         If given, save the generated figure here.
-    session_name : str, optional
+    animal_id : str, optional
         Used in the saved filename when ``results_dir`` is provided.
     eye_name : str, default "Eye"
         Label used in the saved filename.
+    plot : bool, default ``False``
+        When ``True``, generate a scatter plot and return figure and axes
+        handles.
 
     Returns
     -------
@@ -566,8 +571,9 @@ def plot_eye_fixations_between_cue_and_go_by_trial(
         Time difference between paired events (go - cue).
     valid_trials : ndarray of bool
         Mask indicating which pairs fall within ``max_interval_s``.
-    fig, ax : Figure and Axes
-        Handles to the generated scatter plot.
+    fig, ax : Figure and Axes, optional
+        Handles to the generated scatter plot when ``plot`` is ``True``;
+        otherwise ``None``.
     """
 
     eye_ts = np.asarray(eye_timestamp).ravel()
@@ -613,43 +619,52 @@ def plot_eye_fixations_between_cue_and_go_by_trial(
 
     valid_trials = (pairs_dt >= 0) & (pairs_dt < max_interval_s)
 
-    cmap = cm.get_cmap(cmap_name)
-    base_colors = [cmap(i) for i in np.linspace(0, 1, 20)]
-    color_cycle = cycle(base_colors)
+    if plot:
+        cmap = cm.get_cmap(cmap_name)
+        base_colors = [cmap(i) for i in np.linspace(0, 1, 20)]
+        color_cycle = cycle(base_colors)
 
-    fig, ax = plt.subplots(figsize=(6, 6))
-    ax.scatter(eye_x, eye_y, s=s_all, c=color_all, alpha=alpha_all, label="All eye centers")
-
-    trial_num = 0
-    for ct, gt, ok, dt in zip(pairs_ct, pairs_gt, valid_trials, pairs_dt):
-        if not ok:
-            continue
-        a = np.searchsorted(eye_ts, min(ct, gt), side="left")
-        b = np.searchsorted(eye_ts, max(ct, gt), side="right")
-        if b <= a:
-            continue
-        col = next(color_cycle)
-        h = ax.scatter(
-            eye_x[a:b],
-            eye_y[a:b],
-            s=s_subset,
-            c=[col],
-            alpha=alpha_subset,
-            label=f"Trial {trial_num} (Δt={dt:.2f}s)",
+        fig, ax = plt.subplots(figsize=(6, 6))
+        ax.scatter(
+            eye_x,
+            eye_y,
+            s=s_all,
+            c=color_all,
+            alpha=alpha_all,
+            label="All eye centers",
         )
-        trial_num += 1
 
-    ax.set_aspect("equal")
-    ax.set_xlabel("Eye center X (deg)")
-    ax.set_ylabel("Eye center Y (deg)")
-    ax.set_title("Eye positions between cue and go")
+        trial_num = 0
+        for ct, gt, ok, dt in zip(pairs_ct, pairs_gt, valid_trials, pairs_dt):
+            if not ok:
+                continue
+            a = np.searchsorted(eye_ts, min(ct, gt), side="left")
+            b = np.searchsorted(eye_ts, max(ct, gt), side="right")
+            if b <= a:
+                continue
+            col = next(color_cycle)
+            ax.scatter(
+                eye_x[a:b],
+                eye_y[a:b],
+                s=s_subset,
+                c=[col],
+                alpha=alpha_subset,
+                label=f"Trial {trial_num} (Δt={dt:.2f}s)",
+            )
+            trial_num += 1
 
+        ax.set_aspect("equal")
+        ax.set_xlabel("Eye center X (deg)")
+        ax.set_ylabel("Eye center Y (deg)")
+        ax.set_title("Eye positions between cue and go")
 
-    if results_dir is not None:
-        results_dir = Path(results_dir)
-        results_dir.mkdir(exist_ok=True, parents=True)
-        fname = f"{animal_id}_{(eye_name or 'Eye').replace(' ', '')}_cue_go_timepaired.png"
-        fig.savefig(results_dir / fname, dpi=300, bbox_inches="tight")
+        if results_dir is not None:
+            results_dir = Path(results_dir)
+            results_dir.mkdir(exist_ok=True, parents=True)
+            fname = f"{animal_id}_{(eye_name or 'Eye').replace(' ', '')}_cue_go_timepaired.png"
+            fig.savefig(results_dir / fname, dpi=300, bbox_inches="tight")
+    else:
+        fig = ax = None
 
     return pairs_cf, pairs_gf, pairs_ct, pairs_gt, pairs_dt, valid_trials, fig, ax
 
@@ -661,7 +676,7 @@ def quantify_fixation_stability_vs_random(
     pairs_gt: np.ndarray,
     valid_trials: np.ndarray,
     *,
-    plot: bool = True,
+    plot: bool = False,
     rng_seed: int = 0,
 ) -> Optional[Dict[str, object]]:
     """Compare eye stability during fixation windows to random times.
@@ -676,7 +691,7 @@ def quantify_fixation_stability_vs_random(
         Cue and go timestamps for each paired trial.
     valid_trials : array-like of bool
         Mask indicating which trials to use for the analysis.
-    plot : bool, default ``True``
+    plot : bool, default ``False``
         If ``True`` a figure summarising the comparison is included in the
         returned dictionary.
     rng_seed : int, default ``0``
