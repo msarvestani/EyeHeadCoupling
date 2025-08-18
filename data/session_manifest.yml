@@ -1,3 +1,5 @@
+results_root: X:\Analysis\EyeHeadCoupling
+
 saccade_config:
   saccade_threshold: 1.0
   saccade_threshold_torsion: 1.5
