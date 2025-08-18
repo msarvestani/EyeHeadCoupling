@@ -383,7 +383,8 @@ def sort_plot_saccades(
                 x, y = eye_pos[i, 0], eye_pos[i, 1]
                 arrow = FancyArrowPatch(
                     (x, y),
-                    (x, y),
+                    (x + 1e-3, y),
+                    arrowstyle="-|>",
                     connectionstyle=f"arc3,rad={0.3 * np.sign(dtheta[i])}",
                     mutation_scale=10 * abs(dtheta[i]),
                     color="purple",
