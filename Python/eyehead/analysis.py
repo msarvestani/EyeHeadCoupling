@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from typing import Dict, Optional
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -171,7 +172,8 @@ def detect_saccades(
     plt.show()
 
     side_tag = f"_{config.camera_side}" if config.camera_side else ""
-    prob_fname = f"{config.session_name}{side_tag}_saccades.png"
+    session_folder = Path(config.folder_path).name if config.folder_path else config.session_name
+    prob_fname = f"{session_folder}{side_tag}_saccades.png"
     fig.savefig(config.results_dir / prob_fname, dpi=300, bbox_inches="tight")
 
     return {
@@ -308,6 +310,8 @@ def sort_plot_saccades(
 
     all_fname = f"{session_name}_{eye_name}_ALL_{stim_type}.png"
     fig.savefig(config.results_dir / all_fname, dpi=300, bbox_inches="tight")
+    plt.show()
+    plt.close(fig)
 
     plot_window = np.arange(0, saccade_window_frames, 1)
 
@@ -404,6 +408,8 @@ def sort_plot_saccades(
         fig.tight_layout()
         cond_fname = f"{session_name}_{eye_name}_{label}_{stim_type}.png"
         fig.savefig(config.results_dir / cond_fname, dpi=300, bbox_inches="tight")
+        plt.show()
+        plt.close(fig)
 
 
 __all__ = [
