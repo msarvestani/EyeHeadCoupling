@@ -75,7 +75,7 @@ def detect_saccades(
     config: SessionConfig,
     data: SessionData | None = None,
     plot: bool = False,
-) -> Dict[str, np.ndarray] | Tuple[Dict[str, np.ndarray], plt.Figure, plt.Axes]:
+) -> Tuple[Dict[str, np.ndarray], Optional[plt.Figure], Optional[plt.Axes]]:
     """Detect saccades from eye tracking data.
 
     Parameters
@@ -97,9 +97,13 @@ def detect_saccades(
 
     Returns
     -------
-    Dict
-        Dictionary with detected saccade metrics.  If ``plot`` is ``True`` a
-        tuple ``(saccades, fig, ax)`` is returned instead.
+    saccades : dict
+        Dictionary with detected saccade metrics.
+    fig : Figure or None
+        Generated figure if ``plot=True``, otherwise ``None``.
+    ax : Axes or None
+        Primary axes of the diagnostic plot when ``plot=True``; ``None``
+        otherwise.
     """
     torsion_angle = None
     vd_axis_lx = vd_axis_ly = vd_axis_rx = vd_axis_ry = None
@@ -169,6 +173,7 @@ def detect_saccades(
         "saccade_frames_theta": saccade_frames_theta,
     }
 
+    fig = ax = None
     if plot:
         fig, (ax, ax2) = plt.subplots(2, 1, figsize=(12, 8), sharex=True)
         frames = np.arange(len(xy_speed))
@@ -219,9 +224,8 @@ def detect_saccades(
         )
         prob_fname = f"{session_folder}{side_tag}_saccades.png"
         fig.savefig(config.results_dir / prob_fname, dpi=300, bbox_inches="tight")
-        return saccades, fig, ax
 
-    return saccades
+    return saccades, fig, ax
 
 
 def organize_stims(
