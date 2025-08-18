@@ -162,6 +162,18 @@ def load_session_data(config: SessionConfig) -> SessionData:
     data.vdaxis = _load_csv("vdaxis", per_eye=True)
     data.imu = _load_csv("imu")
     data.end_of_trial = _load_csv("end_of_trial")
+    if data.end_of_trial is not None:
+        arr = data.end_of_trial
+        data.end_of_trial_frame = arr[:, 0].astype(int)
+        data.end_of_trial_ts = arr[:, 1].astype(float)
+        if arr.shape[1] > 2:
+            data.trial_stim_direction = arr[:, 2]
+        if arr.shape[1] > 3:
+            data.trial_eye_movement_direction = arr[:, 3]
+        if arr.shape[1] > 4:
+            data.trial_torsion_angle = arr[:, 4]
+        if arr.shape[1] > 5:
+            data.trial_success = arr[:, 5]
     data.cue = _load_csv("cue")
     if data.cue is not None:
         cue = data.cue
@@ -181,20 +193,35 @@ def load_session_data(config: SessionConfig) -> SessionData:
         if cue_direction_raw is not None:
             data.cue_direction = cue_direction_raw[onset_idx]
 
-        if data.go_frame is not None and data.go_time is not None:
-            n = min(len(data.go_frame), len(data.cue_frame))
-            data.cue_frame = data.cue_frame[:n]  # trim to match go trials
-            data.cue_time = data.cue_time[:n]
-            if data.cue_direction is not None:
-                data.cue_direction = data.cue_direction[:n]
-            data.go_frame = data.go_frame[:n]
-            data.go_time = data.go_time[:n]
-            if data.go_direction_x is not None:
-                data.go_direction_x = data.go_direction_x[:n]
-            if data.go_direction_y is not None:
-                data.go_direction_y = data.go_direction_y[:n]
-            if data.go_direction is not None:
-                data.go_direction = data.go_direction[:n]
+    trial_len_candidates = [
+        arr
+        for arr in (data.cue_frame, data.go_frame, data.end_of_trial_frame)
+        if arr is not None
+    ]
+    if trial_len_candidates:
+        n = min(len(a) for a in trial_len_candidates)
+
+        def _trim(a: Optional[np.ndarray]) -> Optional[np.ndarray]:
+            return a[:n] if a is not None else None
+
+        data.cue_frame = _trim(data.cue_frame)
+        data.cue_time = _trim(data.cue_time)
+        data.cue_direction = _trim(data.cue_direction)
+
+        data.go_frame = _trim(data.go_frame)
+        data.go_time = _trim(data.go_time)
+        data.go_direction_x = _trim(data.go_direction_x)
+        data.go_direction_y = _trim(data.go_direction_y)
+        data.go_direction = _trim(data.go_direction)
+
+        data.end_of_trial_frame = _trim(data.end_of_trial_frame)
+        data.end_of_trial_ts = _trim(data.end_of_trial_ts)
+        data.trial_stim_direction = _trim(data.trial_stim_direction)
+        data.trial_eye_movement_direction = _trim(
+            data.trial_eye_movement_direction
+        )
+        data.trial_torsion_angle = _trim(data.trial_torsion_angle)
+        data.trial_success = _trim(data.trial_success)
 
     return data
 
