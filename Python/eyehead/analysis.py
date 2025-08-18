@@ -232,7 +232,15 @@ def sort_plot_saccades(
     eye_name = config.eye_name
 
     eye_pos = saccades["eye_pos"].copy()
-    x_mean, y_mean = eye_pos[:, 0].mean(), eye_pos[:, 1].mean()
+    mask = np.isfinite(eye_pos[:, 0]) & np.isfinite(eye_pos[:, 1])
+    if not mask.any():
+        warnings.warn("No finite eye positions; skipping plot")
+        return
+    dropped = np.count_nonzero(~mask)
+    if dropped:
+        warnings.warn(f"Dropped {dropped} samples with non-finite eye positions")
+    x_mean = np.nanmean(eye_pos[mask, 0])
+    y_mean = np.nanmean(eye_pos[mask, 1])
     eye_pos[:, 0] -= x_mean
     eye_pos[:, 1] -= y_mean
     eye_pos_diff = saccades["eye_vel"]
@@ -243,10 +251,21 @@ def sort_plot_saccades(
     stim_frames = saccades["stim_frames"]
     session_name = os.path.basename(str(session_path).replace("\\", "/"))
 
+    mask_xy = mask[saccade_indices_xy]
+    saccade_indices_xy = saccade_indices_xy[mask_xy]
+    saccade_frames_xy = saccade_frames_xy[mask_xy]
+
     if saccade_indices_theta is not None and len(saccade_indices_theta) > 0:
         saccade_indices_theta = np.array(saccade_indices_theta, dtype=int)
+        mask_theta = mask[saccade_indices_theta]
+        saccade_indices_theta = saccade_indices_theta[mask_theta]
+        saccade_frames_theta = saccade_frames_theta[mask_theta]
+        if saccade_indices_theta.size == 0:
+            saccade_indices_theta = None
+            saccade_frames_theta = None
     else:
         saccade_indices_theta = None
+        saccade_frames_theta = None
 
     if eye_pos_diff.shape[1] == 3:
         dx, dy, dtheta = eye_pos_diff[:, 0], eye_pos_diff[:, 1], eye_pos_diff[:, 2]
@@ -264,18 +283,12 @@ def sort_plot_saccades(
         t_all = eye_pos[saccade_indices_theta, 2]
 
     pad = 0.10
-    finite_x = eye_pos[:, 0][np.isfinite(eye_pos[:, 0])]
-    finite_y = eye_pos[:, 1][np.isfinite(eye_pos[:, 1])]
-    if finite_x.size == 0 or finite_y.size == 0:
-        warnings.warn(
-            "No finite eye position values found; defaulting axis limits to [-1, 1]."
-        )
-    max_abs_x = np.nanmax(np.abs(finite_x)) if finite_x.size else 1.0
-    max_abs_y = np.nanmax(np.abs(finite_y)) if finite_y.size else 1.0
+    max_abs_x = np.nanmax(np.abs(eye_pos[mask, 0]))
+    max_abs_y = np.nanmax(np.abs(eye_pos[mask, 1]))
     X_LIM = (-max_abs_x * (1 + pad), max_abs_x * (1 + pad))
     Y_LIM = (-max_abs_y * (1 + pad), max_abs_y * (1 + pad))
     abs_all = np.hypot(dx[saccade_indices_xy], dy[saccade_indices_xy])
-    max_abs = abs_all.max()
+    max_abs = np.nanmax(abs_all)
 
 
     angle_all = np.arctan2(dy[saccade_indices_xy], dx[saccade_indices_xy])
@@ -373,7 +386,7 @@ def sort_plot_saccades(
         plot_angle_distribution(ang, ax_p)
         plot_linear_histogram(ang, ax_l)
 
-        if torsion_present:
+        if torsion_present and saccade_indices_theta is not None:
             idx_buf_torsion: list[int] = []
             sorted_pairs_theta = sorted(
                 zip(saccade_frames_theta, saccade_indices_theta)
