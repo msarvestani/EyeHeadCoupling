@@ -163,6 +163,38 @@ def load_session_data(config: SessionConfig) -> SessionData:
     data.imu = _load_csv("imu")
     data.end_of_trial = _load_csv("end_of_trial")
     data.cue = _load_csv("cue")
+    if data.cue is not None:
+        cue = data.cue
+        cue_frame_raw = cue[:, 0].astype(int)
+        cue_time_raw = cue[:, 1].astype(float)
+        cue_direction_raw = cue[:, 2] if cue.shape[1] > 2 else None
+
+        idx = np.argsort(cue_time_raw)  # ensure chronological order
+        cue_frame_raw = cue_frame_raw[idx]
+        cue_time_raw = cue_time_raw[idx]
+        if cue_direction_raw is not None:
+            cue_direction_raw = cue_direction_raw[idx]
+
+        onset_idx = np.r_[0, np.where(np.diff(cue_time_raw) > 1.5)[0] + 1]  # trial onsets
+        data.cue_frame = cue_frame_raw[onset_idx]
+        data.cue_time = cue_time_raw[onset_idx]
+        if cue_direction_raw is not None:
+            data.cue_direction = cue_direction_raw[onset_idx]
+
+        if data.go_frame is not None and data.go_time is not None:
+            n = min(len(data.go_frame), len(data.cue_frame))
+            data.cue_frame = data.cue_frame[:n]  # trim to match go trials
+            data.cue_time = data.cue_time[:n]
+            if data.cue_direction is not None:
+                data.cue_direction = data.cue_direction[:n]
+            data.go_frame = data.go_frame[:n]
+            data.go_time = data.go_time[:n]
+            if data.go_direction_x is not None:
+                data.go_direction_x = data.go_direction_x[:n]
+            if data.go_direction_y is not None:
+                data.go_direction_y = data.go_direction_y[:n]
+            if data.go_direction is not None:
+                data.go_direction = data.go_direction[:n]
 
     return data
 
