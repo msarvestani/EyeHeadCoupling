@@ -51,4 +51,5 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     aggregated = analyze_all_sessions(args.experiment_type)
-    aggregated.to_csv("prosaccade_population_results.csv", index=False)
+    root_dir = Path(__file__).resolve().parents[2]
+    aggregated.to_csv(root_dir / "fixation_population_results.csv", index=False)

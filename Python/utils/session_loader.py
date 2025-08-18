@@ -68,6 +68,7 @@ def load_session(session_id: str) -> SessionConfig:
 
     # Extract global defaults for saccade configuration, if provided.
     global_saccade_cfg: Dict[str, Any] = manifest.get("saccade_config", {}) or {}
+    results_root = manifest.get("results_root")
 
     # The manifest may either contain a top-level ``sessions`` key or map
     # session identifiers directly to their configuration.  Support both
@@ -81,9 +82,9 @@ def load_session(session_id: str) -> SessionConfig:
 
     folder = data.get("folder_path") or data.get("session_path")
     results = data.get("results_dir")
-    if results is None and folder:
+    if results is None and folder and results_root:
         session_folder = Path(folder).name
-        results = Path(r"X:/Analysis/EyeHeadCoupling") / session_folder
+        results = Path(results_root) / session_folder
     known_keys = {
         "session_name",
         "results_dir",
