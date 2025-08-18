@@ -7,6 +7,7 @@ from typing import Dict, Optional
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib import gridspec
+from matplotlib.patches import FancyArrowPatch
 from scipy.signal import medfilt
 
 from utils.session_loader import SessionConfig
@@ -241,15 +242,18 @@ def sort_plot_saccades(
 
     if saccade_indices_theta is not None and len(saccade_indices_theta) > 0:
         saccade_indices_theta = np.array(saccade_indices_theta, dtype=int)
-        t_all = eye_pos[saccade_indices_theta, 2]
     else:
-        t_all = None
+        saccade_indices_theta = None
 
     if eye_pos_diff.shape[1] == 3:
-        dx, dy, _ = eye_pos_diff[:, 0], eye_pos_diff[:, 1], eye_pos_diff[:, 2]
+        dx, dy, dtheta = eye_pos_diff[:, 0], eye_pos_diff[:, 1], eye_pos_diff[:, 2]
+        x_all, y_all = eye_pos[saccade_indices_xy, 0], eye_pos[saccade_indices_xy, 1]
         torsion_present = True
     else:
         dx, dy = eye_pos_diff[:, 0], eye_pos_diff[:, 1]
+        x_all, y_all = eye_pos[saccade_indices_xy, 0], eye_pos[saccade_indices_xy, 1]
+        dtheta = None
+
         torsion_present = False
 
     x_all, y_all = eye_pos[saccade_indices_xy, 0], eye_pos[saccade_indices_xy, 1]
@@ -361,23 +365,41 @@ def sort_plot_saccades(
         if torsion_present:
             idx_buf_torsion: list[int] = []
             sorted_pairs_theta = sorted(
-                zip(saccade_frames_theta, range(len(saccade_indices_theta)))
+                zip(saccade_frames_theta, saccade_indices_theta)
             )
             for f in frames:
                 lower_bound = max(f + plot_window[0], 0)
                 upper_bound = min(f + plot_window[-1], saccade_frames_theta.max())
-                for sf, pos in sorted_pairs_theta:
+                for sf, idx in sorted_pairs_theta:
                     if sf < lower_bound:
                         continue
                     elif sf <= upper_bound:
-                        idx_buf_torsion.append(pos)
+                        idx_buf_torsion.append(idx)
                         break
                     else:
                         break
             idx_use_t = np.array(idx_buf_torsion, dtype=int)
-            ax_t.hist(t_all[idx_use_t], bins=18, color="b", alpha=0.5, edgecolor="k")
-            ax_t.set_xlabel("Δθ (°)")
+            for i in idx_use_t:
+                x, y = eye_pos[i, 0], eye_pos[i, 1]
+                arrow = FancyArrowPatch(
+                    (x, y),
+                    (x, y),
+                    connectionstyle=f"arc3,rad={0.3 * np.sign(dtheta[i])}",
+                    mutation_scale=10 * abs(dtheta[i]),
+                    color="purple",
+                    linewidth=1.5,
+                )
+                ax_q.add_patch(arrow)
+            ax_t.hist(
+                dtheta[idx_use_t],
+                bins=20,
+                color="purple",
+                alpha=0.5,
+                edgecolor="k",
+            )
+            ax_t.set_xlabel("Δθ (deg/frame)")
             ax_t.set_ylabel("Count")
+            ax_t.set_xlim(-15, 15)
 
         fig.tight_layout()
         cond_fname = f"{session_name}_{eye_name}_{label}_{stim_type}.png"
