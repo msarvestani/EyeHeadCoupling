@@ -47,10 +47,11 @@ def main(session_id: str) -> pd.DataFrame:
         data=data,
     )
 
-    trial_success = data.trial_success or np.array([])
+    trial_success = data.trial_success if data.trial_success is not None else np.array([])
     eye_position_during_fixation = []
     eye_position_during_fixation_success = []
-    for i, gf in enumerate((data.go_frame or [])[: len(trial_success)]):
+    go_frames = data.go_frame if data.go_frame is not None else np.array([])
+    for i, gf in enumerate(go_frames[: len(trial_success)]):
         idx = np.where(data.eye_frame < gf)[0]
         if idx.size < 7:
             continue
