@@ -116,13 +116,34 @@ def load_session_data(config: SessionConfig) -> SessionData:
     def _find_file(name: str, per_eye: bool) -> Optional[Path]:
         animal = (config.animal_id or "").lower()
         side = (config.camera_side or "").lower() if per_eye else ""
-        for p in folder.glob("*.csv"):
+        files = list(folder.glob("*.csv"))
+        name_l = name.lower()
+        side_tag = f"_{side}" if side else ""
+        exact = f"{name_l}{side_tag}.csv"
+
+        if animal:
+            for p in files:
+                fname = p.name.lower()
+                if not fname.startswith(animal):
+                    continue
+                if name_l not in fname:
+                    continue
+                if side and side_tag not in fname:
+                    continue
+                return p
+            for p in files:
+                if p.name.lower() == exact:
+                    return p
+        else:
+            for p in files:
+                if p.name.lower() == exact:
+                    return p
+
+        for p in files:
             fname = p.name.lower()
-            if animal and not fname.startswith(animal):
+            if name_l not in fname:
                 continue
-            if name.lower() not in fname:
-                continue
-            if side and f"_{side}" not in fname:
+            if side and side_tag not in fname:
                 continue
             return p
         return None
