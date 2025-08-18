@@ -40,13 +40,7 @@ def main(session_id: str) -> pd.DataFrame:
     data = load_session_data(config)
     eye_pos_cal = calibrate_eye_position(data, config)
 
-    saccade_cfg = SaccadeConfig(
-        saccade_threshold=1.0,
-        saccade_threshold_torsion=1.5,
-        blink_threshold=10.0,
-        blink_detection=1,
-        saccade_win=0.7,
-    )
+    saccade_cfg = SaccadeConfig(**config.params["saccade_config"])
 
     saccades, fig_saccades, _ = detect_saccades(
         eye_pos_cal,
