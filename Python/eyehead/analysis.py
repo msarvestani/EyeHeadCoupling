@@ -552,7 +552,6 @@ def plot_eye_fixations_between_cue_and_go_by_trial(
     fig, ax = plt.subplots(figsize=(6, 6))
     ax.scatter(eye_x, eye_y, s=s_all, c=color_all, alpha=alpha_all, label="All eye centers")
 
-    legend_handles = []
     trial_num = 0
     for ct, gt, ok, dt in zip(pairs_ct, pairs_gt, valid_trials, pairs_dt):
         if not ok:
@@ -570,15 +569,13 @@ def plot_eye_fixations_between_cue_and_go_by_trial(
             alpha=alpha_subset,
             label=f"Trial {trial_num} (Δt={dt:.2f}s)",
         )
-        legend_handles.append(h)
         trial_num += 1
 
     ax.set_aspect("equal")
     ax.set_xlabel("Eye center X (deg)")
     ax.set_ylabel("Eye center Y (deg)")
     ax.set_title("Eye positions between cue and go")
-    if legend_handles:
-        ax.legend(handles=legend_handles, fontsize="small", loc="upper right")
+
 
     if results_dir is not None:
         results_dir = Path(results_dir)

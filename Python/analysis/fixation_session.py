@@ -47,56 +47,6 @@ def main(session_id: str) -> pd.DataFrame:
         data=data,
     )
 
-    trial_success = data.trial_success if data.trial_success is not None else np.array([])
-    eye_position_during_fixation = []
-    eye_position_during_fixation_success = []
-    go_frames = data.go_frame if data.go_frame is not None else np.array([])
-    for i, gf in enumerate(go_frames[: len(trial_success)]):
-        idx = np.where(data.eye_frame < gf)[0]
-        if idx.size < 7:
-            continue
-        last_idx = idx[-7:-1]
-        eye_pos = saccades["eye_pos"][last_idx, :2]
-        mean_pos = np.mean(eye_pos, axis=0)
-        eye_position_during_fixation.append(mean_pos)
-        if trial_success[i] == 1:
-            eye_position_during_fixation_success.append(mean_pos)
-
-    eye_position_during_fixation = np.asarray(eye_position_during_fixation)
-    eye_position_during_fixation_success = np.asarray(eye_position_during_fixation_success)
-
-    eye_pos_all = saccades["eye_pos"][:, :2]
-    spread_fixation = np.std(eye_position_during_fixation, axis=0)
-    spread_all = np.std(eye_pos_all, axis=0)
-    ratio_spread = spread_fixation / spread_all
-
-    fig_spread = plt.figure(figsize=(8, 6))
-    plt.scatter(eye_pos_all[:, 0], eye_pos_all[:, 1], color="red", alpha=0.1, label="All Eye Positions")
-    if eye_position_during_fixation.size:
-        plt.scatter(
-            eye_position_during_fixation[:, 0],
-            eye_position_during_fixation[:, 1],
-            color="blue",
-            alpha=0.4,
-            label="Eye Positions During Fixation",
-        )
-    if eye_position_during_fixation_success.size:
-        plt.scatter(
-            eye_position_during_fixation_success[:, 0],
-            eye_position_during_fixation_success[:, 1],
-            color="green",
-            alpha=0.5,
-            label="Eye Positions During Fixation (Successful Trials)",
-        )
-    plt.xlabel("X Position (deg)")
-    plt.ylabel("Y Position (deg)")
-    plt.title("Eye Positions in the orbit during the whole session and during fixation")
-    plt.legend()
-    plt.grid()
-    fname_spread = f"{config.session_name}_{config.eye_name}_eye_position_spread.png"
-    fig_spread.savefig(config.results_dir / fname_spread, dpi=300, bbox_inches="tight")
-    plt.close(fig_spread)
-
     pairs_cf, pairs_gf, pairs_ct, pairs_gt, pairs_dt, valid_trials, fig_pairs, _ = (
         plot_eye_fixations_between_cue_and_go_by_trial(
             eye_frame=data.eye_frame,
@@ -124,6 +74,7 @@ def main(session_id: str) -> pd.DataFrame:
         rng_seed=0,
     )
 
+
     if stats and stats.get("figure") is not None:
         fig = stats["figure"]
         fname = f"{config.session_name}_{config.eye_name}_fixation_vs_random.png"
@@ -141,8 +92,6 @@ def main(session_id: str) -> pd.DataFrame:
     df = pd.DataFrame(
         {
             "session_id": [session_id],
-            "ratio_spread_x": [ratio_spread[0] if ratio_spread.size else np.nan],
-            "ratio_spread_y": [ratio_spread[1] if ratio_spread.size > 1 else np.nan],
             "mean_step_fix": [ms_fix],
             "mean_step_rand": [ms_rnd],
             "mean_speed_fix": [sp_fix],
