@@ -227,7 +227,10 @@ def sort_plot_saccades(
     session_path = config.folder_path
     eye_name = config.eye_name
 
-    eye_pos = saccades["eye_pos"]
+    eye_pos = saccades["eye_pos"].copy()
+    x_mean, y_mean = eye_pos[:, 0].mean(), eye_pos[:, 1].mean()
+    eye_pos[:, 0] -= x_mean
+    eye_pos[:, 1] -= y_mean
     eye_pos_diff = saccades["eye_vel"]
     saccade_indices_xy = saccades["saccade_indices_xy"]
     saccade_frames_xy = saccades["saccade_frames_xy"]
@@ -244,18 +247,18 @@ def sort_plot_saccades(
 
     if eye_pos_diff.shape[1] == 3:
         dx, dy, _ = eye_pos_diff[:, 0], eye_pos_diff[:, 1], eye_pos_diff[:, 2]
-        x_all, y_all = eye_pos[saccade_indices_xy, 0], eye_pos[saccade_indices_xy, 1]
-        t_all = eye_pos[saccade_indices_theta, 2] if saccade_indices_theta is not None else None
         torsion_present = True
     else:
         dx, dy = eye_pos_diff[:, 0], eye_pos_diff[:, 1]
-        x_all, y_all = eye_pos[saccade_indices_xy, 0], eye_pos[saccade_indices_xy, 1]
-        t_all = None
         torsion_present = False
 
+    x_all, y_all = eye_pos[saccade_indices_xy, 0], eye_pos[saccade_indices_xy, 1]
+    if torsion_present and saccade_indices_theta is not None:
+        t_all = eye_pos[saccade_indices_theta, 2]
+
     pad = 0.10
-    max_abs_x = np.max(np.abs(x_all))
-    max_abs_y = np.max(np.abs(y_all))
+    max_abs_x = np.max(np.abs(eye_pos[:, 0]))
+    max_abs_y = np.max(np.abs(eye_pos[:, 1]))
     X_LIM = (-max_abs_x * (1 + pad), max_abs_x * (1 + pad))
     Y_LIM = (-max_abs_y * (1 + pad), max_abs_y * (1 + pad))
     abs_all = np.hypot(dx[saccade_indices_xy], dy[saccade_indices_xy])
