@@ -59,6 +59,7 @@ def calibrate_eye_position(data: SessionData, config: SessionConfig) -> np.ndarr
 
     eye_camera[:, 0] /= fx
     eye_camera[:, 1] /= fy
+    eye_camera[:, 1] *= -1
 
     return eye_camera
 
@@ -253,10 +254,10 @@ def sort_plot_saccades(
         torsion_present = False
 
     pad = 0.10
-    rngX = x_all.max() - x_all.min()
-    rngY = y_all.max() - y_all.min()
-    X_LIM = (x_all.min() - pad * rngX, x_all.max() + pad * rngX)
-    Y_LIM = (y_all.min() - pad * rngY, y_all.max() + pad * rngY)
+    max_abs_x = np.max(np.abs(x_all))
+    max_abs_y = np.max(np.abs(y_all))
+    X_LIM = (-max_abs_x * (1 + pad), max_abs_x * (1 + pad))
+    Y_LIM = (-max_abs_y * (1 + pad), max_abs_y * (1 + pad))
     abs_all = np.hypot(dx[saccade_indices_xy], dy[saccade_indices_xy])
     max_abs = abs_all.max()
 
