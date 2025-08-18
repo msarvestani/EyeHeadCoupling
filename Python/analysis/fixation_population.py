@@ -13,6 +13,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 import pandas as pd
+import yaml
 
 from analysis import fixation_session
 from analysis.fixation_session import main
@@ -52,5 +53,14 @@ if __name__ == "__main__":
     args = parser.parse_args()
     aggregated = analyze_all_sessions(args.experiment_type)
     root_dir = Path(__file__).resolve().parents[2]
-    print(root_dir)
-    aggregated.to_csv(root_dir / "fixation_population_results.csv", index=False)
+    manifest_path = root_dir / "data" / "session_manifest.yml"
+    try:
+        with manifest_path.open() as f:
+            manifest = yaml.safe_load(f) or {}
+    except FileNotFoundError:
+        manifest = {}
+    results_root = Path(manifest.get("results_root", root_dir))
+    results_root.mkdir(parents=True, exist_ok=True)
+    aggregated.to_csv(
+        results_root / "fixation_population_results.csv", index=False
+    )
