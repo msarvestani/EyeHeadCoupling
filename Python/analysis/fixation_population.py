@@ -112,7 +112,6 @@ def plot_metric_trends(df: pd.DataFrame, save_dir: Path) -> None:
                 color=color,
                 markersize=4,
                 capsize=3,
-                label="Fixation" if i == 0 else None,
             )
             ax.errorbar(
                 order[i],
@@ -122,8 +121,23 @@ def plot_metric_trends(df: pd.DataFrame, save_dir: Path) -> None:
                 color=color,
                 markersize=4,
                 capsize=3,
-                label="Random" if i == 0 else None,
             )
+
+        # Connect sessions with dashed lines for fixation and random conditions
+        ax.plot(
+            order,
+            data[fix_col],
+            linestyle="--",
+            color="tab:blue",
+            label="Fixation",
+        )
+        ax.plot(
+            order,
+            data[rand_col],
+            linestyle="--",
+            color="tab:orange",
+            label="Random",
+        )
         ax.set_xlabel("Session (earlier → later)")
         ax.set_ylabel(ylabel)
 
