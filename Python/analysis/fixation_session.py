@@ -53,15 +53,9 @@ def main(session_id: str) -> pd.DataFrame:
     if fig_saccades is not None:
         plt.close(fig_saccades)
 
-    (
-        pairs_cf,
-        pairs_gf,
-        pairs_ct,
-        pairs_gt,
-        pairs_dt,
-        valid_trials,
-        fig_pairs,
-        _,
+
+    ( pairs_cf,pairs_gf,pairs_ct,pairs_gt,
+        pairs_dt,valid_trials,fig_pairs,_,
     ) = plot_eye_fixations_between_cue_and_go_by_trial(
         eye_frame=data.eye_frame,
         eye_pos=saccades["eye_pos"],
