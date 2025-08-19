@@ -1,8 +1,21 @@
+"""Plotting utilities with repository-wide style defaults.
+
+This module loads matplotlib style settings from ``Python/style.mplstyle`` so
+that all downstream figures share a consistent appearance.
+"""
+
 from __future__ import annotations
+
+from pathlib import Path
 
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
+
+
+# Apply repository style settings
+_STYLE_PATH = Path(__file__).resolve().parent.parent / "style.mplstyle"
+plt.style.use(_STYLE_PATH)
 
 
 def rotation_matrix(angle_rad: float) -> np.ndarray:

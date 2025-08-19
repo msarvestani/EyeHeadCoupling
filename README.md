@@ -36,3 +36,8 @@ Use `utils.session_loader.load_session` to access entries.
 ## Usage
 - Run analysis scripts from `Python/analysis/`.
 - Launch Jupyter notebooks from `Python/notebooks/`.
+
+## Plotting style
+Matplotlib figures use a repository-wide style defined in `Python/style.mplstyle`.
+The helper functions in `Python/eyehead/plotting.py` load this file with
+``plt.style.use`` so that all plots share consistent fonts and colours.
