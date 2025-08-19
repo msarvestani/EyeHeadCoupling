@@ -6,8 +6,9 @@ saccade_config:
   blink_threshold: 10.0
   blink_detection: 1
   saccade_win: 0.7
-
-  session_01:
+    
+sessions:
+ session_01:
     experiment_type: fixation
     session_path: X:\\Experimental_Data\\EyeHeadCoupling_RatTS_server\\TSh01_Paris_server\\Tsh001_2025-07-30T15_29_31
     date: 2025-07-30
@@ -66,8 +67,6 @@ saccade_config:
     calibration_factor : 3.76
     ttl_freq: 60
     camera_side: L
-    
-sessions:
   session_07:
     experiment_type: fixation
     session_path: X:\\Experimental_Data\\EyeHeadCoupling_RatTS_server\\TSh01_Paris_server\\Tsh001_2025-08-06T16_40_40
