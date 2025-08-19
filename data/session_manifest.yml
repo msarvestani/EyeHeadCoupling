@@ -67,6 +67,7 @@ sessions:
     calibration_factor : 3.76
     ttl_freq: 60
     camera_side: L
+    
   session_07:
     experiment_type: fixation
     session_path: X:\\Experimental_Data\\EyeHeadCoupling_RatTS_server\\TSh01_Paris_server\\Tsh001_2025-08-06T16_40_40
