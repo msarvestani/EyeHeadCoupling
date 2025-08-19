@@ -70,28 +70,58 @@ def plot_metric_trends(df: pd.DataFrame, save_dir: Path) -> None:
     colors = cmap(np.linspace(0, 1, len(data)))
 
     metrics = [
-        ("mean_step_fix", "mean_step_rand", "Mean step (deg)",
-         "fixation_mean_step_trend.png"),
-        ("mean_speed_fix", "mean_speed_rand", "Mean speed (deg/s)",
-         "fixation_mean_speed_trend.png"),
-        ("net_drift_fix", "net_drift_rand", "Net drift (deg)",
-         "fixation_net_drift_trend.png"),
+        (
+            "mean_step_fix",
+            "mean_step_fix_sem",
+            "mean_step_rand",
+            "mean_step_rand_sem",
+            "Mean step (deg)",
+            "fixation_mean_step_trend.png",
+        ),
+        (
+            "mean_speed_fix",
+            "mean_speed_fix_sem",
+            "mean_speed_rand",
+            "mean_speed_rand_sem",
+            "Mean speed (deg/s)",
+            "fixation_mean_speed_trend.png",
+        ),
+        (
+            "net_drift_fix",
+            "net_drift_fix_sem",
+            "net_drift_rand",
+            "net_drift_rand_sem",
+            "Net drift (deg)",
+            "fixation_net_drift_trend.png",
+        ),
     ]
 
-    for fix_col, rand_col, ylabel, fname in metrics:
+    for fix_col, fix_sem_col, rand_col, rand_sem_col, ylabel, fname in metrics:
         if fix_col not in data or rand_col not in data:
             continue
 
         fig, ax = plt.subplots(figsize=(6, 4))
-        ax.scatter(order, data[fix_col], c=colors, s=40, label="Fixation")
-        ax.scatter(
-            order,
-            data[rand_col],
-            c=colors,
-            s=40,
-            marker="x",
-            label="Random",
-        )
+        for i, color in enumerate(colors):
+            ax.errorbar(
+                order[i],
+                data[fix_col].iloc[i],
+                yerr=data.get(fix_sem_col, pd.Series([0])).iloc[i],
+                fmt="o",
+                color=color,
+                markersize=4,
+                capsize=3,
+                label="Fixation" if i == 0 else None,
+            )
+            ax.errorbar(
+                order[i],
+                data[rand_col].iloc[i],
+                yerr=data.get(rand_sem_col, pd.Series([0])).iloc[i],
+                fmt="x",
+                color=color,
+                markersize=4,
+                capsize=3,
+                label="Random" if i == 0 else None,
+            )
         ax.set_xlabel("Session (earlier → later)")
         ax.set_ylabel(ylabel)
 
