@@ -32,7 +32,9 @@ def analyze_all_sessions(experiment_type: str = "prosaccade") -> pd.DataFrame:
         are found, an empty :class:`~pandas.DataFrame` is returned.
     """
     tables: list[pd.DataFrame] = []
-    for session_id in list_sessions_from_manifest(experiment_type):
+    for session_id in list_sessions_from_manifest(
+        experiment_type, match_prefix=True
+    ):
         session_df = prosaccade_session.main(session_id)
         tables.append(session_df)
 

@@ -193,7 +193,9 @@ def list_sessions_by_type(experiment_type: str) -> List[str]:
     )
 
 
-def list_sessions_from_manifest(experiment_type: str) -> List[str]:
+def list_sessions_from_manifest(
+    experiment_type: str, match_prefix: bool = False
+) -> List[str]:
     """Return session IDs of a given ``experiment_type`` from the manifest.
 
     Parameters
@@ -202,13 +204,17 @@ def list_sessions_from_manifest(experiment_type: str) -> List[str]:
         Type of experiment to filter sessions by. The value is compared
         directly against the ``"experiment_type"`` field of each manifest
         entry.
+    match_prefix:
+        When ``True``, include sessions whose ``experiment_type`` begins with
+        ``experiment_type`` (case-insensitive).
 
     Returns
     -------
     list of str
         Sorted list of session identifiers whose ``experiment_type`` matches
-        ``experiment_type``. If the manifest file is missing or empty an empty
-        list is returned.
+        ``experiment_type``. If ``match_prefix`` is ``True`` the comparison is
+        performed using :py:meth:`str.startswith`, allowing broader matches. If
+        the manifest file is missing or empty an empty list is returned.
     """
 
     manifest_path = (
@@ -222,10 +228,18 @@ def list_sessions_from_manifest(experiment_type: str) -> List[str]:
         return []
 
     sessions: Dict[str, Any] = manifest.get("sessions", manifest)
+    exp_type_lower = experiment_type.lower()
     return sorted(
         session_id
         for session_id, meta in sessions.items()
-        if meta.get("experiment_type") == experiment_type
+        if (
+            (meta_type := meta.get("experiment_type"))
+            and (
+                meta_type.lower().startswith(exp_type_lower)
+                if match_prefix
+                else meta_type == experiment_type
+            )
+        )
     )
 
 
