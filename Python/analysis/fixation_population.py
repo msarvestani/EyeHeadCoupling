@@ -43,22 +43,22 @@ def analyze_all_sessions(experiment_type: str = "fixation") -> pd.DataFrame:
     return pd.concat(tables, ignore_index=True)
 
 
-def plot_net_drift_trend(df: pd.DataFrame, save_dir: Path) -> None:
-    """Plot net drift across sessions using a colour gradient.
+def plot_metric_trends(df: pd.DataFrame, save_dir: Path) -> None:
+    """Plot fixation metrics across sessions with a consistent colour scheme.
 
-    Sessions are ordered by their recording date and assigned colours from a
-    sequential colormap so that later sessions appear in a different hue than
-    earlier ones. The resulting figure is saved into ``save_dir``.
+    Sessions are ordered by recording date and assigned colours from a
+    sequential colormap.  For each metric, both fixation and random values are
+    plotted using the same session colour but different markers.
 
     Parameters
     ----------
     df:
         Aggregated fixation metrics for all sessions.
     save_dir:
-        Directory where the plot image will be written.
+        Directory where the plot images will be written.
     """
 
-    if df.empty or "net_drift_fix" not in df:
+    if df.empty:
         return
 
     data = df.copy()
@@ -69,20 +69,42 @@ def plot_net_drift_trend(df: pd.DataFrame, save_dir: Path) -> None:
     cmap = plt.cm.viridis
     colors = cmap(np.linspace(0, 1, len(data)))
 
-    fig, ax = plt.subplots(figsize=(6, 4))
-    ax.scatter(order, data["net_drift_fix"], c=colors, s=40)
-    ax.set_xlabel("Session (earlier → later)")
-    ax.set_ylabel("Net drift during fixation (deg)")
+    metrics = [
+        ("mean_step_fix", "mean_step_rand", "Mean step (deg)",
+         "fixation_mean_step_trend.png"),
+        ("mean_speed_fix", "mean_speed_rand", "Mean speed (deg/s)",
+         "fixation_mean_speed_trend.png"),
+        ("net_drift_fix", "net_drift_rand", "Net drift (deg)",
+         "fixation_net_drift_trend.png"),
+    ]
 
-    norm = plt.Normalize(vmin=0, vmax=len(data) - 1)
-    sm = plt.cm.ScalarMappable(norm=norm, cmap=cmap)
-    sm.set_array([])
-    cbar = fig.colorbar(sm, ax=ax)
-    cbar.set_label("Session order")
+    for fix_col, rand_col, ylabel, fname in metrics:
+        if fix_col not in data or rand_col not in data:
+            continue
 
-    fig.tight_layout()
-    fig.savefig(save_dir / "fixation_net_drift_trend.png", dpi=300, bbox_inches="tight")
-    plt.close(fig)
+        fig, ax = plt.subplots(figsize=(6, 4))
+        ax.scatter(order, data[fix_col], c=colors, s=40, label="Fixation")
+        ax.scatter(
+            order,
+            data[rand_col],
+            c=colors,
+            s=40,
+            marker="x",
+            label="Random",
+        )
+        ax.set_xlabel("Session (earlier → later)")
+        ax.set_ylabel(ylabel)
+
+        norm = plt.Normalize(vmin=0, vmax=len(data) - 1)
+        sm = plt.cm.ScalarMappable(norm=norm, cmap=cmap)
+        sm.set_array([])
+        cbar = fig.colorbar(sm, ax=ax)
+        cbar.set_label("Session order")
+        ax.legend()
+
+        fig.tight_layout()
+        fig.savefig(save_dir / fname, dpi=300, bbox_inches="tight")
+        plt.close(fig)
 
 
 if __name__ == "__main__":
@@ -108,4 +130,4 @@ if __name__ == "__main__":
     aggregated.to_csv(
         results_root / "fixation_population_results.csv", index=False
     )
-    plot_net_drift_trend(aggregated, results_root)
+    plot_metric_trends(aggregated, results_root)
