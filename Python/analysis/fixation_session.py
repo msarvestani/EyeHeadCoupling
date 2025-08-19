@@ -93,23 +93,29 @@ def main(session_id: str) -> pd.DataFrame:
         plt.close(fig)
 
     summary = stats["summary"] if stats else {}
-    ms_fix, _, _ = summary.get("mean_step_fix_mean±sem", (np.nan, np.nan, 0))
-    ms_rnd, _, _ = summary.get("mean_step_rand_mean±sem", (np.nan, np.nan, 0))
-    sp_fix, _ = summary.get("mean_speed_fix_mean±sem", (np.nan, np.nan))
-    sp_rnd, _ = summary.get("mean_speed_rand_mean±sem", (np.nan, np.nan))
-    dr_fix, _ = summary.get("net_drift_fix_mean±sem", (np.nan, np.nan))
-    dr_rnd, _ = summary.get("net_drift_rand_mean±sem", (np.nan, np.nan))
+    ms_fix, se_fix, _ = summary.get("mean_step_fix_mean±sem", (np.nan, np.nan, 0))
+    ms_rnd, se_rnd, _ = summary.get("mean_step_rand_mean±sem", (np.nan, np.nan, 0))
+    sp_fix, se_spf = summary.get("mean_speed_fix_mean±sem", (np.nan, np.nan))
+    sp_rnd, se_spr = summary.get("mean_speed_rand_mean±sem", (np.nan, np.nan))
+    dr_fix, se_drf = summary.get("net_drift_fix_mean±sem", (np.nan, np.nan))
+    dr_rnd, se_drr = summary.get("net_drift_rand_mean±sem", (np.nan, np.nan))
 
     df = pd.DataFrame(
         {
             "session_id": [session_id],
             "session_date": [date_str],
             "mean_step_fix": [ms_fix],
+            "mean_step_fix_sem": [se_fix],
             "mean_step_rand": [ms_rnd],
+            "mean_step_rand_sem": [se_rnd],
             "mean_speed_fix": [sp_fix],
+            "mean_speed_fix_sem": [se_spf],
             "mean_speed_rand": [sp_rnd],
+            "mean_speed_rand_sem": [se_spr],
             "net_drift_fix": [dr_fix],
+            "net_drift_fix_sem": [se_drf],
             "net_drift_rand": [dr_rnd],
+            "net_drift_rand_sem": [se_drr],
             "valid_trials": [int(valid_trials.sum()) if stats else 0],
         }
     )
