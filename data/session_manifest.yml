@@ -8,7 +8,18 @@ saccade_config:
   saccade_win: 0.7
     
 sessions:
+
  session_01:
+    experiment_type: fixation-control
+    session_path: X:\\Experimental_Data\\EyeHeadCoupling_RatTS_server\\TSh01_Paris_server\\Tsh001_2025-07-22T15_25_56
+    date: 2025-07-22
+    animal_name: Paris
+    animal_id: Tsh001
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+    
+ session_02:
     experiment_type: fixation
     session_path: X:\\Experimental_Data\\EyeHeadCoupling_RatTS_server\\TSh01_Paris_server\\Tsh001_2025-07-30T15_29_31
     date: 2025-07-30
