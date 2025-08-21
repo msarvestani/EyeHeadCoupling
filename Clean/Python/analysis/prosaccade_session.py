@@ -73,10 +73,22 @@ def main(session_id: str) -> pd.DataFrame:
             "session_date": [date_str] * len(indices),
             "saccade_frame_xy": saccade_frames,
             "saccade_index_xy": indices,
+
         }
     )
-    sort_saccades(config, saccade_cfg, saccades, stim_type=stim_type, plot=True)
-    return df
+    sorted_data,left_angle,right_angle,fig_sorted, _ = sort_saccades(config, saccade_cfg, saccades, stim_type=stim_type, plot=True)
+    if fig_sorted is not None:
+        plt.close(fig_sorted)
+    df = pd.DataFrame(
+        {
+            "session_id": [session_id] * len(indices),
+            "session_date": [date_str] * len(indices),
+            "saccade_frame_xy": saccade_frames,
+            "saccade_index_xy": indices,
+
+        }
+    )
+    return df,left_angle,right_angle
 
 
 if __name__ == "__main__":

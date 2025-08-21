@@ -46,6 +46,7 @@ def plot_angle_distribution(angle: np.ndarray, ax_polar: plt.Axes, num_bins: int
     ax_polar.bar(bin_edges[:-1], counts, width=width, align="edge", color="b", alpha=0.5, edgecolor="k")
     ax_polar.set_title("Normalized angle distribution")
     ax_polar.set_yticklabels([])
+    ax_polar.yaxis.grid(False)
 
 
 def plot_linear_histogram(angles: np.ndarray, ax: plt.Axes, num_bins: int = 18) -> None:

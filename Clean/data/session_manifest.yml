@@ -1,7 +1,7 @@
 results_root: X:\Analysis\EyeHeadCoupling
 
 saccade_config:
-  saccade_threshold: 1.0
+  saccade_threshold: 3.0
   saccade_threshold_torsion: 1.5
   blink_threshold: 10.0
   blink_detection: 1
@@ -79,6 +79,118 @@ sessions:
     calibration_factor : 3.76
     ttl_freq: 60
     camera_side: L
+    params:
+      saccade_config:
+        saccade_threshold: 1.0
+
+ session_08:
+    experiment_type: prosaccade
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-07-08T15_04_12
+    date: 2025-07-08
+    animal_name: Paris
+    animal_id: Tsh001
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+    reward_contingency:
+      reward_angle: 35
+      reward_window: 0.7
+    params:
+      saccade_config:
+        saccade_threshold: 3.0
+ 
+ session_09:
+    experiment_type: prosaccade
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-07-02T15_14_29
+    date: 2025-07-02
+    animal_name: Paris
+    animal_id: Tsh001
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+    reward_contingency:
+      reward_angle: 35
+      reward_window: 0.7
+    params:
+      saccade_config:
+        saccade_threshold: 3.0
+
+#  session_10:
+#     experiment_type: prosaccade
+#     session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-07-09T15_29_43
+#     date: 2025-07-09
+#     animal_name: Paris
+#     animal_id: Tsh001
+#     calibration_factor : 3.76
+#     ttl_freq: 60
+#     camera_side: L
+#     reward_contingency:
+#       reward_angle: 35
+#       reward_window: 0.7
+#     params:
+#       saccade_config:
+#         saccade_threshold: 3.0
+
+#  session_11:
+#     experiment_type: prosaccade
+#     session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-07-09T15_49_30
+#     date: 2025-07-09
+#     animal_name: Paris
+#     animal_id: Tsh001
+#     calibration_factor : 3.76
+#     ttl_freq: 60
+#     camera_side: L
+#     reward_contingency:
+#       reward_angle: 35
+#       reward_window: 0.7
+#     params:
+#       saccade_config:
+#         saccade_threshold: 3.0
+
+ session_12:
+    experiment_type: prosaccade
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-07-10T15_47_04
+    date: 2025-07-10
+    animal_name: Paris
+    animal_id: Tsh001
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+    reward_contingency:
+      reward_angle: 35
+      reward_window: 0.7
+    params:
+      saccade_config:
+        saccade_threshold: 3.0
+
+ session_13:
+    experiment_type: antisaccade
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-08-12T15_04_14
+    date: 2025-08-12
+    animal_name: Paris
+    animal_id: Tsh001
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+    reward_contingency:
+      reward_angle: 35
+      reward_window: 1
+    params:
+      saccade_config:
+        saccade_threshold: 1.0
+
+ session_14:
+    experiment_type: antisaccade
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-08-13T14_48_16
+    date: 2025-08-13
+    animal_name: Paris
+    animal_id: Tsh001
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+    reward_contingency:
+      reward_angle: 35
+      reward_window: 1
     params:
       saccade_config:
         saccade_threshold: 1.0
