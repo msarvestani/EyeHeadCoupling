@@ -12,6 +12,7 @@ from matplotlib import cm, gridspec
 from matplotlib.patches import FancyArrowPatch
 from scipy.signal import medfilt
 from scipy.stats import circmean, circstd
+from scipy.stats import gaussian_kde,vonmises
 from itertools import cycle
 
 from utils.session_loader import SessionConfig
@@ -290,6 +291,9 @@ def plot_left_right_angle(left_angle,right_angle,reward_angle=35,sessionname=Non
             alpha=0.5,
             label='Right Trials'
         )
+## Plot the von mises fit for both left and right angles
+
+        
 
         ax_polar_left.set_yticklabels([])
         ax_polar_right.set_yticklabels([])
@@ -355,8 +359,13 @@ def plot_left_right_angle(left_angle,right_angle,reward_angle=35,sessionname=Non
         ax_polar_right.legend(loc='upper right', fontsize='small')
 
         ## print the saccade percentage on the plot
-        saccade_percentage_left = np.sum(np.abs(left_angle) <= np.deg2rad(reward_angle)) / len(left_angle) * 100
-        saccade_percentage_right = np.sum(np.abs(right_angle) >= np.deg2rad(180-reward_angle)) / len(right_angle) * 100
+        if experiment_type == "prosaccade":
+            saccade_percentage_left = np.sum(np.abs(left_angle) <= np.deg2rad(reward_angle)) / len(left_angle) * 100
+            saccade_percentage_right = np.sum(np.abs(right_angle) >= np.deg2rad(180-reward_angle)) / len(right_angle) * 100
+        elif experiment_type == "antisaccade":
+            saccade_percentage_left = np.sum(np.abs(left_angle) >= np.deg2rad(180-reward_angle)) / len(left_angle) * 100
+            saccade_percentage_right = np.sum(np.abs(right_angle) <= np.deg2rad(reward_angle)) / len(right_angle) * 100
+
         ax_polar_left.text(
             0.5,
             0.9 * np.max(counts_left),
@@ -378,6 +387,91 @@ def plot_left_right_angle(left_angle,right_angle,reward_angle=35,sessionname=Non
             color='black'
         )
 
+        # # Smooth KDE for left angles
+        # theta_dense = np.linspace(-np.pi, np.pi, 400)
+        # kde_left = gaussian_kde(left_angle, bw_method=0.15)  # adjust bw_method for smoothness
+        # density_left = kde_left(theta_dense)
+        # density_left_scaled = density_left * np.max(counts_left) / np.max(density_left)
+
+        # theta_closed = np.append(theta_dense, theta_dense[0])
+        # density_closed = np.append(density_left_scaled, density_left_scaled[0])
+
+        # ax_polar_left.plot(
+        #     theta_closed,
+        #     density_closed,
+        #     color="darkgreen",
+        #     linewidth=2,
+        #     label="KDE Smooth Curve"
+        # )
+        # # Smooth KDE for right angles
+        # kde_right = gaussian_kde(right_angle, bw_method=0.15)
+        # density_right = kde_right(theta_dense)
+        # density_right_scaled = density_right * np.max(counts_right) / np.max(density_right)
+
+        # theta_closed = np.append(theta_dense, theta_dense[0])
+        # density_closed = np.append(density_right_scaled, density_right_scaled[0])
+
+        # ax_polar_right.plot(
+        #     theta_closed,
+        #     density_closed,
+        #     color='purple',
+        #     linewidth=2,
+        #     label='KDE Smooth Curve'
+        # )
+
+        ## Plot the von mises kde for left and right angles
+        kappa = 12
+        theta_dense = np.linspace(-np.pi, np.pi, 200)
+        kernels_left = np.array([vonmises.pdf(theta_dense, kappa, loc=a) for a in left_angle])
+        density_left = kernels_left.sum(axis=0)
+        density_left_scaled = density_left * np.max(counts_left) / np.max(density_left)
+        # Wrap around for circular plot
+        theta_left_closed = np.append(theta_dense, theta_dense[0])
+        density_left_closed = np.append(density_left_scaled, density_left_scaled[0])
+        ax_polar_left.plot(
+            theta_left_closed,
+            density_left_closed,
+            color="darkgreen",
+            linewidth=2,
+            label="Von Mises KDE"
+        )
+        kernels_right = np.array([vonmises.pdf(theta_dense, kappa, loc=a) for a in right_angle])
+        density_right = kernels_right.sum(axis=0)
+        density_right_scaled = density_right * np.max(counts_right) / np.max(density_right)
+        # Wrap around for circular plot
+        theta_right_closed = np.append(theta_dense, theta_dense[0])
+        density_right_closed = np.append(density_right_scaled, density_right_scaled[0])
+        ax_polar_right.plot(
+            theta_right_closed,
+            density_right_closed,
+            color="purple",
+            linewidth=2,
+            label="Von Mises KDE"
+        )
+
+
+        # bin_centers_left = (bins_left[:-1] + bins_left[1:]) / 2
+        # theta_left_closed = np.append(bin_centers_left, bin_centers_left[0])
+        # counts_left_closed = np.append(counts_left, counts_left[0])
+        # ax_polar_left.plot(
+        #     theta_left_closed,
+        #     counts_left_closed,
+        #     color='darkgreen',
+        #     linewidth=2,
+        #     label='Histogram Curve'
+        # )
+
+        # # For RIGHT angles: Plot line connecting histogram bins (with wrap around)
+        # bin_centers_right = (bins_right[:-1] + bins_right[1:]) / 2
+        # theta_right_closed = np.append(bin_centers_right, bin_centers_right[0])
+        # counts_right_closed = np.append(counts_right, counts_right[0])
+        # ax_polar_right.plot(
+        #     theta_right_closed,
+        #     counts_right_closed,
+        #     color='purple',
+        #     linewidth=2,
+        #     label='Histogram Curve'
+        # )
         # ax_polar_left.set_ylim(0, np.max([np.max(counts_left), 0.4]))
         # ax_polar_right.set_ylim(0, np.max([np.max(counts_right), 0.4]))
 
