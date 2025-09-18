@@ -11,6 +11,8 @@ import numpy as np
 from matplotlib import cm, gridspec
 from matplotlib.patches import FancyArrowPatch
 from scipy.signal import medfilt
+from scipy.stats import circmean, circstd
+from scipy.stats import gaussian_kde,vonmises
 from itertools import cycle
 
 from utils.session_loader import SessionConfig
@@ -261,6 +263,227 @@ def organize_stims(
     return stim_frames, stim_type
 
 
+#### Dirty fixes TODO
+def plot_left_right_angle(left_angle,right_angle,reward_angle=35,sessionname=None,resultdir=None,experiment_type="prosaccade"):
+        fig, (ax_polar_left, ax_polar_right) = plt.subplots(1, 2, subplot_kw={'projection': 'polar'}, figsize=(15, 6))
+        counts_left, bins_left = np.histogram(left_angle, bins=18, range=(-np.pi, np.pi))
+        counts_right, bins_right = np.histogram(right_angle, bins=18, range=(-np.pi, np.pi))
+    # Normalize the histograms
+        counts_left = counts_left / np.size(left_angle)
+        counts_right = counts_right / np.size(right_angle)
+        ax_polar_left.bar( 
+            bins_left[:-1],
+            counts_left,
+            width=np.diff(bins_left),
+            align="edge",
+            #bottom=0.0,
+            color='green',
+            alpha=0.5,
+            label='Left Trials'
+        )
+        ax_polar_right.bar(
+            bins_right[:-1],
+            counts_right,
+            width=np.diff(bins_right),
+            align="edge",
+            #bottom=0.0,
+            color='pink',
+            alpha=0.5,
+            label='Right Trials'
+        )
+## Plot the von mises fit for both left and right angles
+
+        
+
+        ax_polar_left.set_yticklabels([])
+        ax_polar_right.set_yticklabels([])
+        ax_polar_left.yaxis.grid(False)
+        ax_polar_right.yaxis.grid(False)
+        ax_polar_left.set_thetagrids([0,90,180,270], labels=['0°','90°','180°','270°'])
+        ax_polar_right.set_thetagrids([0,90,180,270], labels=['0°','90°','180°','270°'])
+
+        # Plot the reward zone
+        #reward_angle = reward_angle  # This should be extracted from the config
+        if experiment_type == "prosaccade":
+            reward_zone_left = np.deg2rad(np.arange(-reward_angle, reward_angle, 1))
+            reward_zone_right = np.deg2rad(np.arange(180 - reward_angle, 180 + reward_angle, 1))
+        elif experiment_type == "antisaccade":
+            reward_zone_left = np.deg2rad(np.arange(180 - reward_angle, 180 + reward_angle, 1))
+            reward_zone_right = np.deg2rad(np.arange(-reward_angle, reward_angle, 1))
+        ax_polar_left.fill_between(
+            reward_zone_left,
+            0,
+            np.max(counts_left),
+            color="yellow",
+            alpha=0.15,
+            label="Reward Zone",
+        )
+        ax_polar_right.fill_between(
+            reward_zone_right,
+            0,
+            np.max(counts_right),
+            color="yellow",
+            alpha=0.15,
+            label="Reward Zone",
+        )
+
+        # Plot the circular mean
+        mean_left_angle = circmean(left_angle, high=np.pi, low=-np.pi)
+        mean_left_angle_in_deg = np.rad2deg(mean_left_angle)
+        if mean_left_angle_in_deg < 0:
+            mean_left_angle_in_deg += 360
+        mean_right_angle = circmean(right_angle, high=np.pi, low=-np.pi)
+        mean_right_angle_in_deg = np.rad2deg(mean_right_angle)
+        if mean_right_angle_in_deg < 0:
+            mean_right_angle_in_deg += 360
+        std_left_angle = circstd(left_angle, high=np.pi, low=-np.pi)
+        std_right_angle = circstd(right_angle, high=np.pi, low=-np.pi)
+        ax_polar_left.plot(
+            [mean_left_angle, mean_left_angle],
+            [0, np.max(counts_left)],
+            color="black",
+            linestyle="--",
+            linewidth=1,
+            label=f"Mean: {mean_left_angle_in_deg:.1f}° ± {np.rad2deg(std_left_angle):.1f}°"
+        )
+        ax_polar_right.plot(
+            [mean_right_angle, mean_right_angle],
+            [0, np.max(counts_right)],
+            color="black",
+            linestyle="--",
+            linewidth=1,
+            label=f"Mean: {mean_right_angle_in_deg:.1f}° ± {np.rad2deg(std_right_angle):.1f}°"
+        )
+
+        ax_polar_left.legend(loc='upper right', fontsize='small')
+        ax_polar_right.legend(loc='upper right', fontsize='small')
+
+        ## print the saccade percentage on the plot
+        if experiment_type == "prosaccade":
+            saccade_percentage_left = np.sum(np.abs(left_angle) <= np.deg2rad(reward_angle)) / len(left_angle) * 100
+            saccade_percentage_right = np.sum(np.abs(right_angle) >= np.deg2rad(180-reward_angle)) / len(right_angle) * 100
+        elif experiment_type == "antisaccade":
+            saccade_percentage_left = np.sum(np.abs(left_angle) >= np.deg2rad(180-reward_angle)) / len(left_angle) * 100
+            saccade_percentage_right = np.sum(np.abs(right_angle) <= np.deg2rad(reward_angle)) / len(right_angle) * 100
+
+        ax_polar_left.text(
+            0.5,
+            0.9 * np.max(counts_left),
+            f"Saccades in the rewarded direction: {saccade_percentage_left:.1f}%",
+            horizontalalignment="center",
+            verticalalignment="top",
+            transform=ax_polar_left.transAxes,
+            fontsize='small',
+            color='black'
+        )
+        ax_polar_right.text(
+            0.5,
+            0.9 * np.max(counts_right),
+            f"Saccades in the rewarded direction: {saccade_percentage_right:.1f}%",
+            horizontalalignment="center",
+            verticalalignment="top",
+            transform=ax_polar_right.transAxes,
+            fontsize='small',
+            color='black'
+        )
+
+        # # Smooth KDE for left angles
+        # theta_dense = np.linspace(-np.pi, np.pi, 400)
+        # kde_left = gaussian_kde(left_angle, bw_method=0.15)  # adjust bw_method for smoothness
+        # density_left = kde_left(theta_dense)
+        # density_left_scaled = density_left * np.max(counts_left) / np.max(density_left)
+
+        # theta_closed = np.append(theta_dense, theta_dense[0])
+        # density_closed = np.append(density_left_scaled, density_left_scaled[0])
+
+        # ax_polar_left.plot(
+        #     theta_closed,
+        #     density_closed,
+        #     color="darkgreen",
+        #     linewidth=2,
+        #     label="KDE Smooth Curve"
+        # )
+        # # Smooth KDE for right angles
+        # kde_right = gaussian_kde(right_angle, bw_method=0.15)
+        # density_right = kde_right(theta_dense)
+        # density_right_scaled = density_right * np.max(counts_right) / np.max(density_right)
+
+        # theta_closed = np.append(theta_dense, theta_dense[0])
+        # density_closed = np.append(density_right_scaled, density_right_scaled[0])
+
+        # ax_polar_right.plot(
+        #     theta_closed,
+        #     density_closed,
+        #     color='purple',
+        #     linewidth=2,
+        #     label='KDE Smooth Curve'
+        # )
+
+        ## Plot the von mises kde for left and right angles
+        kappa = 12
+        theta_dense = np.linspace(-np.pi, np.pi, 200)
+        kernels_left = np.array([vonmises.pdf(theta_dense, kappa, loc=a) for a in left_angle])
+        density_left = kernels_left.sum(axis=0)
+        density_left_scaled = density_left * np.max(counts_left) / np.max(density_left)
+        # Wrap around for circular plot
+        theta_left_closed = np.append(theta_dense, theta_dense[0])
+        density_left_closed = np.append(density_left_scaled, density_left_scaled[0])
+        ax_polar_left.plot(
+            theta_left_closed,
+            density_left_closed,
+            color="darkgreen",
+            linewidth=2,
+            label="Von Mises KDE"
+        )
+        kernels_right = np.array([vonmises.pdf(theta_dense, kappa, loc=a) for a in right_angle])
+        density_right = kernels_right.sum(axis=0)
+        density_right_scaled = density_right * np.max(counts_right) / np.max(density_right)
+        # Wrap around for circular plot
+        theta_right_closed = np.append(theta_dense, theta_dense[0])
+        density_right_closed = np.append(density_right_scaled, density_right_scaled[0])
+        ax_polar_right.plot(
+            theta_right_closed,
+            density_right_closed,
+            color="purple",
+            linewidth=2,
+            label="Von Mises KDE"
+        )
+
+
+        # bin_centers_left = (bins_left[:-1] + bins_left[1:]) / 2
+        # theta_left_closed = np.append(bin_centers_left, bin_centers_left[0])
+        # counts_left_closed = np.append(counts_left, counts_left[0])
+        # ax_polar_left.plot(
+        #     theta_left_closed,
+        #     counts_left_closed,
+        #     color='darkgreen',
+        #     linewidth=2,
+        #     label='Histogram Curve'
+        # )
+
+        # # For RIGHT angles: Plot line connecting histogram bins (with wrap around)
+        # bin_centers_right = (bins_right[:-1] + bins_right[1:]) / 2
+        # theta_right_closed = np.append(bin_centers_right, bin_centers_right[0])
+        # counts_right_closed = np.append(counts_right, counts_right[0])
+        # ax_polar_right.plot(
+        #     theta_right_closed,
+        #     counts_right_closed,
+        #     color='purple',
+        #     linewidth=2,
+        #     label='Histogram Curve'
+        # )
+        # ax_polar_left.set_ylim(0, np.max([np.max(counts_left), 0.4]))
+        # ax_polar_right.set_ylim(0, np.max([np.max(counts_right), 0.4]))
+
+        fig.tight_layout()
+        cond_fname_png = f"{sessionname}_prosaccade_left_right.png"
+        cond_fname_svg = f"{sessionname}_prosaccade_left_right.svg"
+        fig.savefig(resultdir / cond_fname_png, dpi=300, bbox_inches="tight")
+        fig.savefig(resultdir / cond_fname_svg, dpi=300, bbox_inches="tight")
+        plt.show()
+        plt.close(fig)
+
+
 def sort_saccades(
     config: SessionConfig,
     saccade_config: SaccadeConfig,
@@ -495,14 +718,27 @@ def sort_saccades(
                 ax_t.set_xlim(-15, 15)
 
             fig.tight_layout()
-            cond_fname = f"{session_name}_{eye_name}_{label}_{stim_type}.png"
+            cond_fname = f"{config.session_name}_{eye_name}_{label}_{stim_type}.png"
             fig.savefig(config.results_dir / cond_fname, dpi=300, bbox_inches="tight")
             plt.show()
             plt.close(fig)
 
+
+
+    if plot: # Little dirty hack to produce figure for the talk
+        left_angle = np.arctan2(dy[sorted_data["Left"]], dx[sorted_data["Left"]])
+        right_angle = np.arctan2(dy[sorted_data["Right"]], dx[sorted_data["Right"]])
+        reward_angle = config.reward_contingency["reward_angle"]
+        plot_left_right_angle(left_angle, right_angle, reward_angle=reward_angle,sessionname=config.session_name,resultdir=config.results_dir,experiment_type=config.experiment_type)
+
+
     if plot:
-        return sorted_data, fig_all, (ax_quiver, ax_polar, ax_linear)
+        return sorted_data,left_angle,right_angle, fig_all, (ax_quiver, ax_polar, ax_linear)
     return sorted_data
+
+
+
+
 
 
 def plot_eye_fixations_between_cue_and_go_by_trial(

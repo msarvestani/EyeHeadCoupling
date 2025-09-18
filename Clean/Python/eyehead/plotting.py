@@ -44,8 +44,29 @@ def plot_angle_distribution(angle: np.ndarray, ax_polar: plt.Axes, num_bins: int
     counts = counts / np.size(angle_2pi)
     width = np.diff(bin_edges)
     ax_polar.bar(bin_edges[:-1], counts, width=width, align="edge", color="b", alpha=0.5, edgecolor="k")
+    ## Plot the von mises kde for the angles
+    from scipy.stats import vonmises
+    kappa = 12
+    theta_dense = np.linspace(0, 2 * np.pi, 200)
+    kernels = np.array([vonmises.pdf(theta_dense, kappa, loc=a) for a in angle_2pi])
+
+    density = kernels.sum(axis=0)
+
+    density_scaled = density * np.max(counts) / np.max(density)
+    # Wrap around for circular plot
+    theta_closed = np.append(theta_dense, theta_dense[0])
+    density_closed = np.append(density_scaled, density_scaled[0])
+    ax_polar.plot(theta_closed, density_closed, color="r", lw=2)
+    ## Probability of looking right vs left in the 35 degree window (right is 35 degree to 0 and 325 to 360, left is 145 to 215)
+    right_prob = np.sum(counts[(bin_edges[:-1] >= 0) & (bin_edges[:-1] < np.radians(35))]) + np.sum(counts[(bin_edges[:-1] >= np.radians(325)) & (bin_edges[:-1] < 2 * np.pi)])
+    left_prob = np.sum(counts[(bin_edges[:-1] >= np.radians(145)) & (bin_edges[:-1] < np.radians(215))])
+    ## Print on the plot
+    ax_polar.text(0, 0.5, f"Right: {right_prob:.2f}\nLeft: {left_prob:.2f}", ha="center", va="center", fontsize=10, bbox=dict(facecolor='white', alpha=0.8, edgecolor='k'))
+
     ax_polar.set_title("Normalized angle distribution")
     ax_polar.set_yticklabels([])
+    ax_polar.yaxis.grid(False)
+    
 
 
 def plot_linear_histogram(angles: np.ndarray, ax: plt.Axes, num_bins: int = 18) -> None:
