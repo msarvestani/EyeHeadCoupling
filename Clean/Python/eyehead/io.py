@@ -155,6 +155,15 @@ def load_session_data(config: SessionConfig) -> SessionData:
                 raise FileNotFoundError(f"Required file matching '{name}' not found in {folder}")
             return None
         cleaned = clean_csv(str(file_path))
+        contents = cleaned.getvalue()
+        lines = [line for line in contents.splitlines() if line.strip()]
+        if not lines or len(lines) == 1:
+            if required:
+                raise ValueError(
+                    f"Required file '{file_path.name}' is empty or only contains a header"
+                )
+            return None
+        cleaned.seek(0)
         return np.genfromtxt(cleaned, delimiter=",", skip_header=1)
 
     data.camera = _load_csv("camera")
