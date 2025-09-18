@@ -761,6 +761,7 @@ def plot_eye_fixations_between_cue_and_go_by_trial(
     eye_name: str = "Eye",
     *,
     plot: bool = False,
+    use_synthetic_go: bool = False,
 ) -> Tuple[
     np.ndarray,
     np.ndarray,
@@ -781,8 +782,12 @@ def plot_eye_fixations_between_cue_and_go_by_trial(
         Eye centre coordinates in degrees.
     eye_timestamp : array-like
         Timestamps for ``eye_pos``.
-    cue_frame, cue_time, go_frame, go_time : array-like
-        Frame numbers and timestamps of cue and go events.
+    cue_frame, cue_time : array-like
+        Frame numbers and timestamps of cue events.
+    go_frame, go_time : array-like
+        Frame numbers and timestamps of go events.  When ``use_synthetic_go``
+        is ``True`` these arrays are ignored and go events are interpolated
+        from consecutive cue samples (see below).
     max_interval_s : float, default 1.0
         Maximum allowed cue→go interval for a trial to be considered valid.
     color_all, s_all, alpha_all :
@@ -800,6 +805,11 @@ def plot_eye_fixations_between_cue_and_go_by_trial(
     plot : bool, default ``False``
         When ``True``, generate a scatter plot and return figure and axes
         handles.
+    use_synthetic_go : bool, default ``False``
+        If ``True``, derive go timestamps from cue samples assuming go occurs
+        120 frames before the next cue.  A linear cue frame→time relationship
+        is computed from each cue and its successor to determine the
+        interpolated go time.
 
     Returns
     -------
@@ -819,10 +829,62 @@ def plot_eye_fixations_between_cue_and_go_by_trial(
     eye_ts = np.asarray(eye_timestamp).ravel()
     eye_x = np.asarray(eye_pos[:, 0]).ravel()
     eye_y = np.asarray(eye_pos[:, 1]).ravel()
-    cue_frame = np.asarray(cue_frame).astype(int).ravel()
-    cue_time = np.asarray(cue_time).astype(float).ravel()
-    go_frame = np.asarray(go_frame).astype(int).ravel()
-    go_time = np.asarray(go_time).astype(float).ravel()
+    cue_frame_arr = np.asarray(cue_frame, dtype=float).ravel()
+    cue_time_arr = np.asarray(cue_time, dtype=float).ravel()
+    go_frame_arr = np.asarray(go_frame, dtype=float).ravel()
+    go_time_arr = np.asarray(go_time, dtype=float).ravel()
+
+    if use_synthetic_go:
+        offset_frames = 120.0
+        synth_cue_frame: list[float] = []
+        synth_cue_time: list[float] = []
+        synth_go_frame: list[float] = []
+        synth_go_time: list[float] = []
+        # Estimate go events by assuming a linear relationship between frames
+        # and timestamps for consecutive cues, then stepping 120 frames back
+        # from the successor cue time.
+        for idx in range(len(cue_frame_arr) - 1):
+            cf = cue_frame_arr[idx]
+            ct = cue_time_arr[idx]
+            nf = cue_frame_arr[idx + 1]
+            nt = cue_time_arr[idx + 1]
+            if not (
+                np.isfinite(cf)
+                and np.isfinite(ct)
+                and np.isfinite(nf)
+                and np.isfinite(nt)
+            ):
+                continue
+            frame_delta = nf - cf
+            if frame_delta <= 0:
+                continue
+            slope = (nt - ct) / frame_delta
+            if not np.isfinite(slope):
+                continue
+            go_frame_val = nf - offset_frames
+            go_time_val = nt - slope * offset_frames
+            if not np.isfinite(go_time_val):
+                continue
+            synth_cue_frame.append(cf)
+            synth_cue_time.append(ct)
+            synth_go_frame.append(go_frame_val)
+            synth_go_time.append(go_time_val)
+        cue_frame_arr = np.asarray(synth_cue_frame, dtype=float)
+        cue_time_arr = np.asarray(synth_cue_time, dtype=float)
+        go_frame_arr = np.asarray(synth_go_frame, dtype=float)
+        go_time_arr = np.asarray(synth_go_time, dtype=float)
+    else:
+        go_valid = np.isfinite(go_frame_arr) & np.isfinite(go_time_arr)
+        go_frame_arr = go_frame_arr[go_valid]
+        go_time_arr = go_time_arr[go_valid]
+
+    cue_valid = np.isfinite(cue_frame_arr) & np.isfinite(cue_time_arr)
+    cue_frame = np.rint(cue_frame_arr[cue_valid]).astype(int, copy=False)
+    cue_time = cue_time_arr[cue_valid].astype(float, copy=False)
+
+    go_valid = np.isfinite(go_frame_arr) & np.isfinite(go_time_arr)
+    go_frame = np.rint(go_frame_arr[go_valid]).astype(int, copy=False)
+    go_time = go_time_arr[go_valid].astype(float, copy=False)
 
     ci = np.argsort(cue_time)
     cue_time, cue_frame = cue_time[ci], cue_frame[ci]
