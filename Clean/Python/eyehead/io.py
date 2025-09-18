@@ -161,13 +161,17 @@ def load_session_data(config: SessionConfig) -> SessionData:
     data.go = _load_csv("go")
 
     if data.go is not None:
-        data.go_frame = data.go[:, 0].astype(int)
-        data.go_time = data.go[:, 1]
-        data.go_direction_x = data.go[:, 2]
-        data.go_direction_y = data.go[:, 3]
-        # Optional: combined direction if present
-        if data.go.shape[1] > 4:
-            data.go_direction = data.go[:, 4]
+        if data.go.size == 0 or data.go.ndim < 2:
+            # Handle empty GO files written without any samples like missing data.
+            data.go = None
+        else:
+            data.go_frame = data.go[:, 0].astype(int)
+            data.go_time = data.go[:, 1]
+            data.go_direction_x = data.go[:, 2]
+            data.go_direction_y = data.go[:, 3]
+            # Optional: combined direction if present
+            if data.go.shape[1] > 4:
+                data.go_direction = data.go[:, 4]
 
     data.ellipse_center_xy = _load_csv("ellipse_center_xy", required=True, per_eye=True)
     if data.ellipse_center_xy is not None:
