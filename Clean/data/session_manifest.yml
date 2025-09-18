@@ -339,3 +339,48 @@ sessions:
     params:
       saccade_config:
         saccade_threshold: 1.0
+
+ session_24:
+    experiment_type: antisaccade
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-09-09T15_43_12
+    date: 2025-09-09
+    animal_name: Paris
+    animal_id: Tsh001
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+    reward_contingency:
+      reward_angle: 35
+      reward_window: 1
+    params:
+      saccade_config:
+        saccade_threshold: 1.0
+
+ session_25:
+    experiment_type: antisaccade
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-09-17T15_26_24
+    date: 2025-09-17
+    animal_name: Paris
+    animal_id: Tsh001
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+    reward_contingency:
+      reward_angle: 35
+      reward_window: 1
+    params:
+      saccade_config:
+        saccade_threshold: 1.0
+
+ session_26:
+    experiment_type: fixation
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh02_Apollo_server\Tsh002_2025-09-05T10_59_22
+    date: 2025-09-05
+    animal_name: Apollo
+    animal_id: Tsh002
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+    params:
+      saccade_config:
+        saccade_threshold: 1.0
