@@ -56,16 +56,17 @@ def main(session_id: str) -> pd.DataFrame:
 
     go_frame = data.go_frame
     go_time = data.go_time
-    use_synthetic_go = False
-    if go_frame is None or go_time is None:
-        use_synthetic_go = True
-    else:
-        if np.asarray(go_frame).size == 0 or np.asarray(go_time).size == 0:
-            use_synthetic_go = True
+
+    def _is_missing(samples) -> bool:
+        if samples is None:
+            return True
+        return np.asarray(samples).size == 0
+
+    use_synthetic_go = _is_missing(go_frame) or _is_missing(go_time)
 
     if use_synthetic_go:
-        go_frame = np.empty(0, dtype=float)
-        go_time = np.empty(0, dtype=float)
+        go_frame = np.array([], dtype=float)
+        go_time = np.array([], dtype=float)
 
     (
         pairs_cf,
