@@ -68,7 +68,7 @@ def main(session_id: str) -> pd.DataFrame:
         results_dir=config.results_dir,
         animal_id=config.animal_id,
         eye_name=config.eye_name,
-        plot=False,
+        plot=True,
     )
     plt.show()
     if fig_pairs is not None:

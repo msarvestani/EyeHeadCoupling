@@ -84,6 +84,7 @@ sessions:
         saccade_threshold: 1.0
 
  session_08:
+
     experiment_type: prosaccade
     session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-07-08T15_04_12
     date: 2025-07-08
