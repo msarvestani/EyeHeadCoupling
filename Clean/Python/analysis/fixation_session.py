@@ -54,21 +54,42 @@ def main(session_id: str) -> pd.DataFrame:
         plt.close(fig_saccades)
 
 
-    ( pairs_cf,pairs_gf,pairs_ct,pairs_gt,
-        pairs_dt,valid_trials,fig_pairs,_,
+    go_frame = data.go_frame
+    go_time = data.go_time
+    use_synthetic_go = False
+    if go_frame is None or go_time is None:
+        use_synthetic_go = True
+    else:
+        if np.asarray(go_frame).size == 0 or np.asarray(go_time).size == 0:
+            use_synthetic_go = True
+
+    if use_synthetic_go:
+        go_frame = np.empty(0, dtype=float)
+        go_time = np.empty(0, dtype=float)
+
+    (
+        pairs_cf,
+        pairs_gf,
+        pairs_ct,
+        pairs_gt,
+        pairs_dt,
+        valid_trials,
+        fig_pairs,
+        _,
     ) = plot_eye_fixations_between_cue_and_go_by_trial(
         eye_frame=data.eye_frame,
         eye_pos=saccades["eye_pos"],
         eye_timestamp=data.eye_timestamp,
         cue_frame=data.cue_frame,
         cue_time=data.cue_time,
-        go_frame=data.go_frame,
-        go_time=data.go_time,
+        go_frame=go_frame,
+        go_time=go_time,
         max_interval_s=1,
         results_dir=config.results_dir,
         animal_id=config.animal_id,
         eye_name=config.eye_name,
         plot=True,
+        use_synthetic_go=use_synthetic_go,
     )
     plt.show()
     if fig_pairs is not None:
