@@ -831,8 +831,6 @@ def plot_eye_fixations_between_cue_and_go_by_trial(
     eye_y = np.asarray(eye_pos[:, 1]).ravel()
     cue_frame_arr = np.asarray(cue_frame, dtype=float).ravel()
     cue_time_arr = np.asarray(cue_time, dtype=float).ravel()
-    go_frame_arr = np.asarray(go_frame, dtype=float).ravel()
-    go_time_arr = np.asarray(go_time, dtype=float).ravel()
 
     if use_synthetic_go:
         offset_frames = 120.0
@@ -869,11 +867,13 @@ def plot_eye_fixations_between_cue_and_go_by_trial(
             synth_cue_time.append(ct)
             synth_go_frame.append(go_frame_val)
             synth_go_time.append(go_time_val)
-        cue_frame_arr = np.asarray(synth_cue_frame, dtype=float)
-        cue_time_arr = np.asarray(synth_cue_time, dtype=float)
-        go_frame_arr = np.asarray(synth_go_frame, dtype=float)
-        go_time_arr = np.asarray(synth_go_time, dtype=float)
+        cue_frame_arr = np.asarray(synth_cue_frame, dtype=float).ravel()
+        cue_time_arr = np.asarray(synth_cue_time, dtype=float).ravel()
+        go_frame_arr = np.asarray(synth_go_frame, dtype=float).ravel()
+        go_time_arr = np.asarray(synth_go_time, dtype=float).ravel()
     else:
+        go_frame_arr = np.asarray(go_frame, dtype=float).ravel()
+        go_time_arr = np.asarray(go_time, dtype=float).ravel()
         go_valid = np.isfinite(go_frame_arr) & np.isfinite(go_time_arr)
         go_frame_arr = go_frame_arr[go_valid]
         go_time_arr = go_time_arr[go_valid]
