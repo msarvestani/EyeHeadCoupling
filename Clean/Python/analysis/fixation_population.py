@@ -7,6 +7,7 @@ for each one.
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 
@@ -21,13 +22,33 @@ import yaml
 
 from analysis import fixation_session
 from analysis.fixation_session import main
-from utils.session_loader import list_sessions_from_manifest
+from utils.session_loader import list_sessions_from_manifest, load_session
 
 assert main is fixation_session.main
 
 
-def analyze_all_sessions(experiment_type: str = "fixation") -> pd.DataFrame:
+def _animal_suffix(animal_name: str | None) -> str:
+    """Return a filesystem-friendly suffix for ``animal_name``."""
+
+    if not animal_name:
+        return ""
+
+    safe_name = re.sub(r"[^0-9A-Za-z_-]+", "_", animal_name.strip())
+    safe_name = safe_name.strip("_")
+    return f"_{safe_name}" if safe_name else ""
+
+
+def analyze_all_sessions(
+    experiment_type: str = "fixation", animal_name: str | None = None
+) -> pd.DataFrame:
     """Run fixation analysis on all sessions of ``experiment_type``.
+
+    Parameters
+    ----------
+    experiment_type:
+        Experiment type used to select sessions from the manifest.
+    animal_name:
+        Optional animal name used to further restrict the manifest lookup.
 
     Returns
     -------
@@ -37,9 +58,15 @@ def analyze_all_sessions(experiment_type: str = "fixation") -> pd.DataFrame:
     """
     tables: list[pd.DataFrame] = []
     for session_id in list_sessions_from_manifest(
-        experiment_type, match_prefix=True
+        experiment_type, match_prefix=True, animal_name=animal_name
     ):
         session_df = fixation_session.main(session_id)
+
+        if "animal_name" not in session_df.columns or session_df["animal_name"].isna().all():
+            session_cfg = load_session(session_id)
+            session_df = session_df.copy()
+            session_df["animal_name"] = session_cfg.animal_name
+
         tables.append(session_df)
 
     if not tables:
@@ -47,7 +74,9 @@ def analyze_all_sessions(experiment_type: str = "fixation") -> pd.DataFrame:
     return pd.concat(tables, ignore_index=True)
 
 
-def plot_metric_trends(df: pd.DataFrame, save_dir: Path) -> None:
+def plot_metric_trends(
+    df: pd.DataFrame, save_dir: Path, *, animal_name: str | None = None
+) -> None:
     """Plot fixation metrics across sessions with a consistent colour scheme.
 
     Sessions are ordered by recording date and assigned colours from a
@@ -60,6 +89,8 @@ def plot_metric_trends(df: pd.DataFrame, save_dir: Path) -> None:
         Aggregated fixation metrics for all sessions.
     save_dir:
         Directory where the plot images will be written.
+    animal_name:
+        Optional animal name used to annotate saved plots and filenames.
     """
 
     if df.empty:
@@ -99,6 +130,8 @@ def plot_metric_trends(df: pd.DataFrame, save_dir: Path) -> None:
             "fixation_net_drift_trend",
         ),
     ]
+
+    suffix = _animal_suffix(animal_name)
 
     for fix_col, fix_sem_col, rand_col, rand_sem_col, ylabel, fname in metrics:
         if fix_col not in data or rand_col not in data:
@@ -142,6 +175,8 @@ def plot_metric_trends(df: pd.DataFrame, save_dir: Path) -> None:
             color="tab:orange",
             label="Random",
         )
+        title_suffix = f" ({animal_name})" if animal_name else ""
+        ax.set_title(f"{ylabel} by session{title_suffix}")
         ax.set_xlabel("Session (earlier → later)")
         ax.set_ylabel(ylabel)
 
@@ -153,8 +188,8 @@ def plot_metric_trends(df: pd.DataFrame, save_dir: Path) -> None:
         ax.legend()
 
         fig.tight_layout()
-        fig.savefig(save_dir / f"{fname}.png", bbox_inches="tight")
-        fig.savefig(save_dir / f"{fname}.svg", bbox_inches="tight")
+        fig.savefig(save_dir / f"{fname}{suffix}.png", bbox_inches="tight")
+        fig.savefig(save_dir / f"{fname}{suffix}.svg", bbox_inches="tight")
         plt.close(fig)
 
 
@@ -167,8 +202,15 @@ if __name__ == "__main__":
         default="fixation",
         help="Experiment type to process",
     )
+    parser.add_argument(
+        "--animal-name",
+        default=None,
+        help="Optional animal name to filter sessions",
+    )
     args = parser.parse_args()
-    aggregated = analyze_all_sessions(args.experiment_type)
+    aggregated = analyze_all_sessions(
+        args.experiment_type, animal_name=args.animal_name
+    )
     root_dir = Path(__file__).resolve().parents[2]
     manifest_path = root_dir / "data" / "session_manifest.yml"
     try:
@@ -178,7 +220,12 @@ if __name__ == "__main__":
         manifest = {}
     results_root = Path(manifest.get("results_root", root_dir))
     results_root.mkdir(parents=True, exist_ok=True)
+    suffix = _animal_suffix(args.animal_name)
     aggregated.to_csv(
-        results_root / "fixation_population_results.csv", index=False
+        results_root / f"fixation_population_results{suffix}.csv", index=False
     )
-    plot_metric_trends(aggregated, results_root)
+    plot_metric_trends(
+        aggregated,
+        results_root,
+        animal_name=args.animal_name,
+    )

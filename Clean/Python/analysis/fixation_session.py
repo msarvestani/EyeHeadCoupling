@@ -105,6 +105,7 @@ def main(session_id: str) -> pd.DataFrame:
     df = pd.DataFrame(
         {
             "session_id": [session_id],
+            "animal_name": [config.animal_name],
             "session_date": [date_str],
             "mean_step_fix": [ms_fix],
             "mean_step_fix_sem": [se_fix],

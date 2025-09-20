@@ -295,8 +295,23 @@ def organize_stims(
 
 
 #### Dirty fixes TODO
-def plot_left_right_angle(left_angle,right_angle,reward_angle=35,sessionname=None,resultdir=None,experiment_type="prosaccade"):
+def plot_left_right_angle(left_angle,right_angle,reward_angle=35,sessionname=None,resultdir=None,experiment_type="prosaccade",animal_name=None):
         fig, (ax_polar_left, ax_polar_right) = plt.subplots(1, 2, subplot_kw={'projection': 'polar'}, figsize=(15, 6))
+        context_parts = []
+        if sessionname:
+            context_parts.append(str(sessionname))
+        if experiment_type:
+            context_parts.append(str(experiment_type))
+        context_label = " | ".join(context_parts)
+        animal_label = str(animal_name).strip() if animal_name is not None else ""
+        if animal_label:
+            if context_label:
+                suptitle = f"{context_label} – Animal: {animal_label}"
+            else:
+                suptitle = f"Animal: {animal_label}"
+            fig.suptitle(suptitle)
+        elif context_label:
+            fig.suptitle(context_label)
         counts_left, bins_left = np.histogram(left_angle, bins=18, range=(-np.pi, np.pi))
         counts_right, bins_right = np.histogram(right_angle, bins=18, range=(-np.pi, np.pi))
     # Normalize the histograms
@@ -506,7 +521,7 @@ def plot_left_right_angle(left_angle,right_angle,reward_angle=35,sessionname=Non
         # ax_polar_left.set_ylim(0, np.max([np.max(counts_left), 0.4]))
         # ax_polar_right.set_ylim(0, np.max([np.max(counts_right), 0.4]))
 
-        fig.tight_layout()
+        fig.tight_layout(rect=[0, 0.03, 1, 0.95])
         cond_fname_png = f"{sessionname}_prosaccade_left_right.png"
         cond_fname_svg = f"{sessionname}_prosaccade_left_right.svg"
         fig.savefig(resultdir / cond_fname_png, dpi=300, bbox_inches="tight")
@@ -772,6 +787,7 @@ def sort_saccades(
             sessionname=session_name_with_animal,
             resultdir=config.results_dir,
             experiment_type=config.experiment_type,
+
         )
 
 
