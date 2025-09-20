@@ -194,27 +194,33 @@ def list_sessions_by_type(experiment_type: str) -> List[str]:
 
 
 def list_sessions_from_manifest(
-    experiment_type: str, match_prefix: bool = False
+    experiment_type: Optional[str] = None,
+    *,
+    match_prefix: bool = False,
+    animal_name: Optional[str] = None,
 ) -> List[str]:
-    """Return session IDs of a given ``experiment_type`` from the manifest.
+    """Return session IDs from the manifest filtered by metadata.
 
     Parameters
     ----------
     experiment_type:
-        Type of experiment to filter sessions by. The value is compared
-        directly against the ``"experiment_type"`` field of each manifest
-        entry.
+        Optional experiment type to filter sessions by. When provided the
+        value is compared directly against the ``"experiment_type"`` field of
+        each manifest entry.
     match_prefix:
-        When ``True``, include sessions whose ``experiment_type`` begins with
-        ``experiment_type`` (case-insensitive).
+        When ``True`` and ``experiment_type`` is provided, include sessions whose
+        ``experiment_type`` begins with ``experiment_type`` (case-insensitive).
+    animal_name:
+        Optional animal name to filter sessions by. When provided, only
+        sessions whose manifest entry specifies the same ``"animal_name"`` (case
+        insensitive) are returned.
 
     Returns
     -------
     list of str
-        Sorted list of session identifiers whose ``experiment_type`` matches
-        ``experiment_type``. If ``match_prefix`` is ``True`` the comparison is
-        performed using :py:meth:`str.startswith`, allowing broader matches. If
-        the manifest file is missing or empty an empty list is returned.
+        Sorted list of session identifiers that satisfy the requested
+        filtering criteria. If the manifest file is missing or empty an empty
+        list is returned.
     """
 
     manifest_path = (
@@ -228,19 +234,32 @@ def list_sessions_from_manifest(
         return []
 
     sessions: Dict[str, Any] = manifest.get("sessions", manifest)
-    exp_type_lower = experiment_type.lower()
-    return sorted(
-        session_id
-        for session_id, meta in sessions.items()
-        if (
-            (meta_type := meta.get("experiment_type"))
-            and (
-                meta_type.lower().startswith(exp_type_lower)
-                if match_prefix
-                else meta_type == experiment_type
-            )
-        )
-    )
+    exp_type_lower = experiment_type.lower() if experiment_type else None
+    animal_name_lower = animal_name.lower() if animal_name else None
+
+    matched_sessions: List[str] = []
+    for session_id, meta in sessions.items():
+        if not isinstance(meta, dict):  # pragma: no cover - defensive
+            continue
+
+        if experiment_type:
+            meta_type = meta.get("experiment_type")
+            if not meta_type:
+                continue
+            if match_prefix:
+                if not meta_type.lower().startswith(exp_type_lower):
+                    continue
+            elif meta_type != experiment_type:
+                continue
+
+        if animal_name_lower is not None:
+            meta_animal = meta.get("animal_name")
+            if not meta_animal or meta_animal.lower() != animal_name_lower:
+                continue
+
+        matched_sessions.append(session_id)
+
+    return sorted(matched_sessions)
 
 
 __all__ = [

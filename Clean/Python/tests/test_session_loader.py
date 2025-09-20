@@ -30,3 +30,17 @@ def test_list_sessions_from_manifest_prefix_match() -> None:
     sessions = list_sessions_from_manifest("fixation", match_prefix=True)
     assert "session_01" in sessions
     assert "session_02" in sessions
+
+
+def test_list_sessions_from_manifest_filters_by_animal() -> None:
+    sessions = list_sessions_from_manifest(
+        "prosaccade", animal_name="Paris", match_prefix=True
+    )
+    assert "session_08" in sessions
+    assert "session_09" in sessions
+
+
+def test_list_sessions_from_manifest_animal_only_filter() -> None:
+    sessions = list_sessions_from_manifest(animal_name="Paris")
+    assert "session_01" in sessions
+    assert "session_13" in sessions
