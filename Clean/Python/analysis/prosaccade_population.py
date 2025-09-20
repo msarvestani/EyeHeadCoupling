@@ -21,40 +21,82 @@ import matplotlib.pyplot as plt
 
 from analysis import prosaccade_session
 from analysis.prosaccade_session import main
-from utils.session_loader import list_sessions_from_manifest,load_session
+from utils.session_loader import load_session, list_sessions_from_manifest
 
 assert main is prosaccade_session.main
 
 
-def analyze_all_sessions(experiment_type: str = "prosaccade") -> pd.DataFrame:
-    """Run prosaccade analysis on all sessions of ``experiment_type``.
+def analyze_all_sessions(
+    experiment_type: str | None = "prosaccade",
+    animal_name: str | None = None,
+):
+    """Run prosaccade analysis on sessions that match the provided filters.
+
+    Parameters
+    ----------
+    experiment_type:
+        Experiment type used to select sessions from the manifest. When ``None``
+        all experiment types are considered.
+    animal_name:
+        Optional animal name used to further restrict the manifest lookup.
 
     Returns
     -------
-    pd.DataFrame
-        Concatenated results from all processed sessions. If no sessions
-        are found, an empty :class:`~pandas.DataFrame` is returned.
+    tuple
+        A tuple containing the aggregated session table, lists of left and
+        right eye angles, dictionaries keyed by session date, and a set of the
+        unique animal names that were processed.
     """
+
     tables: list[pd.DataFrame] = []
     left_angle_all = []
     right_angle_all = []
-    left_angle_all_with_dates = {}  ## Dictionaries to hold the left and right angles with dates. TODO: Use these instead of the lists later
+    left_angle_all_with_dates = {}
     right_angle_all_with_dates = {}
-    
+    processed_animals: set[str] = set()
+
     for session_id in list_sessions_from_manifest(
-        experiment_type, match_prefix=True
+        experiment_type,
+        match_prefix=True,
+        animal_name=animal_name,
     ):
-        session_df,left_angle,right_angle = prosaccade_session.main(session_id)
+        session_df, left_angle, right_angle = prosaccade_session.main(session_id)
+        session_cfg = load_session(session_id)
+
+        session_df = session_df.copy()
+        session_df["animal_name"] = session_cfg.animal_name
+        if session_cfg.animal_name:
+            processed_animals.add(session_cfg.animal_name)
+
         tables.append(session_df)
         left_angle_all.append(left_angle)
         right_angle_all.append(right_angle)
-        date_str = session_df["session_date"].iloc[0] if "session_date" in session_df.columns else "unknown_date"
+        date_str = (
+            session_df["session_date"].iloc[0]
+            if "session_date" in session_df.columns
+            else "unknown_date"
+        )
         left_angle_all_with_dates[date_str] = left_angle
         right_angle_all_with_dates[date_str] = right_angle
 
     if not tables:
-        return pd.DataFrame()
-    return pd.concat(tables, ignore_index=True), left_angle_all, right_angle_all, left_angle_all_with_dates, right_angle_all_with_dates
+        return (
+            pd.DataFrame(),
+            left_angle_all,
+            right_angle_all,
+            left_angle_all_with_dates,
+            right_angle_all_with_dates,
+            processed_animals,
+        )
+
+    return (
+        pd.concat(tables, ignore_index=True),
+        left_angle_all,
+        right_angle_all,
+        left_angle_all_with_dates,
+        right_angle_all_with_dates,
+        processed_animals,
+    )
 
 def plot_prosaccade_trends_from_dictionary(left_angle_dict: dict, right_angle_dict: dict, experiment_type: str = "prosaccade") -> None:
 
@@ -108,8 +150,23 @@ if __name__ == "__main__":
         default="prosaccade",
         help="Experiment type to process",
     )
+    parser.add_argument(
+        "--animal-name",
+        default=None,
+        help="Optional animal name to filter sessions",
+    )
     args = parser.parse_args()
-    aggregated, left_angle_all, right_angle_all, left_angle_all_with_dates, right_angle_all_with_dates = analyze_all_sessions(args.experiment_type)
+    (
+        aggregated,
+        left_angle_all,
+        right_angle_all,
+        left_angle_all_with_dates,
+        right_angle_all_with_dates,
+        processed_animals,
+    ) = analyze_all_sessions(
+        args.experiment_type,
+        animal_name=args.animal_name,
+    )
     root_dir = Path(__file__).resolve().parents[2]
         
     manifest_path = root_dir / "data" / "session_manifest.yml"
