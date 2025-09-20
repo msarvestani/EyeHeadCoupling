@@ -20,9 +20,22 @@ from eyehead import (
 )
 
 
-def main(session_id: str) -> pd.DataFrame:
-    """Run the full analysis pipeline for ``session_id``."""
+def main(session_id: str, animal_name: str | None = None) -> pd.DataFrame:
+    """Run the full analysis pipeline for ``session_id``.
+
+    Parameters
+    ----------
+    session_id:
+        Identifier of the session to analyse.
+    animal_name:
+        Optional override for the animal label associated with the session.
+        When omitted, the value from the manifest (if present) is used.  The
+        resolved label is forwarded to downstream helpers so that generated
+        artefacts incorporate the animal tag in their filenames.
+    """
     config = load_session(session_id)
+    if animal_name is not None:
+        config.animal_name = animal_name or None
     config.results_dir.mkdir(parents=True, exist_ok=True)
 
     folder_path = config.folder_path
@@ -94,6 +107,12 @@ def main(session_id: str) -> pd.DataFrame:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Analyse a recorded session")
     parser.add_argument("session_id", help="Session identifier from session_manifest.yml")
+    parser.add_argument(
+        "--animal-name",
+        dest="animal_name",
+        default=None,
+        help="Optional override for the animal label used in generated artefacts.",
+    )
     args = parser.parse_args()
-    main(args.session_id)
+    main(args.session_id, animal_name=args.animal_name)
 

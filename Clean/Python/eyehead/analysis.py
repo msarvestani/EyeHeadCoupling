@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import warnings
 from dataclasses import dataclass
 from typing import Dict, Optional, Tuple
@@ -31,6 +32,35 @@ class SaccadeConfig:
     blink_threshold: float = 10.0
     blink_detection: int = 1
     saccade_win: float = 0.7
+
+
+def _normalise_animal_tag(animal_name: str | None) -> str:
+    """Return a filesystem-friendly tag for ``animal_name``."""
+
+    text = (animal_name or "").strip()
+    if not text:
+        return "unknown"
+    safe = re.sub(r"[^0-9A-Za-z]+", "_", text)
+    safe = safe.strip("_")
+    return safe or "unknown"
+
+
+def _label_with_animal(label: str | None, animal_name: str | None) -> str:
+    """Prefix ``label`` with the normalised animal tag."""
+
+    tag = _normalise_animal_tag(animal_name)
+    base = (label or "").strip()
+    if base.startswith(f"{tag}_"):
+        return base
+    return f"{tag}_{base}" if base else tag
+
+
+def _filename_with_animal(base_filename: str, animal_name: str | None) -> str:
+    """Add the normalised animal tag to ``base_filename`` before the suffix."""
+
+    stem, suffix = os.path.splitext(base_filename)
+    stem_with_tag = _label_with_animal(stem, animal_name)
+    return f"{stem_with_tag}{suffix}"
 
 
 def calibrate_eye_position(data: SessionData, config: SessionConfig) -> np.ndarray:
@@ -224,7 +254,8 @@ def detect_saccades(
         session_folder = (
             Path(config.folder_path).name if config.folder_path else config.session_name
         )
-        prob_fname = f"{session_folder}{side_tag}_saccades.png"
+        base_fname = f"{session_folder}{side_tag}_saccades.png"
+        prob_fname = _filename_with_animal(base_fname, config.animal_name)
         fig.savefig(config.results_dir / prob_fname, dpi=300, bbox_inches="tight")
 
     return saccades, fig, ax
@@ -533,6 +564,9 @@ def sort_saccades(
     saccade_frames_theta = saccades["saccade_frames_theta"]
     stim_frames = saccades["stim_frames"]
     session_name = os.path.basename(str(session_path).replace("\\", "/"))
+    session_name_with_animal = _label_with_animal(
+        config.session_name or session_name, config.animal_name
+    )
 
     mask_xy = mask[saccade_indices_xy]
     saccade_indices_xy = saccade_indices_xy[mask_xy]
@@ -616,7 +650,8 @@ def sort_saccades(
         plot_linear_histogram(angle_all, ax_linear)
         plt.tight_layout()
 
-        all_fname = f"{session_name}_{eye_name}_ALL_{stim_type}.png"
+        base_all_fname = f"{session_name}_{eye_name}_ALL_{stim_type}.png"
+        all_fname = _filename_with_animal(base_all_fname, config.animal_name)
         fig_all.savefig(config.results_dir / all_fname, dpi=300, bbox_inches="tight")
         plt.show()
     else:
@@ -718,7 +753,8 @@ def sort_saccades(
                 ax_t.set_xlim(-15, 15)
 
             fig.tight_layout()
-            cond_fname = f"{config.session_name}_{eye_name}_{label}_{stim_type}.png"
+            base_cond_fname = f"{config.session_name}_{eye_name}_{label}_{stim_type}.png"
+            cond_fname = _filename_with_animal(base_cond_fname, config.animal_name)
             fig.savefig(config.results_dir / cond_fname, dpi=300, bbox_inches="tight")
             plt.show()
             plt.close(fig)
@@ -729,7 +765,14 @@ def sort_saccades(
         left_angle = np.arctan2(dy[sorted_data["Left"]], dx[sorted_data["Left"]])
         right_angle = np.arctan2(dy[sorted_data["Right"]], dx[sorted_data["Right"]])
         reward_angle = config.reward_contingency["reward_angle"]
-        plot_left_right_angle(left_angle, right_angle, reward_angle=reward_angle,sessionname=config.session_name,resultdir=config.results_dir,experiment_type=config.experiment_type)
+        plot_left_right_angle(
+            left_angle,
+            right_angle,
+            reward_angle=reward_angle,
+            sessionname=session_name_with_animal,
+            resultdir=config.results_dir,
+            experiment_type=config.experiment_type,
+        )
 
 
     if plot:
