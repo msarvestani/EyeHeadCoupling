@@ -7,6 +7,7 @@ for each one.
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 
@@ -98,7 +99,12 @@ def analyze_all_sessions(
         processed_animals,
     )
 
-def plot_prosaccade_trends_from_dictionary(left_angle_dict: dict, right_angle_dict: dict, experiment_type: str = "prosaccade") -> None:
+def plot_prosaccade_trends_from_dictionary(
+    left_angle_dict: dict,
+    right_angle_dict: dict,
+    experiment_type: str = "prosaccade",
+    animal_label: str | None = None,
+) -> None:
 
     # Create a figure and axis
     fig, ax = plt.subplots(figsize=(10, 6))
@@ -130,15 +136,23 @@ def plot_prosaccade_trends_from_dictionary(left_angle_dict: dict, right_angle_di
     # Set plot labels and title
     ax.set_xlabel("Date")
     ax.set_ylabel("Saccade Percentage (%)")
-    ax.set_title(f"{experiment_type} Saccade Percentages Over Time")
+    title = f"{experiment_type} Saccade Percentages Over Time"
+    label_text = (str(animal_label).strip() if animal_label is not None else "")
+    animal_suffix = ""
+    if label_text:
+        title = f"{title} – {label_text}"
+        safe_label = re.sub(r"[^A-Za-z0-9_-]+", "_", label_text).strip("_")
+        if safe_label:
+            animal_suffix = f"_{safe_label}"
     ax.set_xticks(range(len(sorted_dates)))
     ax.set_xticklabels(sorted_dates, rotation=45)
+    ax.set_title(title)
     ax.legend()
     plt.tight_layout()
     plt.show()
     # Save the plot
-    fig.savefig(results_root / f"{experiment_type}_saccade_percentage_trends.png")
-    fig.savefig(results_root / f"{experiment_type}_saccade_percentage_trends.svg")
+    fig.savefig(results_root / f"{experiment_type}_saccade_percentage_trends{animal_suffix}.png")
+    fig.savefig(results_root / f"{experiment_type}_saccade_percentage_trends{animal_suffix}.svg")
 
 
 if __name__ == "__main__":
@@ -177,11 +191,40 @@ if __name__ == "__main__":
     results_root.mkdir(parents=True, exist_ok=True)
 
     ### Plot the left right angle results
-    from  eyehead.analysis import plot_left_right_angle
+    from eyehead.analysis import plot_left_right_angle
     left_angle_all = np.concatenate(left_angle_all)
     right_angle_all = np.concatenate(right_angle_all)
-    plot_left_right_angle(left_angle_all, right_angle_all, 35, sessionname=f"{args.experiment_type}_population", resultdir=results_root,experiment_type=args.experiment_type)
-    plot_prosaccade_trends_from_dictionary(left_angle_all_with_dates, right_angle_all_with_dates, experiment_type=args.experiment_type)
+    animal_label = None
+    if isinstance(aggregated, pd.DataFrame) and not aggregated.empty and "session_id" in aggregated:
+        session_ids = aggregated["session_id"].dropna().unique()
+        animal_names: list[str] = []
+        for session_id in session_ids:
+            try:
+                session_cfg = load_session(session_id)
+            except KeyError:
+                continue
+            if session_cfg.animal_name:
+                animal_names.append(session_cfg.animal_name)
+        if animal_names:
+            # Preserve manifest order while removing duplicates
+            unique_animals = list(dict.fromkeys(animal_names))
+            animal_label = ", ".join(unique_animals)
+
+    plot_left_right_angle(
+        left_angle_all,
+        right_angle_all,
+        35,
+        sessionname=f"{args.experiment_type}_population",
+        resultdir=results_root,
+        experiment_type=args.experiment_type,
+        animal_name=animal_label,
+    )
+    plot_prosaccade_trends_from_dictionary(
+        left_angle_all_with_dates,
+        right_angle_all_with_dates,
+        experiment_type=args.experiment_type,
+        animal_label=animal_label,
+    )
     aggregated.to_csv(
         results_root / f"{args.experiment_type}_population_results.csv", index=False
     )
