@@ -385,3 +385,71 @@ sessions:
     params:
       saccade_config:
         saccade_threshold: 1.0
+
+ session_27:
+    experiment_type: fixation
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh02_Apollo_server\Tsh002_2025-09-05T11_06_07
+    date: 2025-09-05
+    animal_name: Apollo
+    animal_id: Tsh002
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+    params:
+      saccade_config:
+        saccade_threshold: 1.0
+
+
+ session_28:
+    experiment_type: fixation
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh02_Apollo_server\Tsh002_2025-09-08T10_34_20
+    date: 2025-09-05
+    animal_name: Apollo
+    animal_id: Tsh002
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+    params:
+      saccade_config:
+        saccade_threshold: 1.0
+
+
+ session_29:
+    experiment_type: fixation
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh02_Apollo_server\Tsh002_2025-09-10T11_28_52
+    date: 2025-09-05
+    animal_name: Apollo
+    animal_id: Tsh002
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+    params:
+      saccade_config:
+        saccade_threshold: 1.0
+
+ session_30:
+    experiment_type: fixation
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh02_Apollo_server\Tsh002_2025-09-15T11_41_54
+    date: 2025-09-05
+    animal_name: Apollo
+    animal_id: Tsh002
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+    params:
+      saccade_config:
+        saccade_threshold: 1.0
+
+
+ session_31:
+    experiment_type: fixation
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh02_Apollo_server\Tsh002_2025-09-17T11_38_00
+    date: 2025-09-05
+    animal_name: Apollo
+    animal_id: Tsh002
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+    params:
+      saccade_config:
+        saccade_threshold: 1.0
