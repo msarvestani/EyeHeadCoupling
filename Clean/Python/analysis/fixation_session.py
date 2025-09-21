@@ -24,9 +24,21 @@ from eyehead import (
 
 
 
-def main(session_id: str) -> pd.DataFrame:
-    """Run fixation analysis for ``session_id``."""
+def main(session_id: str, animal_name: str | None = None) -> pd.DataFrame:
+    """Run fixation analysis for ``session_id``.
+
+    Parameters
+    ----------
+    session_id:
+        Identifier of the session to analyse.
+    animal_name:
+        Optional override for the animal label associated with the session.
+        When provided, this value is stored on the session configuration so
+        that downstream helpers incorporate it into generated artefacts.
+    """
     config = load_session(session_id)
+    if animal_name is not None:
+        config.animal_name = animal_name or None
     config.results_dir.mkdir(parents=True, exist_ok=True)
 
     date_str = config.params.get("date")
@@ -128,6 +140,12 @@ def main(session_id: str) -> pd.DataFrame:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Analyse a recorded session for fixation metrics")
     parser.add_argument("session_id", help="Session identifier from session_manifest.yml")
+    parser.add_argument(
+        "--animal-name",
+        dest="animal_name",
+        default=None,
+        help="Optional override for the animal label used in generated artefacts.",
+    )
     args = parser.parse_args()
-    main(args.session_id)
+    main(args.session_id, animal_name=args.animal_name)
 
