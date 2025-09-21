@@ -84,6 +84,13 @@ def main(session_id: str) -> pd.DataFrame:
     if fig_pairs is not None:
         plt.close(fig_pairs)
 
+    total_trials = int(valid_trials.size)
+    valid_count = int(valid_trials.sum())
+    valid_fraction = (
+        valid_count / total_trials if total_trials > 0 else np.nan
+    )
+    total_trials_value = total_trials if total_trials > 0 else np.nan
+
     stats = quantify_fixation_stability_vs_random(
         eye_timestamp=data.eye_timestamp,
         eye_pos=saccades["eye_pos"],
@@ -139,7 +146,9 @@ def main(session_id: str) -> pd.DataFrame:
             "net_drift_fix_sem": [se_drf],
             "net_drift_rand": [dr_rnd],
             "net_drift_rand_sem": [se_drr],
-            "valid_trials": [int(valid_trials.sum()) if stats else 0],
+            "valid_trials": [valid_count],
+            "total_trials": [total_trials_value],
+            "valid_trial_fraction": [valid_fraction],
         }
     )
     return df
