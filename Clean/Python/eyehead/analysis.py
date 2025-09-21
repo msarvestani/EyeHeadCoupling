@@ -942,6 +942,9 @@ def plot_eye_fixations_between_cue_and_go_by_trial(
     pairs_dt = np.asarray(pairs_dt)
 
     valid_trials = (pairs_dt >= 0) & (pairs_dt < max_interval_s)
+    total_trials = valid_trials.size
+    valid_count = int(valid_trials.sum())
+    valid_fraction = valid_count / total_trials if total_trials > 0 else np.nan
 
     if plot:
         cmap = cm.get_cmap(cmap_name)
@@ -980,8 +983,13 @@ def plot_eye_fixations_between_cue_and_go_by_trial(
         ax.set_aspect("equal")
         ax.set_xlabel("Eye center X (deg)")
         ax.set_ylabel("Eye center Y (deg)")
+        if total_trials > 0:
+            ratio_text = f"{valid_count}/{total_trials} ({valid_fraction * 100:.0f}%)"
+        else:
+            ratio_text = "0/0 (n/a)"
         ax.set_title(
-            f"Eye positions between cue and go (<{max_interval_s:.2f}s)"
+            "Eye positions between cue and go "
+            f"(<{max_interval_s:.2f}s)\nValid trials: {ratio_text}"
         )
 
         if results_dir is not None:

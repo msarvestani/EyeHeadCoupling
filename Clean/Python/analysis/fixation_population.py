@@ -68,6 +68,16 @@ def analyze_all_sessions(
             session_df = session_df.copy()
             session_df["animal_name"] = session_cfg.animal_name
 
+        missing_cols = [
+            col
+            for col in ("total_trials", "valid_trial_fraction")
+            if col not in session_df.columns
+        ]
+        if missing_cols:
+            session_df = session_df.copy()
+            for col in missing_cols:
+                session_df[col] = np.nan
+
         tables.append(session_df)
 
     if not tables:
@@ -187,7 +197,15 @@ def plot_metric_trends(
         interval_suffix = (
             f" – max Δt <{max_interval_s:.1f} s" if max_interval_s is not None else ""
         )
-        ax.set_title(f"{ylabel} by session{title_suffix}{interval_suffix}")
+        validity_suffix = ""
+        if "valid_trial_fraction" in data.columns:
+            valid_series = pd.to_numeric(data["valid_trial_fraction"], errors="coerce")
+            if valid_series.notna().any():
+                mean_pct = float(valid_series.mean() * 100.0)
+                validity_suffix = f" – mean valid trials {mean_pct:.0f}%"
+        ax.set_title(
+            f"{ylabel} by session{title_suffix}{interval_suffix}{validity_suffix}"
+        )
         ax.set_xlabel("Session (earlier → later)")
         ax.set_ylabel(ylabel)
 
