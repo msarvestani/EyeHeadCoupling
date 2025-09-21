@@ -1,4 +1,5 @@
 from pathlib import Path
+import copy
 import sys
 
 import pytest
@@ -6,6 +7,7 @@ import pytest
 pytest.importorskip("yaml")
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
+from utils import session_loader as session_loader_mod
 from utils.session_loader import load_session, list_sessions_from_manifest
 
 
@@ -18,6 +20,33 @@ def test_load_session() -> None:
     assert cfg.animal_id == "Tsh001"
 
     assert cfg.camera_side == "L"
+
+
+def test_load_session_uses_manifest_default_and_override(monkeypatch) -> None:
+    manifest_template = {
+        "results_root": "/results",
+        "max_interval_s": 2.5,
+        "saccade_config": {"saccade_threshold": 3.0},
+        "sessions": {
+            "custom": {
+                "session_path": "/data/custom",
+                "params": {},
+            }
+        },
+    }
+
+    def fake_safe_load(_fh):
+        return copy.deepcopy(manifest_template)
+
+    monkeypatch.setattr(session_loader_mod.yaml, "safe_load", fake_safe_load)
+
+    cfg = load_session("custom")
+    assert cfg.params["max_interval_s"] == 2.5
+
+    manifest_template["sessions"]["custom"]["params"] = {"max_interval_s": 3.0}
+
+    cfg_override = load_session("custom")
+    assert cfg_override.params["max_interval_s"] == 3.0
 
 
 def test_list_sessions_from_manifest_exact_match() -> None:
