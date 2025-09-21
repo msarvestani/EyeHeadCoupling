@@ -122,6 +122,18 @@ def plot_metric_trends(
     cmap = plt.cm.viridis
     colors = cmap(np.linspace(0, 1, len(data)))
 
+    if "valid_trial_fraction" in data.columns:
+        valid_fractions = pd.to_numeric(
+            data["valid_trial_fraction"], errors="coerce"
+        )
+    else:
+        valid_fractions = pd.Series(np.nan, index=data.index, dtype=float)
+
+    if "total_trials" in data.columns:
+        total_trials = pd.to_numeric(data["total_trials"], errors="coerce")
+    else:
+        total_trials = pd.Series(np.nan, index=data.index, dtype=float)
+
     metrics = [
         (
             "mean_step_fix",
@@ -177,6 +189,46 @@ def plot_metric_trends(
                 markersize=4,
                 capsize=3,
             )
+
+            valid_label = "n/a"
+            valid_value = valid_fractions.iloc[i]
+            if pd.notna(valid_value):
+                valid_label = f"{valid_value * 100:.0f}%"
+
+            total_label = "n/a"
+            total_value = total_trials.iloc[i]
+            if pd.notna(total_value) and np.isfinite(total_value):
+                total_float = float(total_value)
+                if total_float.is_integer():
+                    total_label = f"{int(total_float)}"
+                else:
+                    total_label = f"{total_float:.0f}"
+
+            session_label = f"{valid_label} ({total_label})"
+
+            fix_y = data[fix_col].iloc[i]
+            if pd.notna(fix_y):
+                ax.annotate(
+                    session_label,
+                    xy=(order[i], fix_y),
+                    xytext=(-6, 6),
+                    textcoords="offset points",
+                    ha="right",
+                    fontsize=7,
+                    color="dimgray",
+                )
+
+            rand_y = data[rand_col].iloc[i]
+            if pd.notna(rand_y):
+                ax.annotate(
+                    session_label,
+                    xy=(order[i], rand_y),
+                    xytext=(6, 6),
+                    textcoords="offset points",
+                    ha="left",
+                    fontsize=7,
+                    color="dimgray",
+                )
 
         # Connect sessions with dashed lines for fixation and random conditions
         ax.plot(
