@@ -104,6 +104,7 @@ def main(session_id: str, animal_name: str | None = None) -> pd.DataFrame:
     return df,left_angle,right_angle
 
 
+# Usage: python Clean/Python/analysis/prosaccade_session.py SESSION_ID [--animal-name ANIMAL_NAME]
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Analyse a recorded session")
     parser.add_argument("session_id", help="Session identifier from session_manifest.yml")

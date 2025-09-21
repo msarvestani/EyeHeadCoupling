@@ -149,6 +149,7 @@ def main(session_id: str, animal_name: str | None = None) -> pd.DataFrame:
     return df
 
 
+# Usage: python Clean/Python/analysis/fixation_session.py SESSION_ID
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Analyse a recorded session for fixation metrics")
     parser.add_argument("session_id", help="Session identifier from session_manifest.yml")

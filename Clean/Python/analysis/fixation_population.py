@@ -195,6 +195,7 @@ def plot_metric_trends(
         plt.close(fig)
 
 
+# Usage: python Clean/Python/analysis/fixation_population.py --experiment-type fixation [--animal-name ANIMAL_NAME]
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Run analysis across sessions filtered by experiment type",
