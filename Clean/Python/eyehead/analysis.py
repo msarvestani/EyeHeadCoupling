@@ -818,6 +818,7 @@ def plot_eye_fixations_between_cue_and_go_by_trial(
     results_dir: Optional[Path] = None,
     animal_id: Optional[str] = None,
     eye_name: str = "Eye",
+    animal_name: Optional[str] = None,
     *,
     plot: bool = False,
 ) -> Tuple[
@@ -853,9 +854,11 @@ def plot_eye_fixations_between_cue_and_go_by_trial(
     results_dir : Path, optional
         If given, save the generated figure here.
     animal_id : str, optional
-        Used in the saved filename when ``results_dir`` is provided.
+        Included in the saved filename when ``results_dir`` is provided.
     eye_name : str, default "Eye"
         Label used in the saved filename.
+    animal_name : str, optional
+        Animal identifier whose normalised form is added to saved filenames.
     plot : bool, default ``False``
         When ``True``, generate a scatter plot and return figure and axes
         handles.
@@ -960,7 +963,14 @@ def plot_eye_fixations_between_cue_and_go_by_trial(
         if results_dir is not None:
             results_dir = Path(results_dir)
             results_dir.mkdir(exist_ok=True, parents=True)
-            fname = f"{animal_id}_{(eye_name or 'Eye').replace(' ', '')}_cue_go_timepaired.png"
+
+            id_part = str(animal_id).strip() if animal_id is not None else ""
+            eye_part = (eye_name or "Eye").replace(" ", "")
+            stem_parts = [part for part in (id_part, eye_part, "cue_go_timepaired") if part]
+            stem = "_".join(stem_parts) if stem_parts else "cue_go_timepaired"
+            base_fname = f"{stem}.png"
+
+            fname = _filename_with_animal(base_fname, animal_name or animal_id)
             fig.savefig(results_dir / fname, dpi=300, bbox_inches="tight")
     else:
         fig = ax = None
