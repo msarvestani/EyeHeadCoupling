@@ -155,6 +155,7 @@ def plot_prosaccade_trends_from_dictionary(
     fig.savefig(results_root / f"{experiment_type}_saccade_percentage_trends{animal_suffix}.svg")
 
 
+# Usage: python Clean/Python/analysis/prosaccade_population.py --experiment-type prosaccade [--animal-name ANIMAL_NAME]
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Run analysis across sessions filtered by experiment type",
@@ -214,7 +215,7 @@ if __name__ == "__main__":
         left_angle_all,
         right_angle_all,
         35,
-        sessionname=f"{args.experiment_type}_population",
+        sessionname="population",
         resultdir=results_root,
         experiment_type=args.experiment_type,
         animal_name=animal_label,

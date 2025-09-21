@@ -1,4 +1,5 @@
 results_root: X:\Analysis\EyeHeadCoupling
+max_interval_s: 1.0
 
 saccade_config:
   saccade_threshold: 3.0

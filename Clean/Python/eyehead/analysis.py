@@ -522,10 +522,32 @@ def plot_left_right_angle(left_angle,right_angle,reward_angle=35,sessionname=Non
         # ax_polar_right.set_ylim(0, np.max([np.max(counts_right), 0.4]))
 
         fig.tight_layout(rect=[0, 0.03, 1, 0.95])
-        cond_fname_png = f"{sessionname}_prosaccade_left_right.png"
-        cond_fname_svg = f"{sessionname}_prosaccade_left_right.svg"
-        fig.savefig(resultdir / cond_fname_png, dpi=300, bbox_inches="tight")
-        fig.savefig(resultdir / cond_fname_svg, dpi=300, bbox_inches="tight")
+        if resultdir is None:
+            raise ValueError("resultdir must be provided to save the plot")
+        resultdir_path = Path(resultdir)
+
+        session_label = str(sessionname).strip() if sessionname else ""
+        experiment_label = str(experiment_type).strip() if experiment_type else ""
+        session_label_clean = re.sub(r"\s+", "_", session_label).strip("_")
+        experiment_label_clean = re.sub(r"\s+", "_", experiment_label).strip("_")
+
+        base_parts = []
+        if session_label_clean:
+            base_parts.append(session_label_clean)
+            session_label_lower = session_label_clean.lower()
+        else:
+            session_label_lower = ""
+
+        if experiment_label_clean and experiment_label_clean.lower() not in session_label_lower:
+            base_parts.append(experiment_label_clean)
+
+        base_parts.append("left_right")
+        base_stem = "_".join(part for part in base_parts if part) or "left_right"
+
+        cond_fname_png = _filename_with_animal(f"{base_stem}.png", animal_name)
+        cond_fname_svg = _filename_with_animal(f"{base_stem}.svg", animal_name)
+        fig.savefig(resultdir_path / cond_fname_png, dpi=300, bbox_inches="tight")
+        fig.savefig(resultdir_path / cond_fname_svg, dpi=300, bbox_inches="tight")
         plt.show()
         plt.close(fig)
 
@@ -818,6 +840,7 @@ def plot_eye_fixations_between_cue_and_go_by_trial(
     results_dir: Optional[Path] = None,
     animal_id: Optional[str] = None,
     eye_name: str = "Eye",
+    animal_name: Optional[str] = None,
     *,
     plot: bool = False,
 ) -> Tuple[
@@ -853,9 +876,11 @@ def plot_eye_fixations_between_cue_and_go_by_trial(
     results_dir : Path, optional
         If given, save the generated figure here.
     animal_id : str, optional
-        Used in the saved filename when ``results_dir`` is provided.
+        Included in the saved filename when ``results_dir`` is provided.
     eye_name : str, default "Eye"
         Label used in the saved filename.
+    animal_name : str, optional
+        Animal identifier whose normalised form is added to saved filenames.
     plot : bool, default ``False``
         When ``True``, generate a scatter plot and return figure and axes
         handles.
@@ -955,12 +980,21 @@ def plot_eye_fixations_between_cue_and_go_by_trial(
         ax.set_aspect("equal")
         ax.set_xlabel("Eye center X (deg)")
         ax.set_ylabel("Eye center Y (deg)")
-        ax.set_title("Eye positions between cue and go")
+        ax.set_title(
+            f"Eye positions between cue and go (<{max_interval_s:.2f}s)"
+        )
 
         if results_dir is not None:
             results_dir = Path(results_dir)
             results_dir.mkdir(exist_ok=True, parents=True)
-            fname = f"{animal_id}_{(eye_name or 'Eye').replace(' ', '')}_cue_go_timepaired.png"
+
+            id_part = str(animal_id).strip() if animal_id is not None else ""
+            eye_part = (eye_name or "Eye").replace(" ", "")
+            stem_parts = [part for part in (id_part, eye_part, "cue_go_timepaired") if part]
+            stem = "_".join(stem_parts) if stem_parts else "cue_go_timepaired"
+            base_fname = f"{stem}.png"
+
+            fname = _filename_with_animal(base_fname, animal_name or animal_id)
             fig.savefig(results_dir / fname, dpi=300, bbox_inches="tight")
     else:
         fig = ax = None

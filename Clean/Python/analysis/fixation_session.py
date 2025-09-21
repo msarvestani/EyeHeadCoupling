@@ -21,11 +21,18 @@ from eyehead import (
     quantify_fixation_stability_vs_random,
     get_session_date_from_path,
 )
+from eyehead.analysis import _filename_with_animal
 
 
 
 def main(session_id: str) -> pd.DataFrame:
-    """Run fixation analysis for ``session_id``."""
+    """Run fixation analysis for ``session_id``.
+
+    Parameters
+    ----------
+    session_id:
+        Identifier of the session to analyse.
+    """
     config = load_session(session_id)
     config.results_dir.mkdir(parents=True, exist_ok=True)
 
@@ -54,6 +61,8 @@ def main(session_id: str) -> pd.DataFrame:
         plt.close(fig_saccades)
 
 
+    max_interval_s = float(config.params.get("max_interval_s", 1.0))
+
     ( pairs_cf,pairs_gf,pairs_ct,pairs_gt,
         pairs_dt,valid_trials,fig_pairs,_,
     ) = plot_eye_fixations_between_cue_and_go_by_trial(
@@ -64,10 +73,11 @@ def main(session_id: str) -> pd.DataFrame:
         cue_time=data.cue_time,
         go_frame=data.go_frame,
         go_time=data.go_time,
-        max_interval_s=1,
+        max_interval_s=max_interval_s,
         results_dir=config.results_dir,
         animal_id=config.animal_id,
         eye_name=config.eye_name,
+        animal_name=config.animal_name,
         plot=True,
     )
     plt.show()
@@ -87,9 +97,19 @@ def main(session_id: str) -> pd.DataFrame:
 
     if stats and stats.get("figure") is not None:
         fig = stats["figure"]
-        fname = f"{config.animal_id}_{config.eye_name}_fixation_vs_random"
-        fig.savefig(config.results_dir / f"{fname}.png", bbox_inches="tight")
-        fig.savefig(config.results_dir / f"{fname}.svg", bbox_inches="tight")
+        eye_part = (config.eye_name or "Eye").replace(" ", "")
+        id_part = str(config.animal_id).strip() if config.animal_id is not None else ""
+        stem_parts = [part for part in (id_part, eye_part, "fixation_vs_random") if part]
+        stem = "_".join(stem_parts) if stem_parts else "fixation_vs_random"
+
+        base_png = f"{stem}.png"
+        base_svg = f"{stem}.svg"
+        animal_label = config.animal_name or config.animal_id
+        fname_png = _filename_with_animal(base_png, animal_label)
+        fname_svg = _filename_with_animal(base_svg, animal_label)
+
+        fig.savefig(config.results_dir / fname_png, bbox_inches="tight")
+        fig.savefig(config.results_dir / fname_svg, bbox_inches="tight")
 
         plt.show()
         plt.close(fig)
@@ -125,6 +145,7 @@ def main(session_id: str) -> pd.DataFrame:
     return df
 
 
+# Usage: python Clean/Python/analysis/fixation_session.py SESSION_ID
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Analyse a recorded session for fixation metrics")
     parser.add_argument("session_id", help="Session identifier from session_manifest.yml")
