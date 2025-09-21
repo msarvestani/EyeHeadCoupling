@@ -76,7 +76,11 @@ def analyze_all_sessions(
 
 
 def plot_metric_trends(
-    df: pd.DataFrame, save_dir: Path, *, animal_name: str | None = None
+    df: pd.DataFrame,
+    save_dir: Path,
+    *,
+    animal_name: str | None = None,
+    max_interval_s: float | None = None,
 ) -> None:
     """Plot fixation metrics across sessions with a consistent colour scheme.
 
@@ -92,6 +96,9 @@ def plot_metric_trends(
         Directory where the plot images will be written.
     animal_name:
         Optional animal name used to annotate saved plots and filenames.
+    max_interval_s:
+        Optional maximum interval (in seconds) used when pairing cue and go
+        events. When provided, it is included in the plot titles for context.
     """
 
     if df.empty:
@@ -177,7 +184,10 @@ def plot_metric_trends(
             label="Random",
         )
         title_suffix = f" ({animal_name})" if animal_name else ""
-        ax.set_title(f"{ylabel} by session{title_suffix}")
+        interval_suffix = (
+            f" – max Δt <{max_interval_s:.1f} s" if max_interval_s is not None else ""
+        )
+        ax.set_title(f"{ylabel} by session{title_suffix}{interval_suffix}")
         ax.set_xlabel("Session (earlier → later)")
         ax.set_ylabel(ylabel)
 
@@ -220,6 +230,11 @@ if __name__ == "__main__":
             manifest = yaml.safe_load(f) or {}
     except FileNotFoundError:
         manifest = {}
+    raw_max_interval = manifest.get("max_interval_s")
+    try:
+        max_interval_s = float(raw_max_interval) if raw_max_interval is not None else None
+    except (TypeError, ValueError):
+        max_interval_s = None
     results_root = Path(manifest.get("results_root", root_dir))
     results_root.mkdir(parents=True, exist_ok=True)
     suffix = _animal_suffix(args.animal_name)
@@ -230,4 +245,5 @@ if __name__ == "__main__":
         aggregated,
         results_root,
         animal_name=args.animal_name,
+        max_interval_s=max_interval_s,
     )
