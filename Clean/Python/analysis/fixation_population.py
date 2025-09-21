@@ -210,6 +210,7 @@ def plot_metric_trends(
             if pd.notna(fix_y):
                 ax.annotate(
                     session_label,
+
                     xy=(order[i], fix_y),
                     xytext=(-6, 6),
                     textcoords="offset points",
