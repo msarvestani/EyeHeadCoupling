@@ -122,6 +122,13 @@ def plot_metric_trends(
     cmap = plt.cm.viridis
     colors = cmap(np.linspace(0, 1, len(data)))
 
+    if "valid_trial_fraction" in data.columns:
+        valid_fractions = pd.to_numeric(
+            data["valid_trial_fraction"], errors="coerce"
+        )
+    else:
+        valid_fractions = pd.Series(np.nan, index=data.index, dtype=float)
+
     metrics = [
         (
             "mean_step_fix",
@@ -177,6 +184,35 @@ def plot_metric_trends(
                 markersize=4,
                 capsize=3,
             )
+
+            valid_label = "n/a"
+            valid_value = valid_fractions.iloc[i]
+            if pd.notna(valid_value):
+                valid_label = f"{valid_value * 100:.0f}%"
+
+            fix_y = data[fix_col].iloc[i]
+            if pd.notna(fix_y):
+                ax.annotate(
+                    valid_label,
+                    xy=(order[i], fix_y),
+                    xytext=(-6, 6),
+                    textcoords="offset points",
+                    ha="right",
+                    fontsize=7,
+                    color="dimgray",
+                )
+
+            rand_y = data[rand_col].iloc[i]
+            if pd.notna(rand_y):
+                ax.annotate(
+                    valid_label,
+                    xy=(order[i], rand_y),
+                    xytext=(6, 6),
+                    textcoords="offset points",
+                    ha="left",
+                    fontsize=7,
+                    color="dimgray",
+                )
 
         # Connect sessions with dashed lines for fixation and random conditions
         ax.plot(
