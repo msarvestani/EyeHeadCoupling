@@ -522,10 +522,32 @@ def plot_left_right_angle(left_angle,right_angle,reward_angle=35,sessionname=Non
         # ax_polar_right.set_ylim(0, np.max([np.max(counts_right), 0.4]))
 
         fig.tight_layout(rect=[0, 0.03, 1, 0.95])
-        cond_fname_png = f"{sessionname}_prosaccade_left_right.png"
-        cond_fname_svg = f"{sessionname}_prosaccade_left_right.svg"
-        fig.savefig(resultdir / cond_fname_png, dpi=300, bbox_inches="tight")
-        fig.savefig(resultdir / cond_fname_svg, dpi=300, bbox_inches="tight")
+        if resultdir is None:
+            raise ValueError("resultdir must be provided to save the plot")
+        resultdir_path = Path(resultdir)
+
+        session_label = str(sessionname).strip() if sessionname else ""
+        experiment_label = str(experiment_type).strip() if experiment_type else ""
+        session_label_clean = re.sub(r"\s+", "_", session_label).strip("_")
+        experiment_label_clean = re.sub(r"\s+", "_", experiment_label).strip("_")
+
+        base_parts = []
+        if session_label_clean:
+            base_parts.append(session_label_clean)
+            session_label_lower = session_label_clean.lower()
+        else:
+            session_label_lower = ""
+
+        if experiment_label_clean and experiment_label_clean.lower() not in session_label_lower:
+            base_parts.append(experiment_label_clean)
+
+        base_parts.append("left_right")
+        base_stem = "_".join(part for part in base_parts if part) or "left_right"
+
+        cond_fname_png = _filename_with_animal(f"{base_stem}.png", animal_name)
+        cond_fname_svg = _filename_with_animal(f"{base_stem}.svg", animal_name)
+        fig.savefig(resultdir_path / cond_fname_png, dpi=300, bbox_inches="tight")
+        fig.savefig(resultdir_path / cond_fname_svg, dpi=300, bbox_inches="tight")
         plt.show()
         plt.close(fig)
 

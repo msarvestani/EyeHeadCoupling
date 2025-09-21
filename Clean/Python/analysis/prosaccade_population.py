@@ -214,7 +214,7 @@ if __name__ == "__main__":
         left_angle_all,
         right_angle_all,
         35,
-        sessionname=f"{args.experiment_type}_population",
+        sessionname="population",
         resultdir=results_root,
         experiment_type=args.experiment_type,
         animal_name=animal_label,
