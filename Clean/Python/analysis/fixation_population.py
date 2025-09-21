@@ -200,11 +200,10 @@ def plot_metric_trends(
 
         fig.tight_layout()
         fig.savefig(save_dir / f"{fname}{suffix}.png", bbox_inches="tight")
-        fig.savefig(save_dir / f"{fname}{suffix}.svg", bbox_inches="tight")
         plt.close(fig)
 
 
-# Usage: python Clean/Python/analysis/fixation_population.py --experiment-type fixation [--animal-name ANIMAL_NAME]
+# Usage: python Clean/Python/analysis/fixation_population.py --animal-name Paris
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Run analysis across sessions filtered by experiment type",
@@ -238,9 +237,9 @@ if __name__ == "__main__":
     results_root = Path(manifest.get("results_root", root_dir))
     results_root.mkdir(parents=True, exist_ok=True)
     suffix = _animal_suffix(args.animal_name)
-    aggregated.to_csv(
-        results_root / f"fixation_population_results{suffix}.csv", index=False
-    )
+    #aggregated.to_csv(
+        #results_root / f"fixation_population_results{suffix}.csv", index=False
+    #)
     plot_metric_trends(
         aggregated,
         results_root,
