@@ -980,7 +980,9 @@ def plot_eye_fixations_between_cue_and_go_by_trial(
         ax.set_aspect("equal")
         ax.set_xlabel("Eye center X (deg)")
         ax.set_ylabel("Eye center Y (deg)")
-        ax.set_title("Eye positions between cue and go")
+        ax.set_title(
+            f"Eye positions between cue and go (<{max_interval_s:.2f}s)"
+        )
 
         if results_dir is not None:
             results_dir = Path(results_dir)
