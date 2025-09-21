@@ -21,6 +21,7 @@ from eyehead import (
     quantify_fixation_stability_vs_random,
     get_session_date_from_path,
 )
+from eyehead.analysis import _filename_with_animal
 
 
 
@@ -68,6 +69,7 @@ def main(session_id: str) -> pd.DataFrame:
         results_dir=config.results_dir,
         animal_id=config.animal_id,
         eye_name=config.eye_name,
+        animal_name=config.animal_name,
         plot=True,
     )
     plt.show()
@@ -87,9 +89,19 @@ def main(session_id: str) -> pd.DataFrame:
 
     if stats and stats.get("figure") is not None:
         fig = stats["figure"]
-        fname = f"{config.animal_id}_{config.eye_name}_fixation_vs_random"
-        fig.savefig(config.results_dir / f"{fname}.png", bbox_inches="tight")
-        fig.savefig(config.results_dir / f"{fname}.svg", bbox_inches="tight")
+        eye_part = (config.eye_name or "Eye").replace(" ", "")
+        id_part = str(config.animal_id).strip() if config.animal_id is not None else ""
+        stem_parts = [part for part in (id_part, eye_part, "fixation_vs_random") if part]
+        stem = "_".join(stem_parts) if stem_parts else "fixation_vs_random"
+
+        base_png = f"{stem}.png"
+        base_svg = f"{stem}.svg"
+        animal_label = config.animal_name or config.animal_id
+        fname_png = _filename_with_animal(base_png, animal_label)
+        fname_svg = _filename_with_animal(base_svg, animal_label)
+
+        fig.savefig(config.results_dir / fname_png, bbox_inches="tight")
+        fig.savefig(config.results_dir / fname_svg, bbox_inches="tight")
 
         plt.show()
         plt.close(fig)
