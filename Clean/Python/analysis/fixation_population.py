@@ -49,6 +49,8 @@ def analyze_all_sessions(
         Experiment type used to select sessions from the manifest.
     animal_name:
         Optional animal name used to further restrict the manifest lookup.
+        When provided, the same value is forwarded to the per-session analysis
+        so that generated artefacts share consistent animal labelling.
 
     Returns
     -------
@@ -60,7 +62,7 @@ def analyze_all_sessions(
     for session_id in list_sessions_from_manifest(
         experiment_type, match_prefix=True, animal_name=animal_name
     ):
-        session_df = fixation_session.main(session_id)
+        session_df = fixation_session.main(session_id, animal_name=animal_name)
 
         if "animal_name" not in session_df.columns or session_df["animal_name"].isna().all():
             session_cfg = load_session(session_id)
