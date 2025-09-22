@@ -56,15 +56,23 @@ def main(session_id: str) -> pd.DataFrame:
         data=data,
         plot=False,
     )
-    plt.show()
     if fig_saccades is not None:
+        plt.show()
         plt.close(fig_saccades)
 
 
     max_interval_s = float(config.params.get("max_interval_s", 1.0))
 
-    ( pairs_cf,pairs_gf,pairs_ct,pairs_gt,
-        pairs_dt,valid_trials,fig_pairs,_,
+    (
+        pairs_cf,
+        pairs_gf,
+        pairs_ct,
+        pairs_gt,
+        pairs_dt,
+        valid_trials,
+        fig_pairs,
+        _,
+        fig_interval,
     ) = plot_eye_fixations_between_cue_and_go_by_trial(
         eye_frame=data.eye_frame,
         eye_pos=saccades["eye_pos"],
@@ -81,8 +89,9 @@ def main(session_id: str) -> pd.DataFrame:
         plot=True,
     )
     plt.show()
-    if fig_pairs is not None:
-        plt.close(fig_pairs)
+    for fig in (fig_pairs, fig_interval):
+        if fig is not None:
+            plt.close(fig)
 
     total_trials = int(valid_trials.size)
     valid_count = int(valid_trials.sum())

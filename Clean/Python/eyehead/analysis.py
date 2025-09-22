@@ -16,6 +16,7 @@ from scipy.stats import circmean, circstd
 from scipy.stats import gaussian_kde,vonmises
 from itertools import cycle
 
+
 from utils.session_loader import SessionConfig
 
 from .filters import interpolate_nans
@@ -822,6 +823,121 @@ def sort_saccades(
 
 
 
+def plot_fixation_intervals_by_trial(
+    pairs_dt: np.ndarray,
+    valid_trials: np.ndarray,
+    max_interval_s: float,
+    results_dir: Optional[Path] = None,
+    animal_id: Optional[str] = None,
+    eye_name: str = "Eye",
+    animal_name: Optional[str] = None,
+) -> Tuple[plt.Figure, plt.Axes]:
+    """Visualise cue→go intervals for each paired trial.
+
+    Parameters
+    ----------
+    pairs_dt : array-like
+        Cue→go intervals in seconds ordered by cue time.
+    valid_trials : array-like of bool
+        Mask indicating which trials satisfy ``max_interval_s``.
+    max_interval_s : float
+        Maximum allowed interval used to determine ``valid_trials``.
+    results_dir : Path, optional
+        If provided, the generated figure is saved in this directory.
+    animal_id, eye_name, animal_name : str, optional
+        Metadata used to build the saved filename when ``results_dir`` is
+        provided.
+
+    Returns
+    -------
+    fig, ax : :class:`matplotlib.figure.Figure`, :class:`matplotlib.axes.Axes`
+        Handles to the created interval plot.
+    """
+
+    intervals = np.asarray(pairs_dt, dtype=float).ravel()
+    valid = np.asarray(valid_trials, dtype=bool).ravel()
+    if valid.size != intervals.size:
+        valid = np.zeros(intervals.size, dtype=bool)
+
+    fig, ax = plt.subplots(figsize=(6, 4))
+    ax.set_xlabel("Trial index")
+    ax.set_ylabel("Cue→go interval (s)")
+
+    total_trials = int(intervals.size)
+    valid_count = int(valid.sum()) if total_trials > 0 else 0
+
+    if total_trials == 0:
+        ax.set_title(
+            "Cue→Go intervals "
+            f"(max={max_interval_s:.2f}s)\nNo paired trials available"
+        )
+        fig.tight_layout()
+        return fig, ax
+
+    trial_indices = np.arange(total_trials)
+    invalid = ~valid
+
+    if np.any(valid):
+        ax.scatter(
+            trial_indices[valid],
+            intervals[valid],
+            color="tab:green",
+            marker="o",
+            s=40,
+            label="Valid",
+        )
+    if np.any(invalid):
+        ax.scatter(
+            trial_indices[invalid],
+            intervals[invalid],
+            color="tab:red",
+            marker="x",
+            s=50,
+            label="Invalid",
+        )
+
+    ax.axhline(
+        max_interval_s,
+        color="0.3",
+        linestyle="--",
+        linewidth=1.2,
+        label=f"Max interval ({max_interval_s:.2f}s)",
+    )
+
+    ax.set_xlim(-0.5, total_trials - 0.5 if total_trials > 0 else 0.5)
+
+    if total_trials > 0:
+        valid_fraction = (valid_count / total_trials) * 100.0
+        summary = f"Valid trials: {valid_count}/{total_trials} ({valid_fraction:.0f}%)"
+    else:
+        summary = "Valid trials: 0/0"
+
+    ax.set_title(
+        "Cue→Go intervals "
+        f"(max={max_interval_s:.2f}s)\n{summary}"
+    )
+
+    handles, _ = ax.get_legend_handles_labels()
+    if handles:
+        ax.legend(loc="best")
+
+    fig.tight_layout()
+
+    if results_dir is not None and total_trials > 0:
+        results_dir = Path(results_dir)
+        results_dir.mkdir(exist_ok=True, parents=True)
+
+        eye_part = (eye_name or "Eye").replace(" ", "")
+        id_part = str(animal_id).strip() if animal_id is not None else ""
+        stem_parts = [part for part in (id_part, eye_part, "cue_go_intervals") if part]
+        stem = "_".join(stem_parts) if stem_parts else "cue_go_intervals"
+        base_fname = f"{stem}.png"
+        fname = _filename_with_animal(base_fname, animal_name or animal_id)
+        fig.savefig(results_dir / fname, dpi=300, bbox_inches="tight")
+
+    return fig, ax
+
+
 def plot_eye_fixations_between_cue_and_go_by_trial(
     eye_frame: np.ndarray,
     eye_pos: np.ndarray,
@@ -852,6 +968,7 @@ def plot_eye_fixations_between_cue_and_go_by_trial(
     np.ndarray,
     Optional[plt.Figure],
     Optional[plt.Axes],
+    Optional[plt.Figure],
 ]:
     """Pair cue and go events and visualise eye position traces.
 
@@ -898,6 +1015,9 @@ def plot_eye_fixations_between_cue_and_go_by_trial(
     fig, ax : Figure and Axes, optional
         Handles to the generated scatter plot when ``plot`` is ``True``;
         otherwise ``None``.
+    interval_fig : Figure, optional
+        Figure showing cue→go intervals for each trial when ``plot`` is
+        ``True``; otherwise ``None``.
     """
 
     eye_ts = np.asarray(eye_timestamp).ravel()
@@ -946,6 +1066,8 @@ def plot_eye_fixations_between_cue_and_go_by_trial(
     valid_count = int(valid_trials.sum())
     valid_fraction = valid_count / total_trials if total_trials > 0 else np.nan
 
+    interval_fig = None
+
     if plot:
         cmap = cm.get_cmap(cmap_name)
         base_colors = [cmap(i) for i in np.linspace(0, 1, 20)]
@@ -992,6 +1114,16 @@ def plot_eye_fixations_between_cue_and_go_by_trial(
             f"(<{max_interval_s:.2f}s)\nValid trials: {ratio_text}"
         )
 
+        interval_fig, _ = plot_fixation_intervals_by_trial(
+            pairs_dt=pairs_dt,
+            valid_trials=valid_trials,
+            max_interval_s=max_interval_s,
+            results_dir=results_dir,
+            animal_id=animal_id,
+            eye_name=eye_name,
+            animal_name=animal_name,
+        )
+
         if results_dir is not None:
             results_dir = Path(results_dir)
             results_dir.mkdir(exist_ok=True, parents=True)
@@ -1007,7 +1139,17 @@ def plot_eye_fixations_between_cue_and_go_by_trial(
     else:
         fig = ax = None
 
-    return pairs_cf, pairs_gf, pairs_ct, pairs_gt, pairs_dt, valid_trials, fig, ax
+    return (
+        pairs_cf,
+        pairs_gf,
+        pairs_ct,
+        pairs_gt,
+        pairs_dt,
+        valid_trials,
+        fig,
+        ax,
+        interval_fig,
+    )
 
 
 def quantify_fixation_stability_vs_random(
@@ -1193,6 +1335,7 @@ __all__ = [
     "detect_saccades",
     "organize_stims",
     "sort_saccades",
+    "plot_fixation_intervals_by_trial",
     "plot_eye_fixations_between_cue_and_go_by_trial",
     "quantify_fixation_stability_vs_random",
 ]
