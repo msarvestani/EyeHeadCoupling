@@ -7,6 +7,7 @@ from .analysis import (
     detect_saccades,
     organize_stims,
     sort_saccades,
+    plot_fixation_intervals_by_trial,
     plot_eye_fixations_between_cue_and_go_by_trial,
     quantify_fixation_stability_vs_random,
 )
@@ -34,6 +35,7 @@ __all__ = [
     "detect_saccades",
     "organize_stims",
     "sort_saccades",
+    "plot_fixation_intervals_by_trial",
     "plot_eye_fixations_between_cue_and_go_by_trial",
     "quantify_fixation_stability_vs_random",
     "butter_noncausal",
