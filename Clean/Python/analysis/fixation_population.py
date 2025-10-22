@@ -221,8 +221,14 @@ def plot_metric_trends(
 
             rand_y = data[rand_col].iloc[i]
             if pd.notna(rand_y):
+                # Get session date and format it
+                session_date = data["session_date"].iloc[i]
+                date_label = ""
+                if pd.notna(session_date):
+                    date_label = session_date.strftime("%Y-%m-%d") + "\n"
+
                 ax.annotate(
-                    session_label,
+                    date_label + session_label,
                     xy=(order[i], rand_y),
                     xytext=(6, 6),
                     textcoords="offset points",
