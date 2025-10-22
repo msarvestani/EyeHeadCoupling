@@ -10,79 +10,79 @@ saccade_config:
     
 sessions:
 
- session_01:
-    experiment_type: fixation-control
-    session_path: X:\\Experimental_Data\\EyeHeadCoupling_RatTS_server\\TSh01_Paris_server\\Tsh001_2025-07-22T15_25_56
-    date: 2025-07-22
-    animal_name: Paris
-    animal_id: Tsh001
-    calibration_factor : 3.76
-    ttl_freq: 60
-    camera_side: L
+#  session_01:
+#     experiment_type: fixation-control
+#     session_path: X:\\Experimental_Data\\EyeHeadCoupling_RatTS_server\\TSh01_Paris_server\\Tsh001_2025-07-22T15_25_56
+#     date: 2025-07-22
+#     animal_name: Paris
+#     animal_id: Tsh001
+#     calibration_factor : 3.76
+#     ttl_freq: 60
+#     camera_side: L
     
- session_02:
-    experiment_type: fixation
-    session_path: X:\\Experimental_Data\\EyeHeadCoupling_RatTS_server\\TSh01_Paris_server\\Tsh001_2025-07-30T15_29_31
-    date: 2025-07-30
-    animal_name: Paris
-    animal_id: Tsh001
-    calibration_factor : 3.76
-    ttl_freq: 60
-    camera_side: L
+#  session_02:
+#     experiment_type: fixation
+#     session_path: X:\\Experimental_Data\\EyeHeadCoupling_RatTS_server\\TSh01_Paris_server\\Tsh001_2025-07-30T15_29_31
+#     date: 2025-07-30
+#     animal_name: Paris
+#     animal_id: Tsh001
+#     calibration_factor : 3.76
+#     ttl_freq: 60
+#     camera_side: L
 
 
- session_03:
-    experiment_type: fixation
-    session_path: X:\\Experimental_Data\\EyeHeadCoupling_RatTS_server\\TSh01_Paris_server\\Tsh001_2025-07-30T15_47_15
-    date: 2025-07-30
-    animal_name: Paris
-    animal_id: Tsh001
-    calibration_factor : 3.76
-    ttl_freq: 60
-    camera_side: L
+#  session_03:
+#     experiment_type: fixation
+#     session_path: X:\\Experimental_Data\\EyeHeadCoupling_RatTS_server\\TSh01_Paris_server\\Tsh001_2025-07-30T15_47_15
+#     date: 2025-07-30
+#     animal_name: Paris
+#     animal_id: Tsh001
+#     calibration_factor : 3.76
+#     ttl_freq: 60
+#     camera_side: L
 
- session_04:
-    experiment_type: fixation
-    session_path: X:\\Experimental_Data\\EyeHeadCoupling_RatTS_server\\TSh01_Paris_server\\Tsh001_2025-07-31T15_23_59
-    date: 2025-07-31
-    animal_name: Paris
-    animal_id: Tsh001
-    calibration_factor : 3.76
-    ttl_freq: 60
-    camera_side: L
+#  session_04:
+#     experiment_type: fixation
+#     session_path: X:\\Experimental_Data\\EyeHeadCoupling_RatTS_server\\TSh01_Paris_server\\Tsh001_2025-07-31T15_23_59
+#     date: 2025-07-31
+#     animal_name: Paris
+#     animal_id: Tsh001
+#     calibration_factor : 3.76
+#     ttl_freq: 60
+#     camera_side: L
     
- session_05:
-    experiment_type: fixation
-    session_path: X:\\Experimental_Data\\EyeHeadCoupling_RatTS_server\\TSh01_Paris_server\\Tsh001_2025-07-31T15_56_37
-    date: 2025-07-31
-    animal_name: Paris
-    animal_id: Tsh001
-    calibration_factor : 3.76
-    ttl_freq: 60
-    camera_side: L
+#  session_05:
+#     experiment_type: fixation
+#     session_path: X:\\Experimental_Data\\EyeHeadCoupling_RatTS_server\\TSh01_Paris_server\\Tsh001_2025-07-31T15_56_37
+#     date: 2025-07-31
+#     animal_name: Paris
+#     animal_id: Tsh001
+#     calibration_factor : 3.76
+#     ttl_freq: 60
+#     camera_side: L
 
- session_06:
-    experiment_type: fixation
-    session_path: X:\\Experimental_Data\\EyeHeadCoupling_RatTS_server\\TSh01_Paris_server\\Tsh001_2025-08-01T15_15_48
-    date: 2025-08-01
-    animal_name: Paris
-    animal_id: Tsh001
-    calibration_factor : 3.76
-    ttl_freq: 60
-    camera_side: L
+#  session_06:
+#     experiment_type: fixation
+#     session_path: X:\\Experimental_Data\\EyeHeadCoupling_RatTS_server\\TSh01_Paris_server\\Tsh001_2025-08-01T15_15_48
+#     date: 2025-08-01
+#     animal_name: Paris
+#     animal_id: Tsh001
+#     calibration_factor : 3.76
+#     ttl_freq: 60
+#     camera_side: L
     
- session_07:
-    experiment_type: fixation
-    session_path: X:\\Experimental_Data\\EyeHeadCoupling_RatTS_server\\TSh01_Paris_server\\Tsh001_2025-08-06T16_40_40
-    date: 2025-08-06
-    animal_name: Paris
-    animal_id: Tsh001
-    calibration_factor : 3.76
-    ttl_freq: 60
-    camera_side: L
-    params:
-      saccade_config:
-        saccade_threshold: 1.0
+#  session_07:
+#     experiment_type: fixation
+#     session_path: X:\\Experimental_Data\\EyeHeadCoupling_RatTS_server\\TSh01_Paris_server\\Tsh001_2025-08-06T16_40_40
+#     date: 2025-08-06
+#     animal_name: Paris
+#     animal_id: Tsh001
+#     calibration_factor : 3.76
+#     ttl_freq: 60
+#     camera_side: L
+#     params:
+#       saccade_config:
+#         saccade_threshold: 1.0
 
  session_08:
 
@@ -376,7 +376,7 @@ sessions:
 
  session_26:
     experiment_type: fixation
-    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh02_Apollo_server\Tsh002_2025-09-05T10_59_22
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh02_Apollo_server\Tsh002_2025-09-05T11_06_07
     date: 2025-09-05
     animal_name: Apollo
     animal_id: Tsh002
@@ -448,6 +448,171 @@ sessions:
     date: 2025-09-05
     animal_name: Apollo
     animal_id: Tsh002
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+    params:
+      saccade_config:
+        saccade_threshold: 1.0
+
+ session_32:
+    experiment_type: fixation
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh02_Apollo_server\Tsh002_2025-09-08T10_34_20
+    date: 2025-09-08
+    animal_name: Apollo
+    animal_id: Tsh002
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+    params:
+      saccade_config:
+        saccade_threshold: 1.0
+
+ session_33:
+    experiment_type: fixation
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh02_Apollo_server\Tsh002_2025-09-10T11_28_52
+    date: 2025-09-10
+    animal_name: Apollo
+    animal_id: Tsh002
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+    params:
+      saccade_config:
+        saccade_threshold: 1.0
+ 
+ session_34:
+    experiment_type: fixation
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh02_Apollo_server\Tsh002_2025-09-15T11_41_54
+    date: 2025-09-15
+    animal_name: Apollo
+    animal_id: Tsh002
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+    params:
+      saccade_config:
+        saccade_threshold: 1.0
+
+ session_35:
+    experiment_type: fixation
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh02_Apollo_server\Tsh002_2025-09-17T11_38_00
+    date: 2025-09-17
+    animal_name: Apollo
+    animal_id: Tsh002
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+    params:
+      saccade_config:
+        saccade_threshold: 1.0
+
+ session_36:
+    experiment_type: prosaccade
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh02_Apollo_server\Tsh002_2025-10-17T11_28_31
+    date: 2025-10-17
+    animal_name: Apollo
+    animal_id: Tsh002
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+    reward_contingency:
+      reward_angle: 35
+      reward_window: 1
+    params:
+      saccade_config:
+        saccade_threshold: 1.0
+
+ session_37:
+    experiment_type: prosaccade
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh02_Apollo_server\Tsh002_2025-10-17T11_45_51
+    date: 2025-10-17
+    animal_name: Apollo
+    animal_id: Tsh002
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+    reward_contingency:
+      reward_angle: 35
+      reward_window: 1
+    params:
+      saccade_config:
+        saccade_threshold: 1.0
+
+ session_38:
+    experiment_type: prosaccade
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh02_Apollo_server\Tsh002_2025-10-15T12_37_33
+    date: 2025-10-15
+    animal_name: Apollo
+    animal_id: Tsh002
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+    reward_contingency:
+      reward_angle: 35
+      reward_window: 1
+    params:
+      saccade_config:
+        saccade_threshold: 1.0
+
+ session_39:
+    experiment_type: fixation
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-09-29T11_25_33
+    date: 2025-09-29
+    animal_name: Paris
+    animal_id: Tsh001
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+    params:
+      saccade_config:
+        saccade_threshold: 1.0
+
+ session_40:
+    experiment_type: fixation
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-09-29T11_42_33
+    date: 2025-09-29
+    animal_name: Paris
+    animal_id: Tsh001
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+    params:
+      saccade_config:
+        saccade_threshold: 1.0
+
+ session_41:
+    experiment_type: fixation
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-09-29T12_00_26
+    date: 2025-09-29
+    animal_name: Paris
+    animal_id: Tsh001
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+    params:
+      saccade_config:
+        saccade_threshold: 1.0
+
+ session_42:
+    experiment_type: fixation
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-10-09T11_10_00
+    date: 2025-10-09
+    animal_name: Paris
+    animal_id: Tsh001
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+    params:
+      saccade_config:
+        saccade_threshold: 1.0
+
+ session_43:
+    experiment_type: fixation
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-10-10T11_32_38
+    date: 2025-10-10
+    animal_name: Paris
+    animal_id: Tsh001
     calibration_factor : 3.76
     ttl_freq: 60
     camera_side: L
