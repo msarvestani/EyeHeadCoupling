@@ -68,6 +68,16 @@ def analyze_all_sessions(
             session_df = session_df.copy()
             session_df["animal_name"] = session_cfg.animal_name
 
+        missing_cols = [
+            col
+            for col in ("total_trials", "valid_trial_fraction")
+            if col not in session_df.columns
+        ]
+        if missing_cols:
+            session_df = session_df.copy()
+            for col in missing_cols:
+                session_df[col] = np.nan
+
         tables.append(session_df)
 
     if not tables:
@@ -111,6 +121,18 @@ def plot_metric_trends(
     order = np.arange(len(data))
     cmap = plt.cm.viridis
     colors = cmap(np.linspace(0, 1, len(data)))
+
+    if "valid_trial_fraction" in data.columns:
+        valid_fractions = pd.to_numeric(
+            data["valid_trial_fraction"], errors="coerce"
+        )
+    else:
+        valid_fractions = pd.Series(np.nan, index=data.index, dtype=float)
+
+    if "total_trials" in data.columns:
+        total_trials = pd.to_numeric(data["total_trials"], errors="coerce")
+    else:
+        total_trials = pd.Series(np.nan, index=data.index, dtype=float)
 
     metrics = [
         (
@@ -168,6 +190,53 @@ def plot_metric_trends(
                 capsize=3,
             )
 
+            valid_label = "n/a"
+            valid_value = valid_fractions.iloc[i]
+            if pd.notna(valid_value):
+                valid_label = f"{valid_value * 100:.0f}%"
+
+            total_label = "n/a"
+            total_value = total_trials.iloc[i]
+            if pd.notna(total_value) and np.isfinite(total_value):
+                total_float = float(total_value)
+                if total_float.is_integer():
+                    total_label = f"{int(total_float)}"
+                else:
+                    total_label = f"{total_float:.0f}"
+
+            session_label = f"{valid_label} ({total_label})"
+
+            fix_y = data[fix_col].iloc[i]
+            if pd.notna(fix_y):
+                ax.annotate(
+                    session_label,
+
+                    xy=(order[i], fix_y),
+                    xytext=(-6, 6),
+                    textcoords="offset points",
+                    ha="right",
+                    fontsize=7,
+                    color="dimgray",
+                )
+
+            rand_y = data[rand_col].iloc[i]
+            if pd.notna(rand_y):
+                # Get session date and format it
+                session_date = data["session_date"].iloc[i]
+                date_label = ""
+                if pd.notna(session_date):
+                    date_label = session_date.strftime("%Y-%m-%d") + "\n"
+
+                ax.annotate(
+                    date_label + session_label,
+                    xy=(order[i], rand_y),
+                    xytext=(6, 6),
+                    textcoords="offset points",
+                    ha="left",
+                    fontsize=7,
+                    color="dimgray",
+                )
+
         # Connect sessions with dashed lines for fixation and random conditions
         ax.plot(
             order,
@@ -187,7 +256,15 @@ def plot_metric_trends(
         interval_suffix = (
             f" – max Δt <{max_interval_s:.1f} s" if max_interval_s is not None else ""
         )
-        ax.set_title(f"{ylabel} by session{title_suffix}{interval_suffix}")
+        validity_suffix = ""
+        if "valid_trial_fraction" in data.columns:
+            valid_series = pd.to_numeric(data["valid_trial_fraction"], errors="coerce")
+            if valid_series.notna().any():
+                mean_pct = float(valid_series.mean() * 100.0)
+                validity_suffix = f" – mean valid trials {mean_pct:.0f}%"
+        ax.set_title(
+            f"{ylabel} by session{title_suffix}{interval_suffix}{validity_suffix}"
+        )
         ax.set_xlabel("Session (earlier → later)")
         ax.set_ylabel(ylabel)
 
