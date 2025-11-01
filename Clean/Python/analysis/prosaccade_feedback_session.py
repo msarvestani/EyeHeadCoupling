@@ -332,6 +332,30 @@ def plot_time_to_target(trials: list[dict], results_dir: Optional[Path] = None,
     return fig
 
 
+def _clean_path(path_str: str | Path) -> str:
+    """Clean path string by removing Python string literal syntax if present.
+
+    Handles cases where user accidentally includes r' or ' from Python syntax.
+    """
+    if isinstance(path_str, Path):
+        return str(path_str)
+
+    path_str = str(path_str).strip()
+
+    # Remove r' prefix and trailing ' if present (raw string literal syntax)
+    if path_str.startswith("r'") and path_str.endswith("'"):
+        path_str = path_str[2:-1]
+    elif path_str.startswith('r"') and path_str.endswith('"'):
+        path_str = path_str[2:-1]
+    # Remove regular quotes
+    elif path_str.startswith("'") and path_str.endswith("'"):
+        path_str = path_str[1:-1]
+    elif path_str.startswith('"') and path_str.endswith('"'):
+        path_str = path_str[1:-1]
+
+    return path_str
+
+
 def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = None,
                    animal_id: str = "Tsh001", show_plots: bool = True) -> pd.DataFrame:
     """Run saccade feedback analysis directly on a folder (without session manifest).
@@ -352,11 +376,22 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
     pd.DataFrame
         Summary statistics for the session
     """
-    folder_path = Path(folder_path)
+    # Clean the path in case user included Python string syntax
+    folder_path = Path(_clean_path(folder_path))
+
+    # Validate that the folder exists
+    if not folder_path.exists():
+        raise FileNotFoundError(
+            f"Folder not found: {folder_path}\n"
+            f"Please check the path and try again."
+        )
+    if not folder_path.is_dir():
+        raise NotADirectoryError(f"Path is not a directory: {folder_path}")
+
     if results_dir is None:
         results_dir = folder_path / "results"
     else:
-        results_dir = Path(results_dir)
+        results_dir = Path(_clean_path(results_dir))
 
     results_dir.mkdir(parents=True, exist_ok=True)
 
@@ -499,9 +534,19 @@ def main(session_id: str) -> pd.DataFrame:
     return df
 
 
-# Usage:
-# 1. With session manifest: python Clean/Python/analysis/prosaccade_feedback_session.py SESSION_ID
-# 2. Direct folder: python Clean/Python/analysis/prosaccade_feedback_session.py --folder /path/to/data
+# Usage Examples:
+# 1. With session manifest:
+#    python Clean/Python/analysis/prosaccade_feedback_session.py SESSION_ID
+#
+# 2. Direct folder (Linux/Mac):
+#    python Clean/Python/analysis/prosaccade_feedback_session.py --folder /path/to/data --animal Tsh001
+#
+# 3. Direct folder (Windows - no quotes needed on command line):
+#    python Clean/Python/analysis/prosaccade_feedback_session.py --folder X:\path\to\data --animal Tsh001
+#
+# Note: On command line, DO NOT use Python string syntax like r'...' or '...'
+#       Just provide the path directly without quotes (unless path has spaces)
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Analyse a saccade feedback session with visual feedback"
