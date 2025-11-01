@@ -175,6 +175,7 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
             # Use the first target position for this trial
             target_x = target_samples.iloc[0]['target_x']
             target_y = target_samples.iloc[0]['target_y']
+            target_diameter = target_samples.iloc[0]['diameter']
         else:
             # If no target found, skip this trial
             print(f"Warning: No target found for trial {trial_num}, skipping")
@@ -204,6 +205,7 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
             'duration': end_time - start_time,
             'target_x': target_x,
             'target_y': target_y,
+            'target_diameter': target_diameter,
             'eye_x': eye_trajectory['green_x'].values,
             'eye_y': eye_trajectory['green_y'].values,
             'eye_times': eye_trajectory['timestamp'].values,
@@ -223,7 +225,7 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
 
 def plot_trajectories(trials: list[dict], results_dir: Optional[Path] = None,
                       animal_id: Optional[str] = None, session_date: str = "") -> plt.Figure:
-    """Plot eye position trajectories relative to target position.
+    """Plot eye position trajectories and target positions in absolute coordinates.
 
     Parameters
     ----------
@@ -247,30 +249,36 @@ def plot_trajectories(trials: list[dict], results_dir: Optional[Path] = None,
     cmap = plt.cm.viridis
     n_trials = len(trials)
 
+    # Plot each trial
     for i, trial in enumerate(trials):
-        # Normalize positions relative to target (target at origin)
-        rel_x = trial['eye_x'] - trial['target_x']
-        rel_y = trial['eye_y'] - trial['target_y']
+        # Use absolute eye positions
+        eye_x = trial['eye_x']
+        eye_y = trial['eye_y']
 
         # Plot trajectory with color indicating trial number
         color = cmap(i / max(1, n_trials - 1))
-        ax.plot(rel_x, rel_y, alpha=0.6, linewidth=1.5, color=color,
+        ax.plot(eye_x, eye_y, alpha=0.6, linewidth=1.5, color=color,
                 label=f"Trial {trial['trial_number']}" if n_trials <= 20 else None)
 
         # Mark start and end points
-        ax.plot(rel_x[0], rel_y[0], 'o', color=color, markersize=6, alpha=0.8)
-        ax.plot(rel_x[-1], rel_y[-1], 's', color=color, markersize=6, alpha=0.8)
+        ax.plot(eye_x[0], eye_y[0], 'o', color=color, markersize=6, alpha=0.8)
+        ax.plot(eye_x[-1], eye_y[-1], 's', color=color, markersize=6, alpha=0.8)
 
-    # Draw target position as black circle at origin
-    target_circle = Circle((0, 0), radius=20, fill=False, edgecolor='black',
-                          linewidth=2.5, linestyle='-', label='Target')
-    ax.add_patch(target_circle)
+        # Draw target position as black circle at actual position with actual diameter
+        target_x = trial['target_x']
+        target_y = trial['target_y']
+        target_radius = trial['target_diameter'] / 2.0
+        target_circle = Circle((target_x, target_y), radius=target_radius, fill=False,
+                              edgecolor='black', linewidth=2.5, linestyle='-',
+                              label='Target' if i == 0 else None)
+        ax.add_patch(target_circle)
 
-    # Add smaller filled circle at center
-    ax.plot(0, 0, 'ko', markersize=8, label='Target Center')
+        # Add smaller filled circle at target center
+        ax.plot(target_x, target_y, 'ko', markersize=4,
+               label='Target Center' if i == 0 else None)
 
-    ax.set_xlabel('Horizontal Position Relative to Target (stimulus units)', fontsize=12)
-    ax.set_ylabel('Vertical Position Relative to Target (stimulus units)', fontsize=12)
+    ax.set_xlabel('Horizontal Position (stimulus units)', fontsize=12)
+    ax.set_ylabel('Vertical Position (stimulus units)', fontsize=12)
 
     title = 'Eye Position Trajectories to Target'
     if animal_id:
