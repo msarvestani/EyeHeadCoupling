@@ -197,13 +197,51 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
             continue
 
         # Calculate path length (cumulative distance along trajectory)
+        start_eye_x = eye_trajectory['green_x'].values[0]
+        start_eye_y = eye_trajectory['green_y'].values[0]
+
         if len(eye_trajectory) > 1:
             dx = np.diff(eye_trajectory['green_x'].values)
             dy = np.diff(eye_trajectory['green_y'].values)
             segment_lengths = np.sqrt(dx**2 + dy**2)
             path_length = np.sum(segment_lengths)
+
+            # Calculate straight-line distance from start to target
+            straight_line_distance = np.sqrt((target_x - start_eye_x)**2 + (target_y - start_eye_y)**2)
+
+            # Path efficiency: ratio of straight-line to actual path (closer to 1.0 is more efficient)
+            if path_length > 0:
+                path_efficiency = straight_line_distance / path_length
+            else:
+                path_efficiency = 0.0
+
+            # Initial movement direction: angle between initial movement and ideal vector
+            # Use first 5 samples (or fewer if trial is short) to determine initial direction
+            n_samples = min(5, len(eye_trajectory))
+            initial_dx = eye_trajectory['green_x'].values[n_samples-1] - start_eye_x
+            initial_dy = eye_trajectory['green_y'].values[n_samples-1] - start_eye_y
+
+            # Ideal vector from start to target
+            ideal_dx = target_x - start_eye_x
+            ideal_dy = target_y - start_eye_y
+
+            # Calculate angle between vectors using dot product
+            # angle = arccos(dot(v1, v2) / (|v1| * |v2|))
+            initial_mag = np.sqrt(initial_dx**2 + initial_dy**2)
+            ideal_mag = np.sqrt(ideal_dx**2 + ideal_dy**2)
+
+            if initial_mag > 0 and ideal_mag > 0:
+                cos_angle = (initial_dx * ideal_dx + initial_dy * ideal_dy) / (initial_mag * ideal_mag)
+                # Clamp to [-1, 1] to avoid numerical errors
+                cos_angle = np.clip(cos_angle, -1.0, 1.0)
+                initial_direction_error = np.degrees(np.arccos(cos_angle))
+            else:
+                initial_direction_error = np.nan
         else:
             path_length = 0.0
+            path_efficiency = 0.0
+            straight_line_distance = 0.0
+            initial_direction_error = np.nan
 
         trial_data = {
             'trial_number': trial_num,
@@ -215,12 +253,15 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
             'target_x': target_x,
             'target_y': target_y,
             'target_diameter': target_diameter,
-            'start_eye_x': eye_trajectory['green_x'].values[0],
-            'start_eye_y': eye_trajectory['green_y'].values[0],
+            'start_eye_x': start_eye_x,
+            'start_eye_y': start_eye_y,
             'eye_x': eye_trajectory['green_x'].values,
             'eye_y': eye_trajectory['green_y'].values,
             'eye_times': eye_trajectory['timestamp'].values,
             'path_length': path_length,
+            'straight_line_distance': straight_line_distance,
+            'path_efficiency': path_efficiency,
+            'initial_direction_error': initial_direction_error,
         }
 
         trials.append(trial_data)
@@ -243,6 +284,17 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
         print(f"    Mean: {np.mean(path_lengths):.3f}")
         print(f"    Median: {np.median(path_lengths):.3f}")
         print(f"    Range: {np.min(path_lengths):.3f} - {np.max(path_lengths):.3f}")
+
+        efficiencies = [t['path_efficiency'] for t in trials]
+        print(f"\n  Path efficiency statistics (1.0 = perfectly direct):")
+        print(f"    Mean: {np.mean(efficiencies):.3f}")
+        print(f"    Median: {np.median(efficiencies):.3f}")
+
+        dir_errors = [t['initial_direction_error'] for t in trials if not np.isnan(t['initial_direction_error'])]
+        if dir_errors:
+            print(f"\n  Initial direction error (degrees from ideal):")
+            print(f"    Mean: {np.mean(dir_errors):.1f}°")
+            print(f"    Median: {np.median(dir_errors):.1f}°")
 
     return trials
 
@@ -269,8 +321,8 @@ def plot_trajectories(trials: list[dict], results_dir: Optional[Path] = None,
     """
     fig, ax = plt.subplots(figsize=(12, 10))
 
-    # Color map for trials
-    cmap = plt.cm.viridis
+    # Color map for trials - use coolwarm to show temporal progression (blue=early, red=late)
+    cmap = plt.cm.coolwarm
     n_trials = len(trials)
 
     # Plot each trial
@@ -578,6 +630,217 @@ def plot_path_length(trials: list[dict], results_dir: Optional[Path] = None,
     return fig
 
 
+def plot_learning_metrics(trials: list[dict], results_dir: Optional[Path] = None,
+                          animal_id: Optional[str] = None, session_date: str = "") -> plt.Figure:
+    """Plot learning metrics: path efficiency and initial direction error across trials.
+
+    Parameters
+    ----------
+    trials : list of dict
+        List of trial data dictionaries
+    results_dir : Path, optional
+        Directory to save the figure
+    animal_id : str, optional
+        Animal identifier for filename
+    session_date : str, optional
+        Session date for title
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+        The generated figure
+    """
+    trial_numbers = [t['trial_number'] for t in trials]
+    efficiencies = [t['path_efficiency'] for t in trials]
+    dir_errors = [t['initial_direction_error'] for t in trials]
+
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
+
+    # Color trials by progression (blue=early, red=late)
+    colors = plt.cm.coolwarm(np.linspace(0, 1, len(trials)))
+
+    # Plot 1: Path Efficiency (higher = more direct, better learning)
+    ax1.scatter(trial_numbers, efficiencies, c=colors, s=80, alpha=0.7, edgecolors='black', linewidth=0.5)
+    ax1.set_xlabel('Trial Number', fontsize=12)
+    ax1.set_ylabel('Path Efficiency (straight-line / actual path)', fontsize=12)
+
+    title = 'Path Efficiency Across Trials'
+    if animal_id:
+        title += f' - {animal_id}'
+    if session_date:
+        title += f' ({session_date})'
+    ax1.set_title(title, fontsize=14, fontweight='bold')
+    ax1.grid(True, alpha=0.3)
+    ax1.axhline(1.0, color='green', linestyle='--', linewidth=2, alpha=0.5, label='Perfect (1.0)')
+
+    # Add trend line
+    z = np.polyfit(trial_numbers, efficiencies, 1)
+    p = np.poly1d(z)
+    ax1.plot(trial_numbers, p(trial_numbers), "k--", linewidth=2, alpha=0.7, label=f'Trend: {z[0]:+.4f}/trial')
+    ax1.legend(fontsize=10)
+
+    # Add mean line
+    mean_eff = np.mean(efficiencies)
+    ax1.axhline(mean_eff, color='gray', linestyle=':', linewidth=1.5, alpha=0.5)
+
+    # Plot 2: Initial Direction Error (lower = better aiming, better learning)
+    valid_indices = [i for i, err in enumerate(dir_errors) if not np.isnan(err)]
+    valid_trial_nums = [trial_numbers[i] for i in valid_indices]
+    valid_errors = [dir_errors[i] for i in valid_indices]
+    valid_colors = [colors[i] for i in valid_indices]
+
+    ax2.scatter(valid_trial_nums, valid_errors, c=valid_colors, s=80, alpha=0.7, edgecolors='black', linewidth=0.5)
+    ax2.set_xlabel('Trial Number', fontsize=12)
+    ax2.set_ylabel('Initial Direction Error (degrees)', fontsize=12)
+    ax2.set_title('Initial Movement Direction Error', fontsize=12, fontweight='bold')
+    ax2.grid(True, alpha=0.3)
+    ax2.axhline(0, color='green', linestyle='--', linewidth=2, alpha=0.5, label='Perfect (0°)')
+
+    # Add trend line
+    if len(valid_trial_nums) > 1:
+        z2 = np.polyfit(valid_trial_nums, valid_errors, 1)
+        p2 = np.poly1d(z2)
+        ax2.plot(valid_trial_nums, p2(valid_trial_nums), "k--", linewidth=2, alpha=0.7, label=f'Trend: {z2[0]:+.3f}°/trial')
+        ax2.legend(fontsize=10)
+
+    # Add mean line
+    mean_err = np.mean(valid_errors)
+    ax2.axhline(mean_err, color='gray', linestyle=':', linewidth=1.5, alpha=0.5)
+
+    plt.tight_layout()
+
+    # Save figure if results directory provided
+    if results_dir:
+        results_dir.mkdir(parents=True, exist_ok=True)
+        prefix = f"{animal_id}_" if animal_id else ""
+        filename = f"{prefix}saccade_feedback_learning_metrics.png"
+        fig.savefig(results_dir / filename, dpi=150, bbox_inches='tight')
+        filename_svg = f"{prefix}saccade_feedback_learning_metrics.svg"
+        fig.savefig(results_dir / filename_svg, bbox_inches='tight')
+        print(f"Saved learning metrics plot to {results_dir / filename}")
+
+    return fig
+
+
+def plot_spatial_bias_by_phase(trials: list[dict], results_dir: Optional[Path] = None,
+                                animal_id: Optional[str] = None, session_date: str = "") -> plt.Figure:
+    """Plot spatial heatmaps split by trial phase (early/middle/late).
+
+    Parameters
+    ----------
+    trials : list of dict
+        List of trial data dictionaries
+    results_dir : Path, optional
+        Directory to save the figure
+    animal_id : str, optional
+        Animal identifier for filename
+    session_date : str, optional
+        Session date for title
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+        The generated figure
+    """
+    n_trials = len(trials)
+    # Split into thirds
+    early_end = n_trials // 3
+    middle_end = 2 * n_trials // 3
+
+    early_trials = trials[:early_end]
+    middle_trials = trials[early_end:middle_end]
+    late_trials = trials[middle_end:]
+
+    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+
+    bins = 50
+    vmax = None  # Will be set to max across all phases for consistent colorbar
+
+    # Function to collect all positions from a trial subset
+    def collect_positions(trial_list):
+        all_x = []
+        all_y = []
+        for trial in trial_list:
+            all_x.extend(trial['eye_x'])
+            all_y.extend(trial['eye_y'])
+        return np.array(all_x), np.array(all_y)
+
+    # First pass: determine vmax for consistent color scale
+    all_counts = []
+    for trial_subset in [early_trials, middle_trials, late_trials]:
+        if len(trial_subset) > 0:
+            x, y = collect_positions(trial_subset)
+            h, _, _ = np.histogram2d(x, y, bins=bins, range=[[-1, 1], [-1, 1]])
+            all_counts.append(h.max())
+    vmax = max(all_counts) if all_counts else 1
+
+    # Plot each phase
+    phases = [
+        (early_trials, 'Early Trials', f'Trials 1-{early_end}'),
+        (middle_trials, 'Middle Trials', f'Trials {early_end+1}-{middle_end}'),
+        (late_trials, 'Late Trials', f'Trials {middle_end+1}-{n_trials}')
+    ]
+
+    for ax, (trial_subset, phase_name, trial_range) in zip(axes, phases):
+        if len(trial_subset) == 0:
+            ax.text(0.5, 0.5, 'No trials', ha='center', va='center', transform=ax.transAxes)
+            ax.set_xlim(-1, 1)
+            ax.set_ylim(-1, 1)
+            continue
+
+        # Collect positions
+        x, y = collect_positions(trial_subset)
+
+        # Create 2D histogram
+        h, xedges, yedges = np.histogram2d(x, y, bins=bins, range=[[-1, 1], [-1, 1]])
+
+        # Plot heatmap
+        extent = [xedges[0], xedges[-1], yedges[0], yedges[-1]]
+        im = ax.imshow(h.T, extent=extent, origin='lower', cmap='hot',
+                       aspect='auto', interpolation='bilinear', vmin=0, vmax=vmax)
+
+        # Overlay target positions
+        for trial in trial_subset:
+            target_x = trial['target_x']
+            target_y = trial['target_y']
+            target_radius = trial['target_diameter'] / 2.0
+            target_circle = Circle((target_x, target_y), radius=target_radius, fill=False,
+                                  edgecolor='cyan', linewidth=1.5, linestyle='-', alpha=0.6)
+            ax.add_patch(target_circle)
+
+        ax.set_xlabel('Horizontal Position', fontsize=10)
+        ax.set_ylabel('Vertical Position', fontsize=10)
+        ax.set_title(f'{phase_name}\n({trial_range})', fontsize=11, fontweight='bold')
+        ax.set_xlim(-1, 1)
+        ax.set_ylim(-1, 1)
+        ax.set_aspect('equal', adjustable='box')
+
+    # Add colorbar
+    fig.colorbar(im, ax=axes, label='Number of Samples', fraction=0.046, pad=0.04)
+
+    # Overall title
+    title = 'Spatial Distribution by Trial Phase'
+    if animal_id:
+        title += f' - {animal_id}'
+    if session_date:
+        title += f' ({session_date})'
+    fig.suptitle(title, fontsize=14, fontweight='bold')
+
+    plt.tight_layout()
+
+    # Save figure if results directory provided
+    if results_dir:
+        results_dir.mkdir(parents=True, exist_ok=True)
+        prefix = f"{animal_id}_" if animal_id else ""
+        filename = f"{prefix}saccade_feedback_spatial_bias.png"
+        fig.savefig(results_dir / filename, dpi=150, bbox_inches='tight')
+        filename_svg = f"{prefix}saccade_feedback_spatial_bias.svg"
+        fig.savefig(results_dir / filename_svg, bbox_inches='tight')
+        print(f"Saved spatial bias plot to {results_dir / filename}")
+
+    return fig
+
+
 def _clean_path(path_str: str | Path) -> str:
     """Clean path string by removing Python string literal syntax if present.
 
@@ -684,9 +947,23 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
         plt.show()
     plt.close(fig_path)
 
+    print("\nGenerating learning metrics plot...")
+    fig_learn = plot_learning_metrics(trials, results_dir, animal_id, date_str)
+    if show_plots:
+        plt.show()
+    plt.close(fig_learn)
+
+    print("\nGenerating spatial bias by phase plot...")
+    fig_spatial = plot_spatial_bias_by_phase(trials, results_dir, animal_id, date_str)
+    if show_plots:
+        plt.show()
+    plt.close(fig_spatial)
+
     # Create summary DataFrame
     durations = [t['duration'] for t in trials]
     path_lengths = [t['path_length'] for t in trials]
+    efficiencies = [t['path_efficiency'] for t in trials]
+    dir_errors = [t['initial_direction_error'] for t in trials if not np.isnan(t['initial_direction_error'])]
 
     df = pd.DataFrame({
         'folder_path': [str(folder_path)],
@@ -701,6 +978,10 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
         'mean_path_length': [np.mean(path_lengths)],
         'median_path_length': [np.median(path_lengths)],
         'std_path_length': [np.std(path_lengths)],
+        'mean_path_efficiency': [np.mean(efficiencies)],
+        'median_path_efficiency': [np.median(efficiencies)],
+        'mean_initial_dir_error': [np.mean(dir_errors) if dir_errors else np.nan],
+        'median_initial_dir_error': [np.median(dir_errors) if dir_errors else np.nan],
     })
 
     print("\n" + "="*60)
@@ -718,6 +999,13 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
     print(f"  Mean: {np.mean(path_lengths):.3f} ± {np.std(path_lengths):.3f}")
     print(f"  Median: {np.median(path_lengths):.3f}")
     print(f"  Range: {np.min(path_lengths):.3f} - {np.max(path_lengths):.3f}")
+    print(f"\nPath Efficiency (1.0 = perfectly direct):")
+    print(f"  Mean: {np.mean(efficiencies):.3f} ± {np.std(efficiencies):.3f}")
+    print(f"  Median: {np.median(efficiencies):.3f}")
+    if dir_errors:
+        print(f"\nInitial Direction Error:")
+        print(f"  Mean: {np.mean(dir_errors):.1f}° ± {np.std(dir_errors):.1f}°")
+        print(f"  Median: {np.median(dir_errors):.1f}°")
     print("="*60)
 
     return df
@@ -781,9 +1069,21 @@ def main(session_id: str) -> pd.DataFrame:
     plt.show()
     plt.close(fig_path)
 
+    print("\nGenerating learning metrics plot...")
+    fig_learn = plot_learning_metrics(trials, results_dir, animal_id, date_str)
+    plt.show()
+    plt.close(fig_learn)
+
+    print("\nGenerating spatial bias by phase plot...")
+    fig_spatial = plot_spatial_bias_by_phase(trials, results_dir, animal_id, date_str)
+    plt.show()
+    plt.close(fig_spatial)
+
     # Create summary DataFrame
     durations = [t['duration'] for t in trials]
     path_lengths = [t['path_length'] for t in trials]
+    efficiencies = [t['path_efficiency'] for t in trials]
+    dir_errors = [t['initial_direction_error'] for t in trials if not np.isnan(t['initial_direction_error'])]
 
     df = pd.DataFrame({
         'session_id': [session_id],
@@ -798,6 +1098,10 @@ def main(session_id: str) -> pd.DataFrame:
         'mean_path_length': [np.mean(path_lengths)],
         'median_path_length': [np.median(path_lengths)],
         'std_path_length': [np.std(path_lengths)],
+        'mean_path_efficiency': [np.mean(efficiencies)],
+        'median_path_efficiency': [np.median(efficiencies)],
+        'mean_initial_dir_error': [np.mean(dir_errors) if dir_errors else np.nan],
+        'median_initial_dir_error': [np.median(dir_errors) if dir_errors else np.nan],
     })
 
     print("\n" + "="*60)
@@ -815,6 +1119,13 @@ def main(session_id: str) -> pd.DataFrame:
     print(f"  Mean: {np.mean(path_lengths):.3f} ± {np.std(path_lengths):.3f}")
     print(f"  Median: {np.median(path_lengths):.3f}")
     print(f"  Range: {np.min(path_lengths):.3f} - {np.max(path_lengths):.3f}")
+    print(f"\nPath Efficiency (1.0 = perfectly direct):")
+    print(f"  Mean: {np.mean(efficiencies):.3f} ± {np.std(efficiencies):.3f}")
+    print(f"  Median: {np.median(efficiencies):.3f}")
+    if dir_errors:
+        print(f"\nInitial Direction Error:")
+        print(f"  Mean: {np.mean(dir_errors):.1f}° ± {np.std(dir_errors):.1f}°")
+        print(f"  Median: {np.median(dir_errors):.1f}°")
     print("="*60)
 
     return df
