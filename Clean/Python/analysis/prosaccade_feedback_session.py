@@ -69,28 +69,61 @@ def load_feedback_data(folder_path: Path, animal_id: str = "Tsh001") -> Tuple[pd
 
     # Load end of trial data
     # Columns: Frame, timestamp, trial_number, green_dot_x, green_dot_y, diameter
-    eot_df = pd.read_csv(endoftrial_file, header=None,
-                         names=['frame', 'timestamp', 'trial_number', 'green_x', 'green_y', 'diameter'])
+    try:
+        eot_df = pd.read_csv(endoftrial_file, header=None,
+                             names=['frame', 'timestamp', 'trial_number', 'green_x', 'green_y', 'diameter'])
+        # Convert frame and trial_number to integers
+        eot_df['frame'] = pd.to_numeric(eot_df['frame'], errors='coerce').astype('Int64')
+        eot_df['trial_number'] = pd.to_numeric(eot_df['trial_number'], errors='coerce').astype('Int64')
+        # Convert other columns to float
+        for col in ['timestamp', 'green_x', 'green_y', 'diameter']:
+            eot_df[col] = pd.to_numeric(eot_df[col], errors='coerce')
+    except Exception as e:
+        raise ValueError(f"Error loading end of trial file {endoftrial_file}: {e}")
 
     # Load eye position / green dot position data
     # Columns: Frame, timestamp, placeholder, green_dot_x, green_dot_y, diameter
     # Note: This file has duplicates that need to be cleaned
-    eye_df = pd.read_csv(vstim_go_file, header=None,
-                         names=['frame', 'timestamp', 'placeholder', 'green_x', 'green_y', 'diameter'])
+    try:
+        eye_df = pd.read_csv(vstim_go_file, header=None,
+                             names=['frame', 'timestamp', 'placeholder', 'green_x', 'green_y', 'diameter'])
+        # Convert frame to integer
+        eye_df['frame'] = pd.to_numeric(eye_df['frame'], errors='coerce').astype('Int64')
+        # Convert other columns to float
+        for col in ['timestamp', 'placeholder', 'green_x', 'green_y', 'diameter']:
+            eye_df[col] = pd.to_numeric(eye_df[col], errors='coerce')
 
-    # Remove duplicate frame entries - keep only the first occurrence
-    eye_df = eye_df.drop_duplicates(subset=['frame'], keep='first')
-    eye_df = eye_df.sort_values('frame').reset_index(drop=True)
+        # Remove duplicate frame entries - keep only the first occurrence
+        eye_df = eye_df.drop_duplicates(subset=['frame'], keep='first')
+        eye_df = eye_df.sort_values('frame').reset_index(drop=True)
+    except Exception as e:
+        raise ValueError(f"Error loading vstim_go file {vstim_go_file}: {e}")
 
     # Load target position / blue dot position data
     # Columns: Frame, timestamp, target_x, target_y, diameter
-    target_df = pd.read_csv(vstim_cue_file, header=None,
-                            names=['frame', 'timestamp', 'target_x', 'target_y', 'diameter'])
+    try:
+        target_df = pd.read_csv(vstim_cue_file, header=None,
+                                names=['frame', 'timestamp', 'target_x', 'target_y', 'diameter'])
+        # Convert frame to integer
+        target_df['frame'] = pd.to_numeric(target_df['frame'], errors='coerce').astype('Int64')
+        # Convert other columns to float
+        for col in ['timestamp', 'target_x', 'target_y', 'diameter']:
+            target_df[col] = pd.to_numeric(target_df[col], errors='coerce')
+    except Exception as e:
+        raise ValueError(f"Error loading vstim_cue file {vstim_cue_file}: {e}")
 
     print(f"Loaded data from {folder_path}")
     print(f"  End of trial events: {len(eot_df)}")
     print(f"  Eye position samples: {len(eye_df)} (after deduplication)")
     print(f"  Target position samples: {len(target_df)}")
+
+    # Print first few rows for debugging
+    print(f"\nFirst end-of-trial entry:")
+    print(f"  Frame: {eot_df.iloc[0]['frame']} (type: {type(eot_df.iloc[0]['frame'])})")
+    print(f"  Trial: {eot_df.iloc[0]['trial_number']}")
+    print(f"\nFirst target entry:")
+    print(f"  Frame: {target_df.iloc[0]['frame']} (type: {type(target_df.iloc[0]['frame'])})")
+    print(f"  Position: ({target_df.iloc[0]['target_x']}, {target_df.iloc[0]['target_y']})")
 
     return eot_df, eye_df, target_df
 
