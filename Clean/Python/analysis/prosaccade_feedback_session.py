@@ -26,6 +26,7 @@ from matplotlib.patches import Circle
 # Put the repo's "Python" folder on sys.path so `import eyehead` works
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 from utils.session_loader import load_session
+from eyehead.io import clean_csv
 
 
 def load_feedback_data(folder_path: Path, animal_id: str = "Tsh001") -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -67,63 +68,62 @@ def load_feedback_data(folder_path: Path, animal_id: str = "Tsh001") -> Tuple[pd
     if vstim_cue_file is None:
         raise FileNotFoundError(f"Could not find vstim_cue file in {folder_path}")
 
-    # Load end of trial data
+    # Load end of trial data using standard approach
     # Columns: Frame, timestamp, trial_number, green_dot_x, green_dot_y, diameter
     try:
-        eot_df = pd.read_csv(endoftrial_file, header=None,
-                             names=['frame', 'timestamp', 'trial_number', 'green_x', 'green_y', 'diameter'])
-        # Convert frame and trial_number to integers
-        eot_df['frame'] = pd.to_numeric(eot_df['frame'], errors='coerce').astype('Int64')
-        eot_df['trial_number'] = pd.to_numeric(eot_df['trial_number'], errors='coerce').astype('Int64')
-        # Convert other columns to float
-        for col in ['timestamp', 'green_x', 'green_y', 'diameter']:
-            eot_df[col] = pd.to_numeric(eot_df[col], errors='coerce')
+        print(f"\nLoading {endoftrial_file.name}...")
+        cleaned = clean_csv(str(endoftrial_file))
+        eot_arr = np.genfromtxt(cleaned, delimiter=",", skip_header=1)
+
+        eot_df = pd.DataFrame(eot_arr, columns=['frame', 'timestamp', 'trial_number', 'green_x', 'green_y', 'diameter'])
+        eot_df['frame'] = eot_df['frame'].astype(int)
+        eot_df['trial_number'] = eot_df['trial_number'].astype(int)
+
+        print(f"  Loaded {len(eot_df)} end-of-trial events")
     except Exception as e:
         raise ValueError(f"Error loading end of trial file {endoftrial_file}: {e}")
 
-    # Load eye position / green dot position data
+    # Load eye position / green dot position data using standard approach
     # Columns: Frame, timestamp, placeholder, green_dot_x, green_dot_y, diameter
     # Note: This file has duplicates that need to be cleaned
     try:
-        eye_df = pd.read_csv(vstim_go_file, header=None,
-                             names=['frame', 'timestamp', 'placeholder', 'green_x', 'green_y', 'diameter'])
-        # Convert frame to integer
-        eye_df['frame'] = pd.to_numeric(eye_df['frame'], errors='coerce').astype('Int64')
-        # Convert other columns to float
-        for col in ['timestamp', 'placeholder', 'green_x', 'green_y', 'diameter']:
-            eye_df[col] = pd.to_numeric(eye_df[col], errors='coerce')
+        print(f"\nLoading {vstim_go_file.name}...")
+        cleaned = clean_csv(str(vstim_go_file))
+        eye_arr = np.genfromtxt(cleaned, delimiter=",", skip_header=1)
+
+        eye_df = pd.DataFrame(eye_arr, columns=['frame', 'timestamp', 'placeholder', 'green_x', 'green_y', 'diameter'])
+        eye_df['frame'] = eye_df['frame'].astype(int)
 
         # Remove duplicate frame entries - keep only the first occurrence
+        before_dedup = len(eye_df)
         eye_df = eye_df.drop_duplicates(subset=['frame'], keep='first')
+        after_dedup = len(eye_df)
+        if before_dedup != after_dedup:
+            print(f"  Removed {before_dedup - after_dedup} duplicate frame entries")
+
         eye_df = eye_df.sort_values('frame').reset_index(drop=True)
+        print(f"  Loaded {len(eye_df)} eye position samples (after deduplication)")
     except Exception as e:
         raise ValueError(f"Error loading vstim_go file {vstim_go_file}: {e}")
 
-    # Load target position / blue dot position data
+    # Load target position / blue dot position data using standard approach
     # Columns: Frame, timestamp, target_x, target_y, diameter
     try:
-        target_df = pd.read_csv(vstim_cue_file, header=None,
-                                names=['frame', 'timestamp', 'target_x', 'target_y', 'diameter'])
-        # Convert frame to integer
-        target_df['frame'] = pd.to_numeric(target_df['frame'], errors='coerce').astype('Int64')
-        # Convert other columns to float
-        for col in ['timestamp', 'target_x', 'target_y', 'diameter']:
-            target_df[col] = pd.to_numeric(target_df[col], errors='coerce')
+        print(f"\nLoading {vstim_cue_file.name}...")
+        cleaned = clean_csv(str(vstim_cue_file))
+        target_arr = np.genfromtxt(cleaned, delimiter=",", skip_header=1)
+
+        target_df = pd.DataFrame(target_arr, columns=['frame', 'timestamp', 'target_x', 'target_y', 'diameter'])
+        target_df['frame'] = target_df['frame'].astype(int)
+
+        print(f"  Loaded {len(target_df)} target position samples")
     except Exception as e:
         raise ValueError(f"Error loading vstim_cue file {vstim_cue_file}: {e}")
 
-    print(f"Loaded data from {folder_path}")
-    print(f"  End of trial events: {len(eot_df)}")
-    print(f"  Eye position samples: {len(eye_df)} (after deduplication)")
-    print(f"  Target position samples: {len(target_df)}")
-
-    # Print first few rows for debugging
-    print(f"\nFirst end-of-trial entry:")
-    print(f"  Frame: {eot_df.iloc[0]['frame']} (type: {type(eot_df.iloc[0]['frame'])})")
-    print(f"  Trial: {eot_df.iloc[0]['trial_number']}")
-    print(f"\nFirst target entry:")
-    print(f"  Frame: {target_df.iloc[0]['frame']} (type: {type(target_df.iloc[0]['frame'])})")
-    print(f"  Position: ({target_df.iloc[0]['target_x']}, {target_df.iloc[0]['target_y']})")
+    print(f"\nData loaded successfully!")
+    print(f"  Frame range: {eye_df['frame'].min()} to {eye_df['frame'].max()}")
+    print(f"  First target at frame {target_df.iloc[0]['frame']}: ({target_df.iloc[0]['target_x']:.1f}, {target_df.iloc[0]['target_y']:.1f})")
+    print(f"  First trial ends at frame {eot_df.iloc[0]['frame']}")
 
     return eot_df, eye_df, target_df
 
@@ -182,6 +182,13 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
 
         if len(eye_trajectory) == 0:
             print(f"Warning: No eye data for trial {trial_num}, skipping")
+            continue
+
+        # Drop any rows with NA values in position data
+        eye_trajectory = eye_trajectory.dropna(subset=['green_x', 'green_y', 'timestamp'])
+
+        if len(eye_trajectory) == 0:
+            print(f"Warning: No valid eye position data for trial {trial_num}, skipping")
             continue
 
         trial_data = {
