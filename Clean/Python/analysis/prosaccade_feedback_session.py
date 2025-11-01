@@ -255,14 +255,16 @@ def plot_trajectories(trials: list[dict], results_dir: Optional[Path] = None,
         eye_x = trial['eye_x']
         eye_y = trial['eye_y']
 
-        # Plot trajectory with color indicating trial number
+        # Plot trajectory as scatter points to visualize density
         color = cmap(i / max(1, n_trials - 1))
-        ax.plot(eye_x, eye_y, alpha=0.6, linewidth=1.5, color=color,
-                label=f"Trial {trial['trial_number']}" if n_trials <= 20 else None)
+        ax.scatter(eye_x, eye_y, alpha=0.5, s=10, color=color,
+                   label=f"Trial {trial['trial_number']}" if n_trials <= 20 else None)
 
-        # Mark start and end points
-        ax.plot(eye_x[0], eye_y[0], 'o', color=color, markersize=6, alpha=0.8)
-        ax.plot(eye_x[-1], eye_y[-1], 's', color=color, markersize=6, alpha=0.8)
+        # Mark start and end points with different markers
+        ax.plot(eye_x[0], eye_y[0], 'o', color=color, markersize=8, alpha=0.9,
+                markeredgecolor='white', markeredgewidth=1)
+        ax.plot(eye_x[-1], eye_y[-1], 's', color=color, markersize=8, alpha=0.9,
+                markeredgecolor='white', markeredgewidth=1)
 
         # Draw target position as black circle at actual position with actual diameter
         target_x = trial['target_x']
@@ -315,6 +317,87 @@ def plot_trajectories(trials: list[dict], results_dir: Optional[Path] = None,
         filename_svg = f"{prefix}saccade_feedback_trajectories.svg"
         fig.savefig(results_dir / filename_svg, bbox_inches='tight')
         print(f"Saved trajectory plot to {results_dir / filename}")
+
+    return fig
+
+
+def plot_density_heatmap(trials: list[dict], results_dir: Optional[Path] = None,
+                         animal_id: Optional[str] = None, session_date: str = "") -> plt.Figure:
+    """Plot 2D histogram heatmap showing density of eye positions across all trials.
+
+    Parameters
+    ----------
+    trials : list of dict
+        List of trial data dictionaries
+    results_dir : Path, optional
+        Directory to save the figure
+    animal_id : str, optional
+        Animal identifier for filename
+    session_date : str, optional
+        Session date for title
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+        The generated figure
+    """
+    fig, ax = plt.subplots(figsize=(12, 10))
+
+    # Collect all eye positions from all trials
+    all_x = []
+    all_y = []
+    for trial in trials:
+        all_x.extend(trial['eye_x'])
+        all_y.extend(trial['eye_y'])
+
+    all_x = np.array(all_x)
+    all_y = np.array(all_y)
+
+    # Create 2D histogram
+    bins = 50  # Number of bins in each dimension
+    h, xedges, yedges = np.histogram2d(all_x, all_y, bins=bins, range=[[-1, 1], [-1, 1]])
+
+    # Plot heatmap
+    extent = [xedges[0], xedges[-1], yedges[0], yedges[-1]]
+    im = ax.imshow(h.T, extent=extent, origin='lower', cmap='hot', aspect='auto', interpolation='bilinear')
+
+    # Add colorbar
+    cbar = plt.colorbar(im, ax=ax, label='Number of Samples')
+
+    # Overlay target positions
+    for i, trial in enumerate(trials):
+        target_x = trial['target_x']
+        target_y = trial['target_y']
+        target_radius = trial['target_diameter'] / 2.0
+        target_circle = Circle((target_x, target_y), radius=target_radius, fill=False,
+                              edgecolor='cyan', linewidth=2, linestyle='-', alpha=0.7)
+        ax.add_patch(target_circle)
+
+    ax.set_xlabel('Horizontal Position (stimulus units)', fontsize=12)
+    ax.set_ylabel('Vertical Position (stimulus units)', fontsize=12)
+
+    title = 'Eye Position Density Heatmap'
+    if animal_id:
+        title += f' - {animal_id}'
+    if session_date:
+        title += f' ({session_date})'
+    ax.set_title(title, fontsize=14, fontweight='bold')
+
+    ax.set_xlim(-1, 1)
+    ax.set_ylim(-1, 1)
+    ax.set_aspect('equal', adjustable='box')
+
+    plt.tight_layout()
+
+    # Save figure if results directory provided
+    if results_dir:
+        results_dir.mkdir(parents=True, exist_ok=True)
+        prefix = f"{animal_id}_" if animal_id else ""
+        filename = f"{prefix}saccade_feedback_heatmap.png"
+        fig.savefig(results_dir / filename, dpi=150, bbox_inches='tight')
+        filename_svg = f"{prefix}saccade_feedback_heatmap.svg"
+        fig.savefig(results_dir / filename_svg, bbox_inches='tight')
+        print(f"Saved heatmap plot to {results_dir / filename}")
 
     return fig
 
@@ -483,6 +566,12 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
         plt.show()
     plt.close(fig_traj)
 
+    print("\nGenerating density heatmap...")
+    fig_heat = plot_density_heatmap(trials, results_dir, animal_id, date_str)
+    if show_plots:
+        plt.show()
+    plt.close(fig_heat)
+
     print("\nGenerating time-to-target plot...")
     fig_time = plot_time_to_target(trials, results_dir, animal_id, date_str)
     if show_plots:
@@ -561,6 +650,11 @@ def main(session_id: str) -> pd.DataFrame:
     fig_traj = plot_trajectories(trials, results_dir, animal_id, date_str)
     plt.show()
     plt.close(fig_traj)
+
+    print("\nGenerating density heatmap...")
+    fig_heat = plot_density_heatmap(trials, results_dir, animal_id, date_str)
+    plt.show()
+    plt.close(fig_heat)
 
     print("\nGenerating time-to-target plot...")
     fig_time = plot_time_to_target(trials, results_dir, animal_id, date_str)
