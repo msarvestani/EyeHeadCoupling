@@ -1119,6 +1119,233 @@ def plot_shuffle_control(shuffle_results: dict, results_dir: Optional[Path] = No
     return fig
 
 
+def compare_left_right_performance(trials: list[dict], left_x: float = -0.7, right_x: float = 0.7,
+                                   tolerance: float = 0.1, results_dir: Optional[Path] = None,
+                                   animal_id: Optional[str] = None, session_date: str = "") -> tuple:
+    """Compare performance metrics for left vs right target trials.
+
+    Parameters
+    ----------
+    trials : list of dict
+        List of trial data dictionaries
+    left_x : float
+        Expected x position for left targets (default: -0.7)
+    right_x : float
+        Expected x position for right targets (default: +0.7)
+    tolerance : float
+        Tolerance for matching target positions (default: 0.1)
+    results_dir : Path, optional
+        Directory to save the figure
+    animal_id : str, optional
+        Animal identifier for filename
+    session_date : str, optional
+        Session date for title
+
+    Returns
+    -------
+    tuple of (fig, stats_dict)
+        Figure and dictionary containing statistics and test results
+    """
+    from scipy import stats as scipy_stats
+
+    # Classify trials as left or right based on target_x position
+    left_trials = []
+    right_trials = []
+    other_trials = []
+
+    for trial in trials:
+        target_x = trial['target_x']
+        if abs(target_x - left_x) < tolerance:
+            left_trials.append(trial)
+        elif abs(target_x - right_x) < tolerance:
+            right_trials.append(trial)
+        else:
+            other_trials.append(trial)
+
+    n_left = len(left_trials)
+    n_right = len(right_trials)
+    n_other = len(other_trials)
+
+    print(f"\nLeft/Right Target Analysis:")
+    print(f"  Left trials (x ≈ {left_x}): {n_left}")
+    print(f"  Right trials (x ≈ {right_x}): {n_right}")
+    print(f"  Other positions: {n_other}")
+
+    if n_left == 0 or n_right == 0:
+        print("Warning: Not enough trials for left/right comparison")
+        return None, None
+
+    # Extract metrics for each side
+    def extract_metrics(trial_list):
+        durations = [t['duration'] for t in trial_list]
+        path_lengths = [t['path_length'] for t in trial_list]
+        efficiencies = [t['path_efficiency'] for t in trial_list]
+        dir_errors = [t['initial_direction_error'] for t in trial_list if not np.isnan(t['initial_direction_error'])]
+        return {
+            'durations': durations,
+            'path_lengths': path_lengths,
+            'efficiencies': efficiencies,
+            'dir_errors': dir_errors
+        }
+
+    left_metrics = extract_metrics(left_trials)
+    right_metrics = extract_metrics(right_trials)
+
+    # Statistical tests (Mann-Whitney U test - non-parametric)
+    duration_stat, duration_p = scipy_stats.mannwhitneyu(
+        left_metrics['durations'], right_metrics['durations'], alternative='two-sided'
+    )
+    length_stat, length_p = scipy_stats.mannwhitneyu(
+        left_metrics['path_lengths'], right_metrics['path_lengths'], alternative='two-sided'
+    )
+    eff_stat, eff_p = scipy_stats.mannwhitneyu(
+        left_metrics['efficiencies'], right_metrics['efficiencies'], alternative='two-sided'
+    )
+
+    # Create comparison plot
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+
+    # Plot 1: Time to Target
+    ax = axes[0, 0]
+    positions = [1, 2]
+    box_data = [left_metrics['durations'], right_metrics['durations']]
+    bp = ax.boxplot(box_data, positions=positions, widths=0.6, patch_artist=True,
+                    boxprops=dict(facecolor='lightblue', edgecolor='black'),
+                    medianprops=dict(color='red', linewidth=2))
+    ax.set_xticks(positions)
+    ax.set_xticklabels(['Left', 'Right'])
+    ax.set_ylabel('Time to Target (s)', fontsize=12)
+    ax.set_title(f'Time to Target\np = {duration_p:.4f}', fontsize=12, fontweight='bold')
+    ax.grid(True, alpha=0.3, axis='y')
+
+    # Add means as points
+    ax.plot(1, np.mean(left_metrics['durations']), 'ro', markersize=10, label='Mean')
+    ax.plot(2, np.mean(right_metrics['durations']), 'ro', markersize=10)
+
+    # Add sample sizes
+    ax.text(1, ax.get_ylim()[0], f'n={n_left}', ha='center', va='top', fontsize=9)
+    ax.text(2, ax.get_ylim()[0], f'n={n_right}', ha='center', va='top', fontsize=9)
+
+    # Plot 2: Path Length
+    ax = axes[0, 1]
+    box_data = [left_metrics['path_lengths'], right_metrics['path_lengths']]
+    bp = ax.boxplot(box_data, positions=positions, widths=0.6, patch_artist=True,
+                    boxprops=dict(facecolor='lightgreen', edgecolor='black'),
+                    medianprops=dict(color='red', linewidth=2))
+    ax.set_xticks(positions)
+    ax.set_xticklabels(['Left', 'Right'])
+    ax.set_ylabel('Path Length', fontsize=12)
+    ax.set_title(f'Path Length\np = {length_p:.4f}', fontsize=12, fontweight='bold')
+    ax.grid(True, alpha=0.3, axis='y')
+
+    ax.plot(1, np.mean(left_metrics['path_lengths']), 'ro', markersize=10, label='Mean')
+    ax.plot(2, np.mean(right_metrics['path_lengths']), 'ro', markersize=10)
+
+    # Plot 3: Path Efficiency
+    ax = axes[1, 0]
+    box_data = [left_metrics['efficiencies'], right_metrics['efficiencies']]
+    bp = ax.boxplot(box_data, positions=positions, widths=0.6, patch_artist=True,
+                    boxprops=dict(facecolor='lightyellow', edgecolor='black'),
+                    medianprops=dict(color='red', linewidth=2))
+    ax.set_xticks(positions)
+    ax.set_xticklabels(['Left', 'Right'])
+    ax.set_ylabel('Path Efficiency', fontsize=12)
+    ax.set_title(f'Path Efficiency\np = {eff_p:.4f}', fontsize=12, fontweight='bold')
+    ax.grid(True, alpha=0.3, axis='y')
+
+    ax.plot(1, np.mean(left_metrics['efficiencies']), 'ro', markersize=10, label='Mean')
+    ax.plot(2, np.mean(right_metrics['efficiencies']), 'ro', markersize=10)
+
+    # Plot 4: Summary statistics table
+    ax = axes[1, 1]
+    ax.axis('off')
+
+    # Create table data
+    table_data = [
+        ['Metric', 'Left', 'Right', 'p-value'],
+        ['', f'(n={n_left})', f'(n={n_right})', ''],
+        ['Duration (s)',
+         f'{np.mean(left_metrics["durations"]):.2f}±{np.std(left_metrics["durations"]):.2f}',
+         f'{np.mean(right_metrics["durations"]):.2f}±{np.std(right_metrics["durations"]):.2f}',
+         f'{duration_p:.4f}'],
+        ['Path Length',
+         f'{np.mean(left_metrics["path_lengths"]):.3f}±{np.std(left_metrics["path_lengths"]):.3f}',
+         f'{np.mean(right_metrics["path_lengths"]):.3f}±{np.std(right_metrics["path_lengths"]):.3f}',
+         f'{length_p:.4f}'],
+        ['Path Efficiency',
+         f'{np.mean(left_metrics["efficiencies"]):.3f}±{np.std(left_metrics["efficiencies"]):.3f}',
+         f'{np.mean(right_metrics["efficiencies"]):.3f}±{np.std(right_metrics["efficiencies"]):.3f}',
+         f'{eff_p:.4f}'],
+    ]
+
+    table = ax.table(cellText=table_data, cellLoc='center', loc='center',
+                    colWidths=[0.3, 0.25, 0.25, 0.2])
+    table.auto_set_font_size(False)
+    table.set_fontsize(10)
+    table.scale(1, 2)
+
+    # Style header row
+    for i in range(4):
+        table[(0, i)].set_facecolor('#4CAF50')
+        table[(0, i)].set_text_props(weight='bold', color='white')
+
+    # Highlight significant p-values
+    for i, p_val in enumerate([duration_p, length_p, eff_p], start=2):
+        if p_val < 0.05:
+            table[(i, 3)].set_facecolor('#ffcccc')
+            table[(i, 3)].set_text_props(weight='bold')
+
+    ax.set_title('Summary Statistics\n(Mann-Whitney U Test)', fontsize=12, fontweight='bold')
+
+    # Overall title
+    title = 'Left vs Right Target Performance'
+    if animal_id:
+        title += f' - {animal_id}'
+    if session_date:
+        title += f' ({session_date})'
+    fig.suptitle(title, fontsize=14, fontweight='bold')
+
+    plt.tight_layout()
+
+    # Save figure if results directory provided
+    if results_dir:
+        results_dir.mkdir(parents=True, exist_ok=True)
+        prefix = f"{animal_id}_" if animal_id else ""
+        filename = f"{prefix}saccade_feedback_left_vs_right.png"
+        fig.savefig(results_dir / filename, dpi=150, bbox_inches='tight')
+        filename_svg = f"{prefix}saccade_feedback_left_vs_right.svg"
+        fig.savefig(results_dir / filename_svg, bbox_inches='tight')
+        print(f"Saved left vs right comparison to {results_dir / filename}")
+
+    # Compile statistics dictionary
+    stats_dict = {
+        'n_left': n_left,
+        'n_right': n_right,
+        'n_other': n_other,
+        'left_metrics': left_metrics,
+        'right_metrics': right_metrics,
+        'p_values': {
+            'duration': duration_p,
+            'path_length': length_p,
+            'path_efficiency': eff_p
+        }
+    }
+
+    # Print summary
+    print(f"\n  Duration: Left={np.mean(left_metrics['durations']):.2f}s, Right={np.mean(right_metrics['durations']):.2f}s, p={duration_p:.4f}")
+    print(f"  Path Length: Left={np.mean(left_metrics['path_lengths']):.3f}, Right={np.mean(right_metrics['path_lengths']):.3f}, p={length_p:.4f}")
+    print(f"  Path Efficiency: Left={np.mean(left_metrics['efficiencies']):.3f}, Right={np.mean(right_metrics['efficiencies']):.3f}, p={eff_p:.4f}")
+
+    if duration_p < 0.05:
+        print(f"  *** Significant difference in duration (p < 0.05)")
+    if length_p < 0.05:
+        print(f"  *** Significant difference in path length (p < 0.05)")
+    if eff_p < 0.05:
+        print(f"  *** Significant difference in efficiency (p < 0.05)")
+
+    return fig, stats_dict
+
+
 def _clean_path(path_str: str | Path) -> str:
     """Clean path string by removing Python string literal syntax if present.
 
@@ -1243,6 +1470,16 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
     if show_plots:
         plt.show()
     plt.close(fig_shuffle)
+
+    print("\nRunning left vs right target comparison...")
+    fig_lr, lr_stats = compare_left_right_performance(trials, left_x=-0.7, right_x=0.7,
+                                                       results_dir=results_dir,
+                                                       animal_id=animal_id,
+                                                       session_date=date_str)
+    if fig_lr is not None:
+        if show_plots:
+            plt.show()
+        plt.close(fig_lr)
 
     # Create summary DataFrame
     durations = [t['duration'] for t in trials]
@@ -1369,6 +1606,15 @@ def main(session_id: str) -> pd.DataFrame:
     fig_shuffle = plot_shuffle_control(shuffle_results, results_dir, animal_id, date_str)
     plt.show()
     plt.close(fig_shuffle)
+
+    print("\nRunning left vs right target comparison...")
+    fig_lr, lr_stats = compare_left_right_performance(trials, left_x=-0.7, right_x=0.7,
+                                                       results_dir=results_dir,
+                                                       animal_id=animal_id,
+                                                       session_date=date_str)
+    if fig_lr is not None:
+        plt.show()
+        plt.close(fig_lr)
 
     # Create summary DataFrame
     durations = [t['duration'] for t in trials]
