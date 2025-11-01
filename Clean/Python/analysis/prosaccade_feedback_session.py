@@ -1119,6 +1119,219 @@ def plot_shuffle_control(shuffle_results: dict, results_dir: Optional[Path] = No
     return fig
 
 
+def shuffle_control_by_target_side(trials: list[dict], left_x: float = -0.7, right_x: float = 0.7,
+                                   tolerance: float = 0.1, n_shuffles: int = 1000, seed: int = 42,
+                                   results_dir: Optional[Path] = None,
+                                   animal_id: Optional[str] = None, session_date: str = "") -> dict:
+    """Run shuffle control analysis separately for all trials, left targets, and right targets.
+
+    Parameters
+    ----------
+    trials : list of dict
+        List of trial data dictionaries
+    left_x : float
+        Expected x position for left targets (default: -0.7)
+    right_x : float
+        Expected x position for right targets (default: +0.7)
+    tolerance : float
+        Tolerance for matching target positions (default: 0.1)
+    n_shuffles : int
+        Number of shuffle iterations (default: 1000)
+    seed : int
+        Random seed for reproducibility (default: 42)
+    results_dir : Path, optional
+        Directory to save the figure
+    animal_id : str, optional
+        Animal identifier for filename
+    session_date : str, optional
+        Session date for title
+
+    Returns
+    -------
+    dict
+        Contains results for all, left, and right trials
+    """
+    # Classify trials by target side
+    left_trials = []
+    right_trials = []
+
+    for trial in trials:
+        target_x = trial['target_x']
+        if abs(target_x - left_x) < tolerance:
+            left_trials.append(trial)
+        elif abs(target_x - right_x) < tolerance:
+            right_trials.append(trial)
+
+    n_left = len(left_trials)
+    n_right = len(right_trials)
+
+    print(f"\nRunning shuffle control by target side...")
+    print(f"  All trials: {len(trials)}")
+    print(f"  Left trials (x ≈ {left_x}): {n_left}")
+    print(f"  Right trials (x ≈ {right_x}): {n_right}")
+
+    # Run shuffle control for all trials
+    print(f"\n  Running shuffle control for all trials...")
+    all_results = shuffle_control_analysis(trials, n_shuffles=n_shuffles, seed=seed)
+
+    # Run shuffle control for left trials
+    left_results = None
+    if n_left > 0:
+        print(f"\n  Running shuffle control for left trials only...")
+        left_results = shuffle_control_analysis(left_trials, n_shuffles=n_shuffles, seed=seed+1)
+    else:
+        print(f"\n  Skipping left trials (not enough trials)")
+
+    # Run shuffle control for right trials
+    right_results = None
+    if n_right > 0:
+        print(f"\n  Running shuffle control for right trials only...")
+        right_results = shuffle_control_analysis(right_trials, n_shuffles=n_shuffles, seed=seed+2)
+    else:
+        print(f"\n  Skipping right trials (not enough trials)")
+
+    # Create comprehensive visualization
+    fig = plot_shuffle_control_comparison(all_results, left_results, right_results,
+                                          n_left, n_right,
+                                          results_dir=results_dir,
+                                          animal_id=animal_id,
+                                          session_date=session_date)
+
+    results = {
+        'all': all_results,
+        'left': left_results,
+        'right': right_results,
+        'n_left': n_left,
+        'n_right': n_right,
+        'figure': fig
+    }
+
+    return results
+
+
+def plot_shuffle_control_comparison(all_results: dict, left_results: Optional[dict],
+                                    right_results: Optional[dict],
+                                    n_left: int, n_right: int,
+                                    results_dir: Optional[Path] = None,
+                                    animal_id: Optional[str] = None,
+                                    session_date: str = "") -> plt.Figure:
+    """Plot comparison of shuffle control results across all, left, and right trials.
+
+    Parameters
+    ----------
+    all_results : dict
+        Shuffle control results for all trials
+    left_results : dict, optional
+        Shuffle control results for left trials
+    right_results : dict, optional
+        Shuffle control results for right trials
+    n_left : int
+        Number of left trials
+    n_right : int
+        Number of right trials
+    results_dir : Path, optional
+        Directory to save the figure
+    animal_id : str, optional
+        Animal identifier for filename
+    session_date : str, optional
+        Session date for title
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+        The generated figure
+    """
+    # Create figure with 3 rows (metrics) x 3 columns (all/left/right)
+    fig, axes = plt.subplots(3, 3, figsize=(18, 14))
+
+    # Define metrics and their properties
+    metrics = [
+        ('path_efficiency', 'Path Efficiency', 'Higher = Better', True),  # True = higher is better
+        ('initial_direction_error', 'Direction Error (°)', 'Lower = Better', False),
+        ('final_distance', 'Final Distance', 'Lower = Better', False)
+    ]
+
+    results_list = [
+        (all_results, f'All Trials (n={len(all_results["real_metrics"]["path_efficiency"])})', 'steelblue'),
+        (left_results, f'Left Targets (n={n_left})', 'darkred'),
+        (right_results, f'Right Targets (n={n_right})', 'darkgreen')
+    ]
+
+    for row_idx, (metric_key, metric_label, direction_label, higher_better) in enumerate(metrics):
+        for col_idx, (results, title, color) in enumerate(results_list):
+            ax = axes[row_idx, col_idx]
+
+            if results is None:
+                # No data for this condition
+                ax.text(0.5, 0.5, 'Insufficient\ntrials', ha='center', va='center',
+                       transform=ax.transAxes, fontsize=12, color='gray')
+                ax.set_xlabel(metric_label, fontsize=10)
+                ax.set_title(title, fontsize=11, fontweight='bold')
+                ax.set_xticks([])
+                ax.set_yticks([])
+                continue
+
+            real_mean = results['real_means'][metric_key]
+            shuffled_dist = results['shuffled_distributions'][metric_key]
+            p_value = results['p_values'][metric_key]
+
+            # Plot histogram of shuffled distribution
+            ax.hist(shuffled_dist, bins=40, color='lightgray', alpha=0.7,
+                   edgecolor='black', linewidth=0.5, label='Shuffled')
+
+            # Plot real value
+            ax.axvline(real_mean, color=color, linewidth=3,
+                      label=f'Real (p={p_value:.4f})')
+
+            # Calculate percentile
+            if higher_better:
+                percentile = np.mean(np.array(shuffled_dist) < real_mean) * 100
+                percentile_text = f'Real > {percentile:.1f}%\nof shuffles'
+            else:
+                percentile = np.mean(np.array(shuffled_dist) > real_mean) * 100
+                percentile_text = f'Real < {percentile:.1f}%\nof shuffles'
+
+            # Add percentile box
+            box_color = 'lightgreen' if p_value < 0.05 else 'yellow'
+            ax.text(0.05, 0.95, percentile_text, transform=ax.transAxes,
+                   fontsize=9, verticalalignment='top',
+                   bbox=dict(boxstyle='round', facecolor=box_color, alpha=0.6))
+
+            # Formatting
+            if col_idx == 0:
+                ax.set_ylabel('Count', fontsize=10)
+            ax.set_xlabel(metric_label, fontsize=9)
+
+            if row_idx == 0:
+                ax.set_title(title, fontsize=11, fontweight='bold')
+
+            ax.legend(fontsize=8, loc='upper right')
+            ax.grid(True, alpha=0.2, axis='y')
+
+    # Overall title
+    title = 'Shuffle Control Analysis by Target Side\n'
+    title += f'Real vs Shuffled Trial-Target Pairings (n={all_results["n_shuffles"]} shuffles)'
+    if animal_id:
+        title += f' - {animal_id}'
+    if session_date:
+        title += f' ({session_date})'
+    fig.suptitle(title, fontsize=14, fontweight='bold', y=0.995)
+
+    plt.tight_layout(rect=[0, 0, 1, 0.99])
+
+    # Save figure if results directory provided
+    if results_dir:
+        results_dir.mkdir(parents=True, exist_ok=True)
+        prefix = f"{animal_id}_" if animal_id else ""
+        filename = f"{prefix}saccade_feedback_shuffle_by_side.png"
+        fig.savefig(results_dir / filename, dpi=150, bbox_inches='tight')
+        filename_svg = f"{prefix}saccade_feedback_shuffle_by_side.svg"
+        fig.savefig(results_dir / filename_svg, bbox_inches='tight')
+        print(f"\nSaved shuffle control by side plot to {results_dir / filename}")
+
+    return fig
+
+
 def compare_left_right_performance(trials: list[dict], left_x: float = -0.7, right_x: float = 0.7,
                                    tolerance: float = 0.1, results_dir: Optional[Path] = None,
                                    animal_id: Optional[str] = None, session_date: str = "") -> tuple:
@@ -1465,11 +1678,24 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
     plt.close(fig_spatial)
 
     print("\nRunning shuffle control analysis (voluntary control test)...")
+    # Original shuffle control for all trials
     shuffle_results = shuffle_control_analysis(trials, n_shuffles=1000, seed=42)
     fig_shuffle = plot_shuffle_control(shuffle_results, results_dir, animal_id, date_str)
     if show_plots:
         plt.show()
     plt.close(fig_shuffle)
+
+    # Shuffle control split by target side (all, left, right)
+    print("\nRunning shuffle control by target side (all/left/right)...")
+    shuffle_by_side = shuffle_control_by_target_side(trials, left_x=-0.7, right_x=0.7,
+                                                      n_shuffles=1000, seed=42,
+                                                      results_dir=results_dir,
+                                                      animal_id=animal_id,
+                                                      session_date=date_str)
+    if shuffle_by_side['figure'] is not None:
+        if show_plots:
+            plt.show()
+        plt.close(shuffle_by_side['figure'])
 
     print("\nRunning left vs right target comparison...")
     fig_lr, lr_stats = compare_left_right_performance(trials, left_x=-0.7, right_x=0.7,
@@ -1602,10 +1828,22 @@ def main(session_id: str) -> pd.DataFrame:
     plt.close(fig_spatial)
 
     print("\nRunning shuffle control analysis (voluntary control test)...")
+    # Original shuffle control for all trials
     shuffle_results = shuffle_control_analysis(trials, n_shuffles=1000, seed=42)
     fig_shuffle = plot_shuffle_control(shuffle_results, results_dir, animal_id, date_str)
     plt.show()
     plt.close(fig_shuffle)
+
+    # Shuffle control split by target side (all, left, right)
+    print("\nRunning shuffle control by target side (all/left/right)...")
+    shuffle_by_side = shuffle_control_by_target_side(trials, left_x=-0.7, right_x=0.7,
+                                                      n_shuffles=1000, seed=42,
+                                                      results_dir=results_dir,
+                                                      animal_id=animal_id,
+                                                      session_date=date_str)
+    if shuffle_by_side['figure'] is not None:
+        plt.show()
+        plt.close(shuffle_by_side['figure'])
 
     print("\nRunning left vs right target comparison...")
     fig_lr, lr_stats = compare_left_right_performance(trials, left_x=-0.7, right_x=0.7,
