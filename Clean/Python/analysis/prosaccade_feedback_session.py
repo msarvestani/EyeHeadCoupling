@@ -196,6 +196,15 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
             print(f"Warning: No valid eye position data for trial {trial_num}, skipping")
             continue
 
+        # Calculate path length (cumulative distance along trajectory)
+        if len(eye_trajectory) > 1:
+            dx = np.diff(eye_trajectory['green_x'].values)
+            dy = np.diff(eye_trajectory['green_y'].values)
+            segment_lengths = np.sqrt(dx**2 + dy**2)
+            path_length = np.sum(segment_lengths)
+        else:
+            path_length = 0.0
+
         trial_data = {
             'trial_number': trial_num,
             'start_frame': start_frame,
@@ -206,9 +215,12 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
             'target_x': target_x,
             'target_y': target_y,
             'target_diameter': target_diameter,
+            'start_eye_x': eye_trajectory['green_x'].values[0],
+            'start_eye_y': eye_trajectory['green_y'].values[0],
             'eye_x': eye_trajectory['green_x'].values,
             'eye_y': eye_trajectory['green_y'].values,
             'eye_times': eye_trajectory['timestamp'].values,
+            'path_length': path_length,
         }
 
         trials.append(trial_data)
@@ -219,6 +231,18 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
         if len(trials) > 1:
             print(f"  Second trial duration: {trials[1]['duration']:.2f}")
         print(f"  Mean trial duration: {np.mean([t['duration'] for t in trials]):.2f}")
+
+        print(f"\n  Starting eye positions:")
+        for i, trial in enumerate(trials[:5]):  # Show first 5 trials
+            print(f"    Trial {trial['trial_number']}: ({trial['start_eye_x']:.3f}, {trial['start_eye_y']:.3f})")
+        if len(trials) > 5:
+            print(f"    ... (showing first 5 of {len(trials)} trials)")
+
+        path_lengths = [t['path_length'] for t in trials]
+        print(f"\n  Path length statistics:")
+        print(f"    Mean: {np.mean(path_lengths):.3f}")
+        print(f"    Median: {np.median(path_lengths):.3f}")
+        print(f"    Range: {np.min(path_lengths):.3f} - {np.max(path_lengths):.3f}")
 
     return trials
 
@@ -478,6 +502,82 @@ def plot_time_to_target(trials: list[dict], results_dir: Optional[Path] = None,
     return fig
 
 
+def plot_path_length(trials: list[dict], results_dir: Optional[Path] = None,
+                     animal_id: Optional[str] = None, session_date: str = "") -> plt.Figure:
+    """Plot trajectory path length by trial.
+
+    Parameters
+    ----------
+    trials : list of dict
+        List of trial data dictionaries
+    results_dir : Path, optional
+        Directory to save the figure
+    animal_id : str, optional
+        Animal identifier for filename
+    session_date : str, optional
+        Session date for title
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+        The generated figure
+    """
+    trial_numbers = [t['trial_number'] for t in trials]
+    path_lengths = [t['path_length'] for t in trials]
+
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8))
+
+    # Plot 1: Path length vs trial number
+    ax1.plot(trial_numbers, path_lengths, 'o-', linewidth=2, markersize=8,
+            color='steelblue', markerfacecolor='lightblue', markeredgecolor='steelblue',
+            markeredgewidth=1.5)
+    ax1.set_xlabel('Trial Number', fontsize=12)
+    ax1.set_ylabel('Path Length (stimulus units)', fontsize=12)
+
+    title = 'Trajectory Path Length Across Trials'
+    if animal_id:
+        title += f' - {animal_id}'
+    if session_date:
+        title += f' ({session_date})'
+    ax1.set_title(title, fontsize=14, fontweight='bold')
+    ax1.grid(True, alpha=0.3)
+
+    # Add mean line
+    mean_path = np.mean(path_lengths)
+    ax1.axhline(mean_path, color='red', linestyle='--', linewidth=2,
+               label=f'Mean: {mean_path:.3f}')
+    ax1.legend(fontsize=10)
+
+    # Plot 2: Histogram of path lengths
+    ax2.hist(path_lengths, bins=20, color='steelblue', alpha=0.7, edgecolor='black')
+    ax2.set_xlabel('Path Length (stimulus units)', fontsize=12)
+    ax2.set_ylabel('Number of Trials', fontsize=12)
+    ax2.set_title('Distribution of Path Lengths', fontsize=12, fontweight='bold')
+    ax2.grid(True, alpha=0.3, axis='y')
+
+    # Add statistics text
+    std_path = np.std(path_lengths)
+    median_path = np.median(path_lengths)
+    stats_text = f'Mean: {mean_path:.3f}\nMedian: {median_path:.3f}\nStd: {std_path:.3f}\nN: {len(path_lengths)}'
+    ax2.text(0.95, 0.95, stats_text, transform=ax2.transAxes,
+            fontsize=10, verticalalignment='top', horizontalalignment='right',
+            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+
+    plt.tight_layout()
+
+    # Save figure if results directory provided
+    if results_dir:
+        results_dir.mkdir(parents=True, exist_ok=True)
+        prefix = f"{animal_id}_" if animal_id else ""
+        filename = f"{prefix}saccade_feedback_path_length.png"
+        fig.savefig(results_dir / filename, dpi=150, bbox_inches='tight')
+        filename_svg = f"{prefix}saccade_feedback_path_length.svg"
+        fig.savefig(results_dir / filename_svg, bbox_inches='tight')
+        print(f"Saved path length plot to {results_dir / filename}")
+
+    return fig
+
+
 def _clean_path(path_str: str | Path) -> str:
     """Clean path string by removing Python string literal syntax if present.
 
@@ -578,8 +678,15 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
         plt.show()
     plt.close(fig_time)
 
+    print("\nGenerating path length plot...")
+    fig_path = plot_path_length(trials, results_dir, animal_id, date_str)
+    if show_plots:
+        plt.show()
+    plt.close(fig_path)
+
     # Create summary DataFrame
     durations = [t['duration'] for t in trials]
+    path_lengths = [t['path_length'] for t in trials]
 
     df = pd.DataFrame({
         'folder_path': [str(folder_path)],
@@ -591,6 +698,9 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
         'std_duration': [np.std(durations)],
         'min_duration': [np.min(durations)],
         'max_duration': [np.max(durations)],
+        'mean_path_length': [np.mean(path_lengths)],
+        'median_path_length': [np.median(path_lengths)],
+        'std_path_length': [np.std(path_lengths)],
     })
 
     print("\n" + "="*60)
@@ -600,9 +710,14 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
     print(f"Animal: {animal_id}")
     print(f"Date: {date_str}")
     print(f"Valid trials: {len(trials)}")
-    print(f"Mean time to target: {np.mean(durations):.2f} ± {np.std(durations):.2f} s")
-    print(f"Median time to target: {np.median(durations):.2f} s")
-    print(f"Range: {np.min(durations):.2f} - {np.max(durations):.2f} s")
+    print(f"\nTime to Target:")
+    print(f"  Mean: {np.mean(durations):.2f} ± {np.std(durations):.2f} s")
+    print(f"  Median: {np.median(durations):.2f} s")
+    print(f"  Range: {np.min(durations):.2f} - {np.max(durations):.2f} s")
+    print(f"\nPath Length:")
+    print(f"  Mean: {np.mean(path_lengths):.3f} ± {np.std(path_lengths):.3f}")
+    print(f"  Median: {np.median(path_lengths):.3f}")
+    print(f"  Range: {np.min(path_lengths):.3f} - {np.max(path_lengths):.3f}")
     print("="*60)
 
     return df
@@ -661,8 +776,14 @@ def main(session_id: str) -> pd.DataFrame:
     plt.show()
     plt.close(fig_time)
 
+    print("\nGenerating path length plot...")
+    fig_path = plot_path_length(trials, results_dir, animal_id, date_str)
+    plt.show()
+    plt.close(fig_path)
+
     # Create summary DataFrame
     durations = [t['duration'] for t in trials]
+    path_lengths = [t['path_length'] for t in trials]
 
     df = pd.DataFrame({
         'session_id': [session_id],
@@ -674,6 +795,9 @@ def main(session_id: str) -> pd.DataFrame:
         'std_duration': [np.std(durations)],
         'min_duration': [np.min(durations)],
         'max_duration': [np.max(durations)],
+        'mean_path_length': [np.mean(path_lengths)],
+        'median_path_length': [np.median(path_lengths)],
+        'std_path_length': [np.std(path_lengths)],
     })
 
     print("\n" + "="*60)
@@ -683,9 +807,14 @@ def main(session_id: str) -> pd.DataFrame:
     print(f"Animal: {animal_id}")
     print(f"Date: {date_str}")
     print(f"Valid trials: {len(trials)}")
-    print(f"Mean time to target: {np.mean(durations):.2f} ± {np.std(durations):.2f} s")
-    print(f"Median time to target: {np.median(durations):.2f} s")
-    print(f"Range: {np.min(durations):.2f} - {np.max(durations):.2f} s")
+    print(f"\nTime to Target:")
+    print(f"  Mean: {np.mean(durations):.2f} ± {np.std(durations):.2f} s")
+    print(f"  Median: {np.median(durations):.2f} s")
+    print(f"  Range: {np.min(durations):.2f} - {np.max(durations):.2f} s")
+    print(f"\nPath Length:")
+    print(f"  Mean: {np.mean(path_lengths):.3f} ± {np.std(path_lengths):.3f}")
+    print(f"  Median: {np.median(path_lengths):.3f}")
+    print(f"  Range: {np.min(path_lengths):.3f} - {np.max(path_lengths):.3f}")
     print("="*60)
 
     return df
