@@ -292,7 +292,8 @@ def plot_trajectories(trials: list[dict], results_dir: Optional[Path] = None,
     # Set axis limits to -1 to 1 for both axes
     ax.set_xlim(-1, 1)
     ax.set_ylim(-1, 1)
-    ax.axis('equal')
+    # Use set_aspect instead of axis('equal') to preserve the limits
+    ax.set_aspect('equal', adjustable='box')
 
     # Add legend if not too many trials
     if n_trials <= 20:
