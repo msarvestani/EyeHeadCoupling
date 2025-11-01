@@ -122,8 +122,12 @@ def load_feedback_data(folder_path: Path, animal_id: str = "Tsh001") -> Tuple[pd
 
     print(f"\nData loaded successfully!")
     print(f"  Frame range: {eye_df['frame'].min()} to {eye_df['frame'].max()}")
+    print(f"  Timestamp range: {eot_df['timestamp'].min():.2f} to {eot_df['timestamp'].max():.2f}")
     print(f"  First target at frame {target_df.iloc[0]['frame']}: ({target_df.iloc[0]['target_x']:.1f}, {target_df.iloc[0]['target_y']:.1f})")
-    print(f"  First trial ends at frame {eot_df.iloc[0]['frame']}")
+    print(f"  First trial ends at frame {eot_df.iloc[0]['frame']}, timestamp {eot_df.iloc[0]['timestamp']:.2f}")
+    if len(eot_df) > 1:
+        duration_example = eot_df.iloc[1]['timestamp'] - eot_df.iloc[0]['timestamp']
+        print(f"  Example: Trial 1 to Trial 2 timestamp diff = {duration_example:.2f} (should be in seconds)")
 
     return eot_df, eye_df, target_df
 
@@ -207,7 +211,13 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
 
         trials.append(trial_data)
 
-    print(f"Extracted {len(trials)} valid trials out of {n_trials} total")
+    print(f"\nExtracted {len(trials)} valid trials out of {n_trials} total")
+    if len(trials) > 0:
+        print(f"  First trial duration: {trials[0]['duration']:.2f} (units: check if seconds or frames)")
+        if len(trials) > 1:
+            print(f"  Second trial duration: {trials[1]['duration']:.2f}")
+        print(f"  Mean trial duration: {np.mean([t['duration'] for t in trials]):.2f}")
+
     return trials
 
 
@@ -270,6 +280,10 @@ def plot_trajectories(trials: list[dict], results_dir: Optional[Path] = None,
     ax.set_title(title, fontsize=14, fontweight='bold')
 
     ax.grid(True, alpha=0.3)
+
+    # Set axis limits to -1 to 1 for both axes
+    ax.set_xlim(-1, 1)
+    ax.set_ylim(-1, 1)
     ax.axis('equal')
 
     # Add legend if not too many trials
