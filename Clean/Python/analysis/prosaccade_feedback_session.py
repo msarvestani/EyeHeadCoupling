@@ -841,6 +841,284 @@ def plot_spatial_bias_by_phase(trials: list[dict], results_dir: Optional[Path] =
     return fig
 
 
+def calculate_trial_metrics_for_target(trial: dict, target_x: float, target_y: float) -> dict:
+    """Calculate metrics for a trial given a specific target position.
+
+    This allows us to compute metrics for shuffled trial-target pairings.
+
+    Parameters
+    ----------
+    trial : dict
+        Trial data dictionary containing trajectory
+    target_x : float
+        Target x position
+    target_y : float
+        Target y position
+
+    Returns
+    -------
+    dict
+        Metrics: path_efficiency, initial_direction_error, final_distance, duration
+    """
+    start_eye_x = trial['eye_x'][0]
+    start_eye_y = trial['eye_y'][0]
+    end_eye_x = trial['eye_x'][-1]
+    end_eye_y = trial['eye_y'][-1]
+
+    # Straight-line distance from start to target
+    straight_line_distance = np.sqrt((target_x - start_eye_x)**2 + (target_y - start_eye_y)**2)
+
+    # Path length (already calculated in trial)
+    path_length = trial['path_length']
+
+    # Path efficiency
+    if path_length > 0:
+        path_efficiency = straight_line_distance / path_length
+    else:
+        path_efficiency = 0.0
+
+    # Initial direction error
+    if len(trial['eye_x']) > 1:
+        n_samples = min(5, len(trial['eye_x']))
+        initial_dx = trial['eye_x'][n_samples-1] - start_eye_x
+        initial_dy = trial['eye_y'][n_samples-1] - start_eye_y
+
+        ideal_dx = target_x - start_eye_x
+        ideal_dy = target_y - start_eye_y
+
+        initial_mag = np.sqrt(initial_dx**2 + initial_dy**2)
+        ideal_mag = np.sqrt(ideal_dx**2 + ideal_dy**2)
+
+        if initial_mag > 0 and ideal_mag > 0:
+            cos_angle = (initial_dx * ideal_dx + initial_dy * ideal_dy) / (initial_mag * ideal_mag)
+            cos_angle = np.clip(cos_angle, -1.0, 1.0)
+            initial_direction_error = np.degrees(np.arccos(cos_angle))
+        else:
+            initial_direction_error = np.nan
+    else:
+        initial_direction_error = np.nan
+
+    # Final distance to target
+    final_distance = np.sqrt((end_eye_x - target_x)**2 + (end_eye_y - target_y)**2)
+
+    return {
+        'path_efficiency': path_efficiency,
+        'initial_direction_error': initial_direction_error,
+        'final_distance': final_distance,
+        'duration': trial['duration']
+    }
+
+
+def shuffle_control_analysis(trials: list[dict], n_shuffles: int = 1000, seed: int = 42) -> dict:
+    """Perform shuffle control analysis to test for voluntary control.
+
+    Shuffles trial-target pairings and compares real metrics to shuffled distributions.
+
+    Parameters
+    ----------
+    trials : list of dict
+        List of trial data dictionaries
+    n_shuffles : int
+        Number of shuffle iterations (default: 1000)
+    seed : int
+        Random seed for reproducibility (default: 42)
+
+    Returns
+    -------
+    dict
+        Contains real metrics, shuffled distributions, and p-values
+    """
+    np.random.seed(seed)
+
+    n_trials = len(trials)
+
+    # Extract real target positions
+    real_targets = [(t['target_x'], t['target_y']) for t in trials]
+
+    # Calculate real metrics
+    real_metrics = {
+        'path_efficiency': [],
+        'initial_direction_error': [],
+        'final_distance': [],
+        'duration': []
+    }
+
+    for trial in trials:
+        metrics = calculate_trial_metrics_for_target(trial, trial['target_x'], trial['target_y'])
+        for key in real_metrics:
+            if not np.isnan(metrics[key]):
+                real_metrics[key].append(metrics[key])
+
+    # Initialize shuffled distributions
+    shuffled_distributions = {
+        'path_efficiency': [],
+        'initial_direction_error': [],
+        'final_distance': []
+    }
+
+    print(f"\nRunning shuffle control analysis ({n_shuffles} iterations)...")
+
+    # Perform shuffles
+    for shuffle_idx in range(n_shuffles):
+        if (shuffle_idx + 1) % 100 == 0:
+            print(f"  Completed {shuffle_idx + 1}/{n_shuffles} shuffles...")
+
+        # Shuffle targets
+        shuffled_targets = real_targets.copy()
+        np.random.shuffle(shuffled_targets)
+
+        # Calculate metrics for this shuffle
+        shuffle_efficiencies = []
+        shuffle_dir_errors = []
+        shuffle_distances = []
+
+        for trial, (target_x, target_y) in zip(trials, shuffled_targets):
+            metrics = calculate_trial_metrics_for_target(trial, target_x, target_y)
+            if not np.isnan(metrics['path_efficiency']):
+                shuffle_efficiencies.append(metrics['path_efficiency'])
+            if not np.isnan(metrics['initial_direction_error']):
+                shuffle_dir_errors.append(metrics['initial_direction_error'])
+            if not np.isnan(metrics['final_distance']):
+                shuffle_distances.append(metrics['final_distance'])
+
+        # Store mean for this shuffle
+        shuffled_distributions['path_efficiency'].append(np.mean(shuffle_efficiencies))
+        shuffled_distributions['initial_direction_error'].append(np.mean(shuffle_dir_errors))
+        shuffled_distributions['final_distance'].append(np.mean(shuffle_distances))
+
+    # Calculate p-values (one-tailed tests)
+    real_mean_efficiency = np.mean(real_metrics['path_efficiency'])
+    real_mean_dir_error = np.mean(real_metrics['initial_direction_error'])
+    real_mean_distance = np.mean(real_metrics['final_distance'])
+
+    # P-value: proportion of shuffles with efficiency >= real (real should be higher)
+    p_efficiency = np.mean(np.array(shuffled_distributions['path_efficiency']) >= real_mean_efficiency)
+
+    # P-value: proportion of shuffles with dir_error <= real (real should be lower)
+    p_dir_error = np.mean(np.array(shuffled_distributions['initial_direction_error']) <= real_mean_dir_error)
+
+    # P-value: proportion of shuffles with distance <= real (real should be lower)
+    p_distance = np.mean(np.array(shuffled_distributions['final_distance']) <= real_mean_distance)
+
+    results = {
+        'real_metrics': real_metrics,
+        'real_means': {
+            'path_efficiency': real_mean_efficiency,
+            'initial_direction_error': real_mean_dir_error,
+            'final_distance': real_mean_distance
+        },
+        'shuffled_distributions': shuffled_distributions,
+        'p_values': {
+            'path_efficiency': p_efficiency,
+            'initial_direction_error': p_dir_error,
+            'final_distance': p_distance
+        },
+        'n_shuffles': n_shuffles
+    }
+
+    print(f"\nShuffle control results:")
+    print(f"  Path Efficiency: Real={real_mean_efficiency:.3f}, p={p_efficiency:.4f}")
+    print(f"  Direction Error: Real={real_mean_dir_error:.1f}°, p={p_dir_error:.4f}")
+    print(f"  Final Distance:  Real={real_mean_distance:.3f}, p={p_distance:.4f}")
+
+    return results
+
+
+def plot_shuffle_control(shuffle_results: dict, results_dir: Optional[Path] = None,
+                         animal_id: Optional[str] = None, session_date: str = "") -> plt.Figure:
+    """Plot shuffle control analysis results.
+
+    Parameters
+    ----------
+    shuffle_results : dict
+        Results from shuffle_control_analysis()
+    results_dir : Path, optional
+        Directory to save the figure
+    animal_id : str, optional
+        Animal identifier for filename
+    session_date : str, optional
+        Session date for title
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+        The generated figure
+    """
+    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+
+    real_means = shuffle_results['real_means']
+    shuffled = shuffle_results['shuffled_distributions']
+    p_values = shuffle_results['p_values']
+    n_shuffles = shuffle_results['n_shuffles']
+
+    # Plot 1: Path Efficiency
+    ax = axes[0]
+    ax.hist(shuffled['path_efficiency'], bins=50, color='gray', alpha=0.6, edgecolor='black', label='Shuffled')
+    ax.axvline(real_means['path_efficiency'], color='red', linewidth=3, label=f"Real (p={p_values['path_efficiency']:.4f})")
+    ax.set_xlabel('Mean Path Efficiency', fontsize=12)
+    ax.set_ylabel('Count', fontsize=12)
+    ax.set_title('Path Efficiency\n(Higher = Better)', fontsize=12, fontweight='bold')
+    ax.legend(fontsize=10)
+    ax.grid(True, alpha=0.3, axis='y')
+
+    # Add percentile text
+    percentile = np.mean(np.array(shuffled['path_efficiency']) < real_means['path_efficiency']) * 100
+    ax.text(0.05, 0.95, f'Real > {percentile:.1f}% of shuffles', transform=ax.transAxes,
+            fontsize=10, verticalalignment='top', bbox=dict(boxstyle='round', facecolor='yellow', alpha=0.5))
+
+    # Plot 2: Initial Direction Error
+    ax = axes[1]
+    ax.hist(shuffled['initial_direction_error'], bins=50, color='gray', alpha=0.6, edgecolor='black', label='Shuffled')
+    ax.axvline(real_means['initial_direction_error'], color='red', linewidth=3, label=f"Real (p={p_values['initial_direction_error']:.4f})")
+    ax.set_xlabel('Mean Direction Error (degrees)', fontsize=12)
+    ax.set_ylabel('Count', fontsize=12)
+    ax.set_title('Initial Direction Error\n(Lower = Better)', fontsize=12, fontweight='bold')
+    ax.legend(fontsize=10)
+    ax.grid(True, alpha=0.3, axis='y')
+
+    # Add percentile text
+    percentile = np.mean(np.array(shuffled['initial_direction_error']) > real_means['initial_direction_error']) * 100
+    ax.text(0.05, 0.95, f'Real < {percentile:.1f}% of shuffles', transform=ax.transAxes,
+            fontsize=10, verticalalignment='top', bbox=dict(boxstyle='round', facecolor='yellow', alpha=0.5))
+
+    # Plot 3: Final Distance to Target
+    ax = axes[2]
+    ax.hist(shuffled['final_distance'], bins=50, color='gray', alpha=0.6, edgecolor='black', label='Shuffled')
+    ax.axvline(real_means['final_distance'], color='red', linewidth=3, label=f"Real (p={p_values['final_distance']:.4f})")
+    ax.set_xlabel('Mean Final Distance to Target', fontsize=12)
+    ax.set_ylabel('Count', fontsize=12)
+    ax.set_title('Final Distance to Target\n(Lower = Better)', fontsize=12, fontweight='bold')
+    ax.legend(fontsize=10)
+    ax.grid(True, alpha=0.3, axis='y')
+
+    # Add percentile text
+    percentile = np.mean(np.array(shuffled['final_distance']) > real_means['final_distance']) * 100
+    ax.text(0.05, 0.95, f'Real < {percentile:.1f}% of shuffles', transform=ax.transAxes,
+            fontsize=10, verticalalignment='top', bbox=dict(boxstyle='round', facecolor='yellow', alpha=0.5))
+
+    # Overall title
+    title = f'Shuffle Control Analysis (n={n_shuffles} shuffles)\nReal vs Shuffled Trial-Target Pairings'
+    if animal_id:
+        title += f' - {animal_id}'
+    if session_date:
+        title += f' ({session_date})'
+    fig.suptitle(title, fontsize=14, fontweight='bold')
+
+    plt.tight_layout()
+
+    # Save figure if results directory provided
+    if results_dir:
+        results_dir.mkdir(parents=True, exist_ok=True)
+        prefix = f"{animal_id}_" if animal_id else ""
+        filename = f"{prefix}saccade_feedback_shuffle_control.png"
+        fig.savefig(results_dir / filename, dpi=150, bbox_inches='tight')
+        filename_svg = f"{prefix}saccade_feedback_shuffle_control.svg"
+        fig.savefig(results_dir / filename_svg, bbox_inches='tight')
+        print(f"Saved shuffle control plot to {results_dir / filename}")
+
+    return fig
+
+
 def _clean_path(path_str: str | Path) -> str:
     """Clean path string by removing Python string literal syntax if present.
 
@@ -958,6 +1236,13 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
     if show_plots:
         plt.show()
     plt.close(fig_spatial)
+
+    print("\nRunning shuffle control analysis (voluntary control test)...")
+    shuffle_results = shuffle_control_analysis(trials, n_shuffles=1000, seed=42)
+    fig_shuffle = plot_shuffle_control(shuffle_results, results_dir, animal_id, date_str)
+    if show_plots:
+        plt.show()
+    plt.close(fig_shuffle)
 
     # Create summary DataFrame
     durations = [t['duration'] for t in trials]
@@ -1078,6 +1363,12 @@ def main(session_id: str) -> pd.DataFrame:
     fig_spatial = plot_spatial_bias_by_phase(trials, results_dir, animal_id, date_str)
     plt.show()
     plt.close(fig_spatial)
+
+    print("\nRunning shuffle control analysis (voluntary control test)...")
+    shuffle_results = shuffle_control_analysis(trials, n_shuffles=1000, seed=42)
+    fig_shuffle = plot_shuffle_control(shuffle_results, results_dir, animal_id, date_str)
+    plt.show()
+    plt.close(fig_shuffle)
 
     # Create summary DataFrame
     durations = [t['duration'] for t in trials]
