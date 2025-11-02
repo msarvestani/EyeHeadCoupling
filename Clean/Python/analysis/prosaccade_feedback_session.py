@@ -1346,6 +1346,664 @@ def compare_left_right_performance(trials: list[dict], left_x: float = -0.7, rig
     return fig, stats_dict
 
 
+def test_initial_direction_correlation(trials: list[dict], results_dir: Optional[Path] = None,
+                                        animal_id: Optional[str] = None, session_date: str = "") -> tuple:
+    """Test #2: Initial Direction Correlation - do initial movements point toward targets?
+
+    Voluntary movements should show strong correlation between initial movement direction
+    and the actual direction to the target. Random movements would show no correlation.
+
+    Parameters
+    ----------
+    trials : list of dict
+        List of trial data dictionaries
+    results_dir : Path, optional
+        Directory to save the figure
+    animal_id : str, optional
+        Animal identifier for filename
+    session_date : str, optional
+        Session date for title
+
+    Returns
+    -------
+    tuple of (fig, stats_dict)
+        Figure and dictionary containing correlation statistics
+    """
+    from scipy import stats as scipy_stats
+
+    # Calculate angles for each trial
+    target_angles = []
+    initial_angles = []
+
+    for trial in trials:
+        start_x = trial['eye_x'][0]
+        start_y = trial['eye_y'][0]
+        target_x = trial['target_x']
+        target_y = trial['target_y']
+
+        # Angle to target (in degrees, 0 = right, 90 = up)
+        target_angle = np.degrees(np.arctan2(target_y - start_y, target_x - start_x))
+
+        # Initial movement angle (using first 5 samples)
+        if len(trial['eye_x']) >= 5:
+            n_samples = 5
+            initial_x = trial['eye_x'][n_samples-1]
+            initial_y = trial['eye_y'][n_samples-1]
+            initial_angle = np.degrees(np.arctan2(initial_y - start_y, initial_x - start_x))
+
+            target_angles.append(target_angle)
+            initial_angles.append(initial_angle)
+
+    target_angles = np.array(target_angles)
+    initial_angles = np.array(initial_angles)
+
+    # Calculate circular correlation (angles wrap around at ±180°)
+    # For simplicity, use Pearson correlation (works well if angles don't cross ±180° boundary)
+    r, p_value = scipy_stats.pearsonr(target_angles, initial_angles)
+
+    # Create visualization
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
+
+    # Plot 1: Scatter plot with regression line
+    ax1.scatter(target_angles, initial_angles, alpha=0.6, s=60, edgecolors='black', linewidth=0.5)
+
+    # Add diagonal line (perfect correlation)
+    lim = max(abs(target_angles.max()), abs(target_angles.min()),
+              abs(initial_angles.max()), abs(initial_angles.min()))
+    ax1.plot([-lim, lim], [-lim, lim], 'g--', linewidth=2, alpha=0.5, label='Perfect correlation (r=1)')
+
+    # Add regression line
+    z = np.polyfit(target_angles, initial_angles, 1)
+    p = np.poly1d(z)
+    x_fit = np.linspace(target_angles.min(), target_angles.max(), 100)
+    ax1.plot(x_fit, p(x_fit), 'r-', linewidth=2, label=f'Actual fit (r={r:.3f})')
+
+    ax1.set_xlabel('Target Direction (degrees)', fontsize=12)
+    ax1.set_ylabel('Initial Movement Direction (degrees)', fontsize=12)
+    ax1.set_title(f'Initial Direction Correlation\nr = {r:.3f}, p = {p_value:.4e}',
+                  fontsize=14, fontweight='bold')
+    ax1.legend(fontsize=10)
+    ax1.grid(True, alpha=0.3)
+    ax1.set_aspect('equal', adjustable='box')
+
+    # Add interpretation box
+    if r > 0.7 and p_value < 0.05:
+        interpretation = 'VOLUNTARY\n(strong correlation)'
+        box_color = 'lightgreen'
+    elif r > 0.4 and p_value < 0.05:
+        interpretation = 'Likely voluntary\n(moderate correlation)'
+        box_color = 'yellow'
+    else:
+        interpretation = 'Random or weak\n(low correlation)'
+        box_color = 'lightcoral'
+
+    ax1.text(0.05, 0.95, interpretation, transform=ax1.transAxes,
+            fontsize=12, verticalalignment='top', fontweight='bold',
+            bbox=dict(boxstyle='round', facecolor=box_color, alpha=0.8))
+
+    # Plot 2: Residuals (angular errors)
+    angular_errors = initial_angles - target_angles
+    # Normalize to [-180, 180]
+    angular_errors = (angular_errors + 180) % 360 - 180
+
+    ax2.hist(angular_errors, bins=30, color='steelblue', alpha=0.7, edgecolor='black')
+    ax2.axvline(0, color='red', linestyle='--', linewidth=2, label='Perfect aiming')
+    ax2.axvline(np.mean(angular_errors), color='orange', linestyle='-', linewidth=2,
+                label=f'Mean error: {np.mean(angular_errors):.1f}°')
+    ax2.set_xlabel('Angular Error (degrees)', fontsize=12)
+    ax2.set_ylabel('Count', fontsize=12)
+    ax2.set_title(f'Distribution of Aiming Errors\nStd = {np.std(angular_errors):.1f}°',
+                  fontsize=14, fontweight='bold')
+    ax2.legend(fontsize=10)
+    ax2.grid(True, alpha=0.3, axis='y')
+
+    # Overall title
+    title = 'Test #2: Initial Direction Correlation (Voluntary Control Test)'
+    if animal_id:
+        title += f' - {animal_id}'
+    if session_date:
+        title += f' ({session_date})'
+    fig.suptitle(title, fontsize=15, fontweight='bold')
+
+    plt.tight_layout()
+
+    # Save figure
+    if results_dir:
+        results_dir.mkdir(parents=True, exist_ok=True)
+        prefix = f"{animal_id}_" if animal_id else ""
+        filename = f"{prefix}saccade_feedback_test2_direction_correlation.png"
+        fig.savefig(results_dir / filename, dpi=150, bbox_inches='tight')
+        filename_svg = f"{prefix}saccade_feedback_test2_direction_correlation.svg"
+        fig.savefig(results_dir / filename_svg, bbox_inches='tight')
+        print(f"Saved initial direction correlation plot to {results_dir / filename}")
+
+    stats_dict = {
+        'r': r,
+        'p_value': p_value,
+        'mean_angular_error': np.mean(angular_errors),
+        'std_angular_error': np.std(angular_errors),
+        'n_trials': len(target_angles)
+    }
+
+    print(f"\nTest #2: Initial Direction Correlation")
+    print(f"  Correlation: r = {r:.3f}, p = {p_value:.4e}")
+    print(f"  Mean angular error: {np.mean(angular_errors):.1f}° ± {np.std(angular_errors):.1f}°")
+    print(f"  Interpretation: {'VOLUNTARY' if r > 0.7 and p_value < 0.05 else 'Random or weak'}")
+
+    return fig, stats_dict
+
+
+def test_trial_to_trial_adaptation(trials: list[dict], results_dir: Optional[Path] = None,
+                                   animal_id: Optional[str] = None, session_date: str = "") -> tuple:
+    """Test #3: Trial-to-Trial Learning/Adaptation
+
+    Voluntary behavior should show trial-to-trial correlations in performance,
+    either through error correction or learning consistency. Random movements
+    would show no correlation between consecutive trials.
+
+    Parameters
+    ----------
+    trials : list of dict
+        List of trial data dictionaries
+    results_dir : Path, optional
+        Directory to save the figure
+    animal_id : str, optional
+        Animal identifier for filename
+    session_date : str, optional
+        Session date for title
+
+    Returns
+    -------
+    tuple of (fig, stats_dict)
+        Figure and dictionary containing auto-correlation statistics
+    """
+    from scipy import stats as scipy_stats
+
+    # Extract metrics
+    durations = np.array([t['duration'] for t in trials])
+    efficiencies = np.array([t['path_efficiency'] for t in trials])
+    dir_errors = np.array([t['initial_direction_error'] for t in trials])
+
+    # Calculate consecutive differences (trial N+1 - trial N)
+    duration_diffs = np.diff(durations)
+    efficiency_diffs = np.diff(efficiencies)
+
+    # Calculate auto-correlation (correlation between trial N and trial N+1)
+    duration_autocorr, duration_p = scipy_stats.pearsonr(durations[:-1], durations[1:])
+    efficiency_autocorr, efficiency_p = scipy_stats.pearsonr(efficiencies[:-1], efficiencies[1:])
+
+    # Create visualization
+    fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+
+    # Plot 1: Duration auto-correlation
+    ax = axes[0, 0]
+    ax.scatter(durations[:-1], durations[1:], alpha=0.6, s=60, edgecolors='black', linewidth=0.5)
+
+    # Add diagonal line (perfect persistence)
+    lim_min = min(durations.min(), durations.min())
+    lim_max = max(durations.max(), durations.max())
+    ax.plot([lim_min, lim_max], [lim_min, lim_max], 'g--', linewidth=2, alpha=0.5,
+            label='Perfect persistence')
+
+    # Add regression line
+    z = np.polyfit(durations[:-1], durations[1:], 1)
+    p = np.poly1d(z)
+    x_fit = np.linspace(durations.min(), durations.max(), 100)
+    ax.plot(x_fit, p(x_fit), 'r-', linewidth=2, label=f'r={duration_autocorr:.3f}')
+
+    ax.set_xlabel('Trial N Duration (s)', fontsize=11)
+    ax.set_ylabel('Trial N+1 Duration (s)', fontsize=11)
+    ax.set_title(f'Duration Auto-correlation\nr = {duration_autocorr:.3f}, p = {duration_p:.4f}',
+                 fontsize=12, fontweight='bold')
+    ax.legend(fontsize=9)
+    ax.grid(True, alpha=0.3)
+
+    # Plot 2: Efficiency auto-correlation
+    ax = axes[0, 1]
+    ax.scatter(efficiencies[:-1], efficiencies[1:], alpha=0.6, s=60,
+               edgecolors='black', linewidth=0.5, color='orange')
+
+    lim_min = efficiencies.min()
+    lim_max = efficiencies.max()
+    ax.plot([lim_min, lim_max], [lim_min, lim_max], 'g--', linewidth=2, alpha=0.5,
+            label='Perfect persistence')
+
+    z = np.polyfit(efficiencies[:-1], efficiencies[1:], 1)
+    p = np.poly1d(z)
+    x_fit = np.linspace(efficiencies.min(), efficiencies.max(), 100)
+    ax.plot(x_fit, p(x_fit), 'r-', linewidth=2, label=f'r={efficiency_autocorr:.3f}')
+
+    ax.set_xlabel('Trial N Efficiency', fontsize=11)
+    ax.set_ylabel('Trial N+1 Efficiency', fontsize=11)
+    ax.set_title(f'Efficiency Auto-correlation\nr = {efficiency_autocorr:.3f}, p = {efficiency_p:.4f}',
+                 fontsize=12, fontweight='bold')
+    ax.legend(fontsize=9)
+    ax.grid(True, alpha=0.3)
+
+    # Plot 3: Duration changes over trials
+    ax = axes[1, 0]
+    trial_nums = np.arange(1, len(trials))
+    ax.plot(trial_nums, duration_diffs, 'o-', alpha=0.6, markersize=4)
+    ax.axhline(0, color='red', linestyle='--', linewidth=2, alpha=0.7, label='No change')
+    ax.set_xlabel('Trial Number', fontsize=11)
+    ax.set_ylabel('Duration Change (trial N+1 - N)', fontsize=11)
+    ax.set_title('Trial-to-Trial Duration Changes', fontsize=12, fontweight='bold')
+    ax.legend(fontsize=9)
+    ax.grid(True, alpha=0.3)
+
+    # Plot 4: Moving average of efficiency (learning curve)
+    ax = axes[1, 1]
+    window = min(10, len(efficiencies) // 3)  # Adaptive window size
+    if window >= 3:
+        moving_avg = np.convolve(efficiencies, np.ones(window)/window, mode='valid')
+        ax.plot(range(len(efficiencies)), efficiencies, 'o', alpha=0.3, markersize=4,
+                color='lightblue', label='Individual trials')
+        ax.plot(range(window-1, len(efficiencies)), moving_avg, 'b-', linewidth=3,
+                label=f'{window}-trial moving avg')
+
+        # Add trend line
+        trial_indices = np.arange(len(efficiencies))
+        z = np.polyfit(trial_indices, efficiencies, 1)
+        p = np.poly1d(z)
+        ax.plot(trial_indices, p(trial_indices), 'r--', linewidth=2,
+                label=f'Trend: {z[0]:+.4f}/trial')
+    else:
+        ax.plot(range(len(efficiencies)), efficiencies, 'o-', alpha=0.6, markersize=6)
+
+    ax.set_xlabel('Trial Number', fontsize=11)
+    ax.set_ylabel('Path Efficiency', fontsize=11)
+    ax.set_title('Learning Curve (Efficiency)', fontsize=12, fontweight='bold')
+    ax.legend(fontsize=9)
+    ax.grid(True, alpha=0.3)
+
+    # Overall interpretation
+    interpretation_lines = []
+    if abs(duration_autocorr) > 0.3 and duration_p < 0.05:
+        interpretation_lines.append(f"✓ Duration shows trial-to-trial correlation (r={duration_autocorr:.3f})")
+    if abs(efficiency_autocorr) > 0.3 and efficiency_p < 0.05:
+        interpretation_lines.append(f"✓ Efficiency shows trial-to-trial correlation (r={efficiency_autocorr:.3f})")
+
+    if len(interpretation_lines) > 0:
+        interpretation = "VOLUNTARY behavior:\n" + "\n".join(interpretation_lines)
+        box_color = 'lightgreen'
+    else:
+        interpretation = "Weak or no trial-to-trial correlation\n(consistent with random movements)"
+        box_color = 'lightcoral'
+
+    fig.text(0.5, 0.01, interpretation, ha='center', fontsize=11, fontweight='bold',
+             bbox=dict(boxstyle='round', facecolor=box_color, alpha=0.8))
+
+    # Overall title
+    title = 'Test #3: Trial-to-Trial Adaptation (Voluntary Control Test)'
+    if animal_id:
+        title += f' - {animal_id}'
+    if session_date:
+        title += f' ({session_date})'
+    fig.suptitle(title, fontsize=15, fontweight='bold')
+
+    plt.tight_layout(rect=[0, 0.03, 1, 0.97])
+
+    # Save figure
+    if results_dir:
+        results_dir.mkdir(parents=True, exist_ok=True)
+        prefix = f"{animal_id}_" if animal_id else ""
+        filename = f"{prefix}saccade_feedback_test3_trial_adaptation.png"
+        fig.savefig(results_dir / filename, dpi=150, bbox_inches='tight')
+        filename_svg = f"{prefix}saccade_feedback_test3_trial_adaptation.svg"
+        fig.savefig(results_dir / filename_svg, bbox_inches='tight')
+        print(f"Saved trial-to-trial adaptation plot to {results_dir / filename}")
+
+    stats_dict = {
+        'duration_autocorr': duration_autocorr,
+        'duration_p': duration_p,
+        'efficiency_autocorr': efficiency_autocorr,
+        'efficiency_p': efficiency_p,
+        'n_trials': len(trials)
+    }
+
+    print(f"\nTest #3: Trial-to-Trial Adaptation")
+    print(f"  Duration auto-correlation: r = {duration_autocorr:.3f}, p = {duration_p:.4f}")
+    print(f"  Efficiency auto-correlation: r = {efficiency_autocorr:.3f}, p = {efficiency_p:.4f}")
+
+    return fig, stats_dict
+
+
+def test_speed_accuracy_tradeoff(trials: list[dict], results_dir: Optional[Path] = None,
+                                 animal_id: Optional[str] = None, session_date: str = "") -> tuple:
+    """Test #6: Speed-Accuracy Tradeoff
+
+    Voluntary movements typically show a speed-accuracy tradeoff: faster trials
+    are less accurate. Random movements would show no such relationship.
+
+    Parameters
+    ----------
+    trials : list of dict
+        List of trial data dictionaries
+    results_dir : Path, optional
+        Directory to save the figure
+    animal_id : str, optional
+        Animal identifier for filename
+    session_date : str, optional
+        Session date for title
+
+    Returns
+    -------
+    tuple of (fig, stats_dict)
+        Figure and dictionary containing correlation statistics
+    """
+    from scipy import stats as scipy_stats
+
+    # Extract metrics
+    durations = []
+    final_distances = []
+    efficiencies = []
+
+    for trial in trials:
+        durations.append(trial['duration'])
+
+        # Calculate final distance to target
+        final_x = trial['eye_x'][-1]
+        final_y = trial['eye_y'][-1]
+        target_x = trial['target_x']
+        target_y = trial['target_y']
+        final_dist = np.sqrt((final_x - target_x)**2 + (final_y - target_y)**2)
+        final_distances.append(final_dist)
+
+        efficiencies.append(trial['path_efficiency'])
+
+    durations = np.array(durations)
+    final_distances = np.array(final_distances)
+    efficiencies = np.array(efficiencies)
+
+    # Calculate correlations
+    r_dist, p_dist = scipy_stats.pearsonr(durations, final_distances)
+    r_eff, p_eff = scipy_stats.pearsonr(durations, efficiencies)
+
+    # Create visualization
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
+
+    # Plot 1: Duration vs Final Distance (expect negative correlation for voluntary)
+    ax1.scatter(durations, final_distances, alpha=0.6, s=60, c=efficiencies,
+                cmap='RdYlGn', edgecolors='black', linewidth=0.5)
+
+    # Add regression line
+    z = np.polyfit(durations, final_distances, 1)
+    p = np.poly1d(z)
+    x_fit = np.linspace(durations.min(), durations.max(), 100)
+    ax1.plot(x_fit, p(x_fit), 'r-', linewidth=2, label=f'r={r_dist:.3f}')
+
+    ax1.set_xlabel('Trial Duration (s)', fontsize=12)
+    ax1.set_ylabel('Final Distance to Target', fontsize=12)
+    ax1.set_title(f'Speed vs Accuracy (Distance)\nr = {r_dist:.3f}, p = {p_dist:.4f}',
+                  fontsize=14, fontweight='bold')
+    ax1.legend(fontsize=10)
+    ax1.grid(True, alpha=0.3)
+
+    # Add colorbar
+    cbar = plt.colorbar(ax1.collections[0], ax=ax1, label='Path Efficiency')
+
+    # Add interpretation
+    if r_dist < -0.3 and p_dist < 0.05:
+        interpretation = 'VOLUNTARY\n(faster → less accurate)'
+        box_color = 'lightgreen'
+    elif r_dist > 0.3 and p_dist < 0.05:
+        interpretation = 'VOLUNTARY\n(slower → more accurate)'
+        box_color = 'lightgreen'
+    else:
+        interpretation = 'No clear tradeoff\n(random or consistent speed)'
+        box_color = 'yellow'
+
+    ax1.text(0.05, 0.95, interpretation, transform=ax1.transAxes,
+            fontsize=11, verticalalignment='top', fontweight='bold',
+            bbox=dict(boxstyle='round', facecolor=box_color, alpha=0.8))
+
+    # Plot 2: Duration vs Efficiency (expect positive correlation for voluntary)
+    ax2.scatter(durations, efficiencies, alpha=0.6, s=60, c=final_distances,
+                cmap='RdYlGn_r', edgecolors='black', linewidth=0.5)
+
+    # Add regression line
+    z = np.polyfit(durations, efficiencies, 1)
+    p = np.poly1d(z)
+    x_fit = np.linspace(durations.min(), durations.max(), 100)
+    ax2.plot(x_fit, p(x_fit), 'r-', linewidth=2, label=f'r={r_eff:.3f}')
+
+    ax2.set_xlabel('Trial Duration (s)', fontsize=12)
+    ax2.set_ylabel('Path Efficiency', fontsize=12)
+    ax2.set_title(f'Speed vs Efficiency\nr = {r_eff:.3f}, p = {p_eff:.4f}',
+                  fontsize=14, fontweight='bold')
+    ax2.legend(fontsize=10)
+    ax2.grid(True, alpha=0.3)
+
+    # Add colorbar
+    cbar = plt.colorbar(ax2.collections[0], ax=ax2, label='Final Distance')
+
+    # Add interpretation
+    if r_eff > 0.3 and p_eff < 0.05:
+        interpretation2 = 'VOLUNTARY\n(slower → more efficient)'
+        box_color2 = 'lightgreen'
+    elif r_eff < -0.3 and p_eff < 0.05:
+        interpretation2 = 'VOLUNTARY\n(faster → more efficient)'
+        box_color2 = 'lightgreen'
+    else:
+        interpretation2 = 'No clear tradeoff'
+        box_color2 = 'yellow'
+
+    ax2.text(0.05, 0.95, interpretation2, transform=ax2.transAxes,
+            fontsize=11, verticalalignment='top', fontweight='bold',
+            bbox=dict(boxstyle='round', facecolor=box_color2, alpha=0.8))
+
+    # Overall title
+    title = 'Test #6: Speed-Accuracy Tradeoff (Voluntary Control Test)'
+    if animal_id:
+        title += f' - {animal_id}'
+    if session_date:
+        title += f' ({session_date})'
+    fig.suptitle(title, fontsize=15, fontweight='bold')
+
+    plt.tight_layout()
+
+    # Save figure
+    if results_dir:
+        results_dir.mkdir(parents=True, exist_ok=True)
+        prefix = f"{animal_id}_" if animal_id else ""
+        filename = f"{prefix}saccade_feedback_test6_speed_accuracy.png"
+        fig.savefig(results_dir / filename, dpi=150, bbox_inches='tight')
+        filename_svg = f"{prefix}saccade_feedback_test6_speed_accuracy.svg"
+        fig.savefig(results_dir / filename_svg, bbox_inches='tight')
+        print(f"Saved speed-accuracy tradeoff plot to {results_dir / filename}")
+
+    stats_dict = {
+        'r_duration_distance': r_dist,
+        'p_duration_distance': p_dist,
+        'r_duration_efficiency': r_eff,
+        'p_duration_efficiency': p_eff,
+        'n_trials': len(trials)
+    }
+
+    print(f"\nTest #6: Speed-Accuracy Tradeoff")
+    print(f"  Duration vs Distance: r = {r_dist:.3f}, p = {p_dist:.4f}")
+    print(f"  Duration vs Efficiency: r = {r_eff:.3f}, p = {p_eff:.4f}")
+
+    return fig, stats_dict
+
+
+def test_reaction_time_consistency(trials: list[dict], movement_threshold: float = 0.01,
+                                   results_dir: Optional[Path] = None,
+                                   animal_id: Optional[str] = None, session_date: str = "") -> tuple:
+    """Test #7: Reaction Time Consistency
+
+    Voluntary movements should have consistent reaction times (latency from trial
+    start to first movement). Random movements would have high variance or no
+    consistent pattern.
+
+    Parameters
+    ----------
+    trials : list of dict
+        List of trial data dictionaries
+    movement_threshold : float
+        Distance threshold for detecting movement onset (default: 0.01)
+    results_dir : Path, optional
+        Directory to save the figure
+    animal_id : str, optional
+        Animal identifier for filename
+    session_date : str, optional
+        Session date for title
+
+    Returns
+    -------
+    tuple of (fig, stats_dict)
+        Figure and dictionary containing reaction time statistics
+    """
+    from scipy import stats as scipy_stats
+
+    # Calculate reaction times for each trial
+    reaction_times = []
+    reaction_distances = []
+
+    for trial in trials:
+        start_x = trial['eye_x'][0]
+        start_y = trial['eye_y'][0]
+        times = trial['eye_times'] - trial['eye_times'][0]  # Relative to trial start
+
+        # Find first movement (when cumulative distance exceeds threshold)
+        for i in range(1, len(trial['eye_x'])):
+            dist = np.sqrt((trial['eye_x'][i] - start_x)**2 + (trial['eye_y'][i] - start_y)**2)
+            if dist > movement_threshold:
+                reaction_times.append(times[i])
+                reaction_distances.append(dist)
+                break
+        else:
+            # No movement detected - use full duration
+            reaction_times.append(trial['duration'])
+            reaction_distances.append(0)
+
+    reaction_times = np.array(reaction_times)
+
+    # Calculate statistics
+    mean_rt = np.mean(reaction_times)
+    std_rt = np.std(reaction_times)
+    cv = std_rt / mean_rt if mean_rt > 0 else np.inf  # Coefficient of variation
+
+    # Create visualization
+    fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+
+    # Plot 1: Histogram of reaction times
+    ax = axes[0, 0]
+    n, bins, patches = ax.hist(reaction_times, bins=25, color='steelblue', alpha=0.7,
+                                edgecolor='black')
+    ax.axvline(mean_rt, color='red', linestyle='--', linewidth=2,
+               label=f'Mean: {mean_rt:.3f}s')
+    ax.axvline(mean_rt - std_rt, color='orange', linestyle=':', linewidth=2, alpha=0.7)
+    ax.axvline(mean_rt + std_rt, color='orange', linestyle=':', linewidth=2, alpha=0.7,
+               label=f'±1 SD: {std_rt:.3f}s')
+
+    ax.set_xlabel('Reaction Time (s)', fontsize=12)
+    ax.set_ylabel('Count', fontsize=12)
+    ax.set_title(f'Reaction Time Distribution\nMean={mean_rt:.3f}s, SD={std_rt:.3f}s, CV={cv:.2f}',
+                 fontsize=13, fontweight='bold')
+    ax.legend(fontsize=10)
+    ax.grid(True, alpha=0.3, axis='y')
+
+    # Add interpretation
+    if cv < 0.3:
+        interpretation = 'VOLUNTARY\n(consistent RT, low CV)'
+        box_color = 'lightgreen'
+    elif cv < 0.5:
+        interpretation = 'Moderate consistency\n(medium CV)'
+        box_color = 'yellow'
+    else:
+        interpretation = 'High variability\n(inconsistent, high CV)'
+        box_color = 'lightcoral'
+
+    ax.text(0.95, 0.95, interpretation, transform=ax.transAxes,
+            fontsize=11, verticalalignment='top', horizontalalignment='right',
+            fontweight='bold', bbox=dict(boxstyle='round', facecolor=box_color, alpha=0.8))
+
+    # Plot 2: Reaction time across trials (check for learning/fatigue)
+    ax = axes[0, 1]
+    trial_nums = np.arange(1, len(reaction_times) + 1)
+    ax.plot(trial_nums, reaction_times, 'o', alpha=0.5, markersize=6)
+
+    # Add trend line
+    z = np.polyfit(trial_nums, reaction_times, 1)
+    p = np.poly1d(z)
+    ax.plot(trial_nums, p(trial_nums), 'r-', linewidth=2,
+            label=f'Trend: {z[0]:+.5f}s/trial')
+    ax.axhline(mean_rt, color='green', linestyle='--', linewidth=2, alpha=0.5,
+               label=f'Mean: {mean_rt:.3f}s')
+
+    ax.set_xlabel('Trial Number', fontsize=12)
+    ax.set_ylabel('Reaction Time (s)', fontsize=12)
+    ax.set_title('Reaction Time Across Session', fontsize=13, fontweight='bold')
+    ax.legend(fontsize=10)
+    ax.grid(True, alpha=0.3)
+
+    # Plot 3: Q-Q plot (test for normality)
+    ax = axes[1, 0]
+    scipy_stats.probplot(reaction_times, dist="norm", plot=ax)
+    ax.set_title('Q-Q Plot (Normality Test)', fontsize=13, fontweight='bold')
+    ax.grid(True, alpha=0.3)
+
+    # Shapiro-Wilk test for normality
+    if len(reaction_times) >= 3:
+        shapiro_stat, shapiro_p = scipy_stats.shapiro(reaction_times)
+        ax.text(0.05, 0.95, f'Shapiro-Wilk p={shapiro_p:.4f}\n' +
+                ('Normal' if shapiro_p > 0.05 else 'Non-normal'),
+                transform=ax.transAxes, fontsize=10, verticalalignment='top',
+                bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+
+    # Plot 4: Cumulative distribution
+    ax = axes[1, 1]
+    sorted_rt = np.sort(reaction_times)
+    cumulative = np.arange(1, len(sorted_rt) + 1) / len(sorted_rt)
+    ax.plot(sorted_rt, cumulative, 'b-', linewidth=2)
+    ax.axvline(mean_rt, color='red', linestyle='--', linewidth=2, label=f'Mean: {mean_rt:.3f}s')
+    ax.axhline(0.5, color='gray', linestyle=':', linewidth=1, alpha=0.5)
+    ax.axvline(np.median(reaction_times), color='orange', linestyle='--', linewidth=2,
+               label=f'Median: {np.median(reaction_times):.3f}s')
+
+    ax.set_xlabel('Reaction Time (s)', fontsize=12)
+    ax.set_ylabel('Cumulative Probability', fontsize=12)
+    ax.set_title('Cumulative Distribution Function', fontsize=13, fontweight='bold')
+    ax.legend(fontsize=10)
+    ax.grid(True, alpha=0.3)
+
+    # Overall title
+    title = 'Test #7: Reaction Time Consistency (Voluntary Control Test)'
+    if animal_id:
+        title += f' - {animal_id}'
+    if session_date:
+        title += f' ({session_date})'
+    fig.suptitle(title, fontsize=15, fontweight='bold')
+
+    plt.tight_layout()
+
+    # Save figure
+    if results_dir:
+        results_dir.mkdir(parents=True, exist_ok=True)
+        prefix = f"{animal_id}_" if animal_id else ""
+        filename = f"{prefix}saccade_feedback_test7_reaction_time.png"
+        fig.savefig(results_dir / filename, dpi=150, bbox_inches='tight')
+        filename_svg = f"{prefix}saccade_feedback_test7_reaction_time.svg"
+        fig.savefig(results_dir / filename_svg, bbox_inches='tight')
+        print(f"Saved reaction time consistency plot to {results_dir / filename}")
+
+    stats_dict = {
+        'mean_rt': mean_rt,
+        'std_rt': std_rt,
+        'cv': cv,
+        'median_rt': np.median(reaction_times),
+        'n_trials': len(reaction_times)
+    }
+
+    print(f"\nTest #7: Reaction Time Consistency")
+    print(f"  Mean RT: {mean_rt:.3f}s ± {std_rt:.3f}s")
+    print(f"  Coefficient of Variation: {cv:.2f}")
+    print(f"  Interpretation: {'VOLUNTARY (consistent)' if cv < 0.3 else 'High variability'}")
+
+    return fig, stats_dict
+
+
 def _clean_path(path_str: str | Path) -> str:
     """Clean path string by removing Python string literal syntax if present.
 
@@ -1481,6 +2139,40 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
             plt.show()
         plt.close(fig_lr)
 
+    print("\nRunning additional voluntary control tests...")
+
+    # Test #2: Initial Direction Correlation
+    fig_test2, stats_test2 = test_initial_direction_correlation(trials, results_dir=results_dir,
+                                                                 animal_id=animal_id,
+                                                                 session_date=date_str)
+    if show_plots:
+        plt.show()
+    plt.close(fig_test2)
+
+    # Test #3: Trial-to-Trial Adaptation
+    fig_test3, stats_test3 = test_trial_to_trial_adaptation(trials, results_dir=results_dir,
+                                                             animal_id=animal_id,
+                                                             session_date=date_str)
+    if show_plots:
+        plt.show()
+    plt.close(fig_test3)
+
+    # Test #6: Speed-Accuracy Tradeoff
+    fig_test6, stats_test6 = test_speed_accuracy_tradeoff(trials, results_dir=results_dir,
+                                                           animal_id=animal_id,
+                                                           session_date=date_str)
+    if show_plots:
+        plt.show()
+    plt.close(fig_test6)
+
+    # Test #7: Reaction Time Consistency
+    fig_test7, stats_test7 = test_reaction_time_consistency(trials, results_dir=results_dir,
+                                                             animal_id=animal_id,
+                                                             session_date=date_str)
+    if show_plots:
+        plt.show()
+    plt.close(fig_test7)
+
     # Create summary DataFrame
     durations = [t['duration'] for t in trials]
     path_lengths = [t['path_length'] for t in trials]
@@ -1615,6 +2307,36 @@ def main(session_id: str) -> pd.DataFrame:
     if fig_lr is not None:
         plt.show()
         plt.close(fig_lr)
+
+    print("\nRunning additional voluntary control tests...")
+
+    # Test #2: Initial Direction Correlation
+    fig_test2, stats_test2 = test_initial_direction_correlation(trials, results_dir=results_dir,
+                                                                 animal_id=animal_id,
+                                                                 session_date=date_str)
+    plt.show()
+    plt.close(fig_test2)
+
+    # Test #3: Trial-to-Trial Adaptation
+    fig_test3, stats_test3 = test_trial_to_trial_adaptation(trials, results_dir=results_dir,
+                                                             animal_id=animal_id,
+                                                             session_date=date_str)
+    plt.show()
+    plt.close(fig_test3)
+
+    # Test #6: Speed-Accuracy Tradeoff
+    fig_test6, stats_test6 = test_speed_accuracy_tradeoff(trials, results_dir=results_dir,
+                                                           animal_id=animal_id,
+                                                           session_date=date_str)
+    plt.show()
+    plt.close(fig_test6)
+
+    # Test #7: Reaction Time Consistency
+    fig_test7, stats_test7 = test_reaction_time_consistency(trials, results_dir=results_dir,
+                                                             animal_id=animal_id,
+                                                             session_date=date_str)
+    plt.show()
+    plt.close(fig_test7)
 
     # Create summary DataFrame
     durations = [t['duration'] for t in trials]
