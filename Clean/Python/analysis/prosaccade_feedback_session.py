@@ -641,6 +641,10 @@ def interactive_trajectories(trials: list[dict], animal_id: Optional[str] = None
             f"Press SPACE for next"
         )
 
+        # Add legend (only on first trial to avoid duplicates)
+        if trial_idx == 0:
+            ax.legend(loc='upper right', fontsize=10, framealpha=0.9)
+
         fig.canvas.draw()
 
     def on_key(event):
