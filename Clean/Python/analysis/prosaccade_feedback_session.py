@@ -410,6 +410,121 @@ def plot_trajectories(trials: list[dict], results_dir: Optional[Path] = None,
     return fig
 
 
+def plot_trajectories_by_direction(trials: list[dict], results_dir: Optional[Path] = None,
+                                   animal_id: Optional[str] = None, session_date: str = "") -> plt.Figure:
+    """Plot eye position trajectories with different colors for left vs right targets.
+
+    Parameters
+    ----------
+    trials : list of dict
+        List of trial data dictionaries
+    results_dir : Path, optional
+        Directory to save the figure
+    animal_id : str, optional
+        Animal identifier for filename
+    session_date : str, optional
+        Session date for title
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+        The generated figure
+    """
+    from matplotlib.patches import Circle
+
+    fig, ax = plt.subplots(figsize=(12, 10))
+
+    # Separate trials by target direction
+    left_trials = [t for t in trials if t['target_x'] < 0]
+    right_trials = [t for t in trials if t['target_x'] >= 0]
+
+    # Colors for left and right
+    left_color = 'blue'
+    right_color = 'red'
+
+    # Plot left trials
+    for trial in left_trials:
+        eye_x = trial['eye_x']
+        eye_y = trial['eye_y']
+
+        ax.plot(eye_x, eye_y, '-', color=left_color, alpha=0.5, linewidth=1.5)
+
+        # Mark start and end points
+        ax.plot(eye_x[0], eye_y[0], 'o', color=left_color, markersize=6, alpha=0.7,
+                markeredgecolor='white', markeredgewidth=1)
+        ax.plot(eye_x[-1], eye_y[-1], 's', color=left_color, markersize=6, alpha=0.7,
+                markeredgecolor='white', markeredgewidth=1)
+
+    # Plot right trials
+    for trial in right_trials:
+        eye_x = trial['eye_x']
+        eye_y = trial['eye_y']
+
+        ax.plot(eye_x, eye_y, '-', color=right_color, alpha=0.5, linewidth=1.5)
+
+        # Mark start and end points
+        ax.plot(eye_x[0], eye_y[0], 'o', color=right_color, markersize=6, alpha=0.7,
+                markeredgecolor='white', markeredgewidth=1)
+        ax.plot(eye_x[-1], eye_y[-1], 's', color=right_color, markersize=6, alpha=0.7,
+                markeredgecolor='white', markeredgewidth=1)
+
+    # Draw targets
+    targets_drawn = set()
+    for trial in trials:
+        target_x = trial['target_x']
+        target_y = trial['target_y']
+        target_radius = trial['target_diameter'] / 2.0
+        key = (round(target_x, 2), round(target_y, 2))
+
+        if key not in targets_drawn:
+            target_circle = Circle((target_x, target_y), radius=target_radius,
+                                  fill=False, edgecolor='black', linewidth=2.5, linestyle='-')
+            ax.add_patch(target_circle)
+            ax.plot(target_x, target_y, 'ko', markersize=4)
+            targets_drawn.add(key)
+
+    ax.set_xlabel('Horizontal Position (stimulus units)', fontsize=12)
+    ax.set_ylabel('Vertical Position (stimulus units)', fontsize=12)
+
+    title = 'Eye Position Trajectories by Target Direction'
+    if animal_id:
+        title += f' - {animal_id}'
+    if session_date:
+        title += f' ({session_date})'
+    ax.set_title(title, fontsize=14, fontweight='bold')
+
+    ax.grid(True, alpha=0.3)
+    ax.set_xlim(-1, 1)
+    ax.set_ylim(-1, 1)
+    ax.set_aspect('equal', adjustable='box')
+
+    # Add legend
+    from matplotlib.lines import Line2D
+    legend_elements = [
+        Line2D([0], [0], color=left_color, linewidth=2, label=f'Left targets (n={len(left_trials)})'),
+        Line2D([0], [0], color=right_color, linewidth=2, label=f'Right targets (n={len(right_trials)})'),
+        Line2D([0], [0], marker='o', color='gray', linewidth=0, markersize=8,
+               markeredgecolor='white', markeredgewidth=1, label='Start'),
+        Line2D([0], [0], marker='s', color='gray', linewidth=0, markersize=8,
+               markeredgecolor='white', markeredgewidth=1, label='End'),
+    ]
+    ax.legend(handles=legend_elements, loc='upper right', fontsize=10, framealpha=0.9)
+
+    plt.tight_layout()
+
+    # Save figure if results directory provided
+    if results_dir:
+        results_dir.mkdir(parents=True, exist_ok=True)
+        prefix = f"{animal_id}_" if animal_id else ""
+        filename = f"{prefix}saccade_feedback_trajectories_by_direction.png"
+        fig.savefig(results_dir / filename, dpi=150, bbox_inches='tight')
+        filename_svg = f"{prefix}saccade_feedback_trajectories_by_direction.svg"
+        fig.savefig(results_dir / filename_svg, bbox_inches='tight')
+        print(f"Saved trajectory by direction plot to {results_dir / filename}")
+
+    return fig
+
+
 def plot_trajectories_by_time(trials: list[dict], results_dir: Optional[Path] = None,
                                 animal_id: Optional[str] = None, session_date: str = "") -> plt.Figure:
     """Plot eye position trajectories colored by temporal progression within each trial.
@@ -2516,6 +2631,12 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
         plt.show()
     plt.close(fig_traj)
 
+    print("\nGenerating trajectory plot by direction (left vs right)...")
+    fig_traj_dir = plot_trajectories_by_direction(trials, results_dir, animal_id, date_str)
+    if show_plots:
+        plt.show()
+    plt.close(fig_traj_dir)
+
     print("\nGenerating trajectory plot colored by time...")
     fig_traj_time = plot_trajectories_by_time(trials, results_dir, animal_id, date_str)
     if show_plots:
@@ -2702,6 +2823,11 @@ def main(session_id: str) -> pd.DataFrame:
     fig_traj = plot_trajectories(trials, results_dir, animal_id, date_str)
     plt.show()
     plt.close(fig_traj)
+
+    print("\nGenerating trajectory plot by direction (left vs right)...")
+    fig_traj_dir = plot_trajectories_by_direction(trials, results_dir, animal_id, date_str)
+    plt.show()
+    plt.close(fig_traj_dir)
 
     print("\nGenerating trajectory plot colored by time...")
     fig_traj_time = plot_trajectories_by_time(trials, results_dir, animal_id, date_str)
