@@ -1371,13 +1371,20 @@ def test_initial_direction_correlation(trials: list[dict], results_dir: Optional
     target_angles = np.array(target_angles)
     initial_angles = np.array(initial_angles)
 
-    # FIXED: Handle circular statistics properly - unwrap angles to [0, 360]
-    # This prevents -180° and +180° (same angle) from being treated as opposites
-    target_angles = (target_angles + 360) % 360  # Convert to [0, 360]
-    initial_angles = (initial_angles + 360) % 360
+    # FIXED: Handle circular statistics for left/right targets properly
+    # Left targets are at ~±180° (wraps around), right targets at ~0°
+    # Unwrap angles so left targets are consistently at 180° (not split between -180 and +180)
+    # This prevents artificial splitting of the same target direction
 
-    # Calculate circular correlation
-    # Now angles don't artificially jump between -180 and +180
+    # For angles near ±180°, convert to +180° for consistency
+    target_angles = np.where(target_angles < -90, target_angles + 360, target_angles)
+    initial_angles = np.where(initial_angles < -90, initial_angles + 360, initial_angles)
+
+    # Now angles are in range [-90, 270] approximately
+    # Right targets: ~0°
+    # Left targets: ~180° (not split between -180 and +180)
+
+    # Calculate correlation
     r, p_value = scipy_stats.pearsonr(target_angles, initial_angles)
 
     # Create visualization
@@ -1386,8 +1393,14 @@ def test_initial_direction_correlation(trials: list[dict], results_dir: Optional
     # Plot 1: Scatter plot with regression line
     ax1.scatter(target_angles, initial_angles, alpha=0.6, s=60, edgecolors='black', linewidth=0.5)
 
-    # Add diagonal line (perfect correlation) - now in [0, 360] range
-    ax1.plot([0, 360], [0, 360], 'g--', linewidth=2, alpha=0.5, label='Perfect correlation (r=1)')
+    # Determine plot range based on actual data
+    all_angles = np.concatenate([target_angles, initial_angles])
+    angle_min = max(-100, all_angles.min() - 10)
+    angle_max = min(280, all_angles.max() + 10)
+
+    # Add diagonal line (perfect correlation)
+    ax1.plot([angle_min, angle_max], [angle_min, angle_max], 'g--', linewidth=2, alpha=0.5,
+             label='Perfect correlation')
 
     # Add reference lines for left (180°) and right (0°) targets
     ax1.axvline(0, color='blue', linestyle=':', linewidth=1.5, alpha=0.6)
@@ -1395,9 +1408,9 @@ def test_initial_direction_correlation(trials: list[dict], results_dir: Optional
     ax1.axhline(0, color='blue', linestyle=':', linewidth=1.5, alpha=0.6)
     ax1.axhline(180, color='red', linestyle=':', linewidth=1.5, alpha=0.6)
 
-    # Set limits to [0, 360] range
-    ax1.set_xlim(-10, 370)
-    ax1.set_ylim(-10, 370)
+    # Set limits
+    ax1.set_xlim(angle_min, angle_max)
+    ax1.set_ylim(angle_min, angle_max)
 
     # Add regression line
     z = np.polyfit(target_angles, initial_angles, 1)
@@ -1405,7 +1418,7 @@ def test_initial_direction_correlation(trials: list[dict], results_dir: Optional
     x_fit = np.linspace(target_angles.min(), target_angles.max(), 100)
     ax1.plot(x_fit, p(x_fit), 'r-', linewidth=2, label=f'Actual fit (r={r:.3f})')
 
-    ax1.set_xlabel('Target Direction (degrees, 0°=right, 180°=left)', fontsize=12)
+    ax1.set_xlabel('Target Direction (degrees)\n0°=right, 180°=left', fontsize=12)
     ax1.set_ylabel('Initial Movement Direction (degrees)', fontsize=12)
     ax1.set_title(f'Initial Direction Correlation\nr = {r:.3f}, p = {p_value:.4e}',
                   fontsize=14, fontweight='bold')
