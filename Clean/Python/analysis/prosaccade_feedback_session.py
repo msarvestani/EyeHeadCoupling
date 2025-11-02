@@ -333,10 +333,10 @@ def plot_trajectories(trials: list[dict], results_dir: Optional[Path] = None,
         eye_x = trial['eye_x']
         eye_y = trial['eye_y']
 
-        # Plot trajectory as scatter points to visualize density
+        # Plot trajectory as lines
         color = cmap(i / max(1, n_trials - 1))
-        ax.scatter(eye_x, eye_y, alpha=0.5, s=10, color=color,
-                   label=f"Trial {trial['trial_number']}" if n_trials <= 20 else None)
+        ax.plot(eye_x, eye_y, '-', color=color, alpha=0.6, linewidth=1.5,
+                label=f"Trial {trial['trial_number']}" if n_trials <= 20 else None)
 
         # Mark start and end points with different markers
         ax.plot(eye_x[0], eye_y[0], 'o', color=color, markersize=8, alpha=0.9,
@@ -395,6 +395,125 @@ def plot_trajectories(trials: list[dict], results_dir: Optional[Path] = None,
         filename_svg = f"{prefix}saccade_feedback_trajectories.svg"
         fig.savefig(results_dir / filename_svg, bbox_inches='tight')
         print(f"Saved trajectory plot to {results_dir / filename}")
+
+    return fig
+
+
+def plot_trajectories_by_time(trials: list[dict], results_dir: Optional[Path] = None,
+                                animal_id: Optional[str] = None, session_date: str = "") -> plt.Figure:
+    """Plot eye position trajectories colored by temporal progression within each trial.
+
+    Each trajectory is divided into quartiles (0-25%, 25-50%, 50-75%, 75-100% of trial duration)
+    with different colors to show if movements diverge early for left vs right targets.
+
+    Parameters
+    ----------
+    trials : list of dict
+        List of trial data dictionaries
+    results_dir : Path, optional
+        Directory to save the figure
+    animal_id : str, optional
+        Animal identifier for filename
+    session_date : str, optional
+        Session date for title
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+        The generated figure
+    """
+    fig, ax = plt.subplots(figsize=(12, 10))
+
+    # Define colors for temporal quartiles
+    quartile_colors = ['#2166ac', '#4393c3', '#f4a582', '#b2182b']  # blue -> orange -> red
+    quartile_labels = ['0-25%', '25-50%', '50-75%', '75-100%']
+
+    # Plot each trial
+    for trial in trials:
+        eye_x = trial['eye_x']
+        eye_y = trial['eye_y']
+        n_samples = len(eye_x)
+
+        if n_samples < 4:
+            # Not enough samples to divide into quartiles, just plot as single line
+            ax.plot(eye_x, eye_y, '-', color='gray', alpha=0.3, linewidth=1)
+            continue
+
+        # Divide trajectory into quartiles
+        quartile_size = n_samples / 4.0
+
+        for q in range(4):
+            # Get indices for this quartile
+            start_idx = int(q * quartile_size)
+            end_idx = int((q + 1) * quartile_size) if q < 3 else n_samples
+
+            if end_idx > start_idx:
+                # Plot this segment
+                x_segment = eye_x[start_idx:end_idx+1]  # +1 to connect segments
+                y_segment = eye_y[start_idx:end_idx+1]
+
+                ax.plot(x_segment, y_segment, '-', color=quartile_colors[q],
+                       alpha=0.6, linewidth=2)
+
+        # Mark start point
+        ax.plot(eye_x[0], eye_y[0], 'o', color=quartile_colors[0], markersize=8,
+               markeredgecolor='white', markeredgewidth=1.5, alpha=0.9)
+
+        # Mark end point
+        ax.plot(eye_x[-1], eye_y[-1], 's', color=quartile_colors[3], markersize=8,
+               markeredgecolor='white', markeredgewidth=1.5, alpha=0.9)
+
+        # Draw target position
+        target_x = trial['target_x']
+        target_y = trial['target_y']
+        target_radius = trial['target_diameter'] / 2.0
+        target_circle = Circle((target_x, target_y), radius=target_radius, fill=False,
+                              edgecolor='black', linewidth=2.5, linestyle='-', alpha=0.8)
+        ax.add_patch(target_circle)
+        ax.plot(target_x, target_y, 'ko', markersize=4)
+
+    # Create custom legend for quartiles
+    from matplotlib.lines import Line2D
+    legend_elements = [Line2D([0], [0], color=quartile_colors[i], linewidth=3,
+                             label=quartile_labels[i]) for i in range(4)]
+    legend_elements.append(Line2D([0], [0], marker='o', color='w',
+                                 markerfacecolor=quartile_colors[0],
+                                 markeredgecolor='white', markersize=8,
+                                 label='Trial start', linestyle='None'))
+    legend_elements.append(Line2D([0], [0], marker='s', color='w',
+                                 markerfacecolor=quartile_colors[3],
+                                 markeredgecolor='white', markersize=8,
+                                 label='Trial end', linestyle='None'))
+
+    ax.legend(handles=legend_elements, loc='upper right', fontsize=10,
+             title='Trial Time', framealpha=0.9)
+
+    ax.set_xlabel('Horizontal Position (stimulus units)', fontsize=12)
+    ax.set_ylabel('Vertical Position (stimulus units)', fontsize=12)
+
+    title = 'Eye Position Trajectories Colored by Time\n(Blue=early, Red=late within each trial)'
+    if animal_id:
+        title += f' - {animal_id}'
+    if session_date:
+        title += f' ({session_date})'
+    ax.set_title(title, fontsize=14, fontweight='bold')
+
+    ax.grid(True, alpha=0.3)
+    ax.set_xlim(-1, 1)
+    ax.set_ylim(-1, 1)
+    ax.set_aspect('equal', adjustable='box')
+
+    plt.tight_layout()
+
+    # Save figure if results directory provided
+    if results_dir:
+        results_dir.mkdir(parents=True, exist_ok=True)
+        prefix = f"{animal_id}_" if animal_id else ""
+        filename = f"{prefix}saccade_feedback_trajectories_by_time.png"
+        fig.savefig(results_dir / filename, dpi=150, bbox_inches='tight')
+        filename_svg = f"{prefix}saccade_feedback_trajectories_by_time.svg"
+        fig.savefig(results_dir / filename_svg, bbox_inches='tight')
+        print(f"Saved trajectory by time plot to {results_dir / filename}")
 
     return fig
 
@@ -2043,6 +2162,12 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
         plt.show()
     plt.close(fig_traj)
 
+    print("\nGenerating trajectory plot colored by time...")
+    fig_traj_time = plot_trajectories_by_time(trials, results_dir, animal_id, date_str)
+    if show_plots:
+        plt.show()
+    plt.close(fig_traj_time)
+
     print("\nGenerating density heatmap...")
     fig_heat = plot_density_heatmap(trials, results_dir, animal_id, date_str)
     if show_plots:
@@ -2218,6 +2343,11 @@ def main(session_id: str) -> pd.DataFrame:
     fig_traj = plot_trajectories(trials, results_dir, animal_id, date_str)
     plt.show()
     plt.close(fig_traj)
+
+    print("\nGenerating trajectory plot colored by time...")
+    fig_traj_time = plot_trajectories_by_time(trials, results_dir, animal_id, date_str)
+    plt.show()
+    plt.close(fig_traj_time)
 
     print("\nGenerating density heatmap...")
     fig_heat = plot_density_heatmap(trials, results_dir, animal_id, date_str)
