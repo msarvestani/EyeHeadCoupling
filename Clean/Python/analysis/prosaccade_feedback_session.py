@@ -522,6 +522,112 @@ def plot_trajectories_by_time(trials: list[dict], results_dir: Optional[Path] = 
     return fig
 
 
+def interactive_trajectories(trials: list[dict], animal_id: Optional[str] = None,
+                            session_date: str = ""):
+    """Interactive plot showing trajectories one trial at a time. Press spacebar to advance.
+
+    Parameters
+    ----------
+    trials : list of dict
+        List of trial data dictionaries
+    animal_id : str, optional
+        Animal identifier for title
+    session_date : str, optional
+        Session date for title
+    """
+    from matplotlib.patches import Circle
+
+    fig, ax = plt.subplots(figsize=(12, 10))
+
+    # Color map for trials
+    cmap = plt.cm.coolwarm
+    n_trials = len(trials)
+
+    # Set up the plot
+    ax.set_xlim(-1, 1)
+    ax.set_ylim(-1, 1)
+    ax.set_aspect('equal', adjustable='box')
+    ax.grid(True, alpha=0.3)
+    ax.set_xlabel('Horizontal Position (stimulus units)', fontsize=12)
+    ax.set_ylabel('Vertical Position (stimulus units)', fontsize=12)
+
+    title = 'Eye Position Trajectories - Interactive (Press SPACE for next trial)'
+    if animal_id:
+        title += f' - {animal_id}'
+    if session_date:
+        title += f' ({session_date})'
+    ax.set_title(title, fontsize=14, fontweight='bold')
+
+    # Pre-draw all targets (static)
+    for trial in trials:
+        target_x = trial['target_x']
+        target_y = trial['target_y']
+        target_radius = trial['target_diameter'] / 2.0
+        target_circle = Circle((target_x, target_y), radius=target_radius,
+                              fill=False, edgecolor='black', linewidth=2,
+                              linestyle='-', alpha=0.5)
+        ax.add_patch(target_circle)
+        ax.plot(target_x, target_y, 'ko', markersize=3, alpha=0.5)
+
+    # Storage for plotted trials
+    trial_lines = []
+    current_trial_idx = [0]  # Use list to modify in nested function
+
+    # Text showing progress
+    progress_text = ax.text(0.02, 0.98, '', transform=ax.transAxes,
+                           fontsize=12, verticalalignment='top', fontweight='bold',
+                           bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.9))
+
+    def plot_trial(trial_idx):
+        """Plot a single trial"""
+        if trial_idx >= n_trials:
+            progress_text.set_text(f'All {n_trials} trials shown!\n(Close window to continue)')
+            fig.canvas.draw()
+            return
+
+        trial = trials[trial_idx]
+        eye_x = trial['eye_x']
+        eye_y = trial['eye_y']
+        color = cmap(trial_idx / max(1, n_trials - 1))
+
+        # Plot trajectory
+        line, = ax.plot(eye_x, eye_y, '-', color=color, linewidth=2, alpha=0.7)
+        start, = ax.plot(eye_x[0], eye_y[0], 'o', color=color,
+                        markersize=10, markeredgecolor='white',
+                        markeredgewidth=2, alpha=0.9, label='Start')
+        end, = ax.plot(eye_x[-1], eye_y[-1], 's', color=color,
+                      markersize=10, markeredgecolor='white',
+                      markeredgewidth=2, alpha=0.9, label='End')
+
+        trial_lines.extend([line, start, end])
+
+        # Update progress text
+        target_dir = 'Left' if trial['target_x'] < 0 else 'Right'
+        progress_text.set_text(
+            f"Trial {trial_idx + 1}/{n_trials}\n"
+            f"Target: {target_dir}\n"
+            f"Duration: {trial['duration']:.3f}s\n"
+            f"Efficiency: {trial['path_efficiency']:.2f}\n\n"
+            f"Press SPACE for next"
+        )
+
+        fig.canvas.draw()
+
+    def on_key(event):
+        """Handle key press events"""
+        if event.key == ' ':  # Spacebar
+            current_trial_idx[0] += 1
+            plot_trial(current_trial_idx[0])
+
+    # Connect key press event
+    fig.canvas.mpl_connect('key_press_event', on_key)
+
+    # Show first trial
+    plot_trial(0)
+
+    plt.show()
+
+
 def animate_trajectories(trials: list[dict], results_dir: Optional[Path] = None,
                         animal_id: Optional[str] = None, session_date: str = "",
                         fps: int = 30, points_per_frame: int = 2) -> str:
@@ -2371,11 +2477,10 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
         plt.show()
     plt.close(fig_traj_time)
 
-    print("\nGenerating trajectory animation...")
-    animation_path = animate_trajectories(trials, results_dir=results_dir,
-                                         animal_id=animal_id,
-                                         session_date=date_str)
-    print(f"Animation saved to: {animation_path}")
+    print("\nShowing interactive trajectory viewer...")
+    print("(Press SPACE to advance to next trial)")
+    if show_plots:
+        interactive_trajectories(trials, animal_id=animal_id, session_date=date_str)
 
     print("\nGenerating density heatmap...")
     fig_heat = plot_density_heatmap(trials, results_dir, animal_id, date_str)
@@ -2558,11 +2663,9 @@ def main(session_id: str) -> pd.DataFrame:
     plt.show()
     plt.close(fig_traj_time)
 
-    print("\nGenerating trajectory animation...")
-    animation_path = animate_trajectories(trials, results_dir=results_dir,
-                                         animal_id=animal_id,
-                                         session_date=date_str)
-    print(f"Animation saved to: {animation_path}")
+    print("\nShowing interactive trajectory viewer...")
+    print("(Press SPACE to advance to next trial)")
+    interactive_trajectories(trials, animal_id=animal_id, session_date=date_str)
 
     print("\nGenerating density heatmap...")
     fig_heat = plot_density_heatmap(trials, results_dir, animal_id, date_str)
