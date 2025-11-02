@@ -558,19 +558,25 @@ def interactive_trajectories(trials: list[dict], animal_id: Optional[str] = None
         title += f' ({session_date})'
     ax.set_title(title, fontsize=14, fontweight='bold')
 
-    # Pre-draw all targets (static)
+    # Pre-draw all targets (static) in black
+    target_circles = {}  # Store target circles by position
     for trial in trials:
         target_x = trial['target_x']
         target_y = trial['target_y']
         target_radius = trial['target_diameter'] / 2.0
-        target_circle = Circle((target_x, target_y), radius=target_radius,
-                              fill=False, edgecolor='black', linewidth=2,
-                              linestyle='-', alpha=0.5)
-        ax.add_patch(target_circle)
-        ax.plot(target_x, target_y, 'ko', markersize=3, alpha=0.5)
+        key = (round(target_x, 2), round(target_y, 2))
 
-    # Storage for plotted trials
+        if key not in target_circles:
+            target_circle = Circle((target_x, target_y), radius=target_radius,
+                                  fill=False, edgecolor='black', linewidth=2,
+                                  linestyle='-', alpha=0.5)
+            ax.add_patch(target_circle)
+            ax.plot(target_x, target_y, 'ko', markersize=3, alpha=0.5)
+            target_circles[key] = (target_circle, target_x, target_y)
+
+    # Storage for current trial elements (will be cleared each time)
     trial_lines = []
+    current_target_highlight = []
     current_trial_idx = [0]  # Use list to modify in nested function
 
     # Text showing progress
@@ -580,15 +586,39 @@ def interactive_trajectories(trials: list[dict], animal_id: Optional[str] = None
 
     def plot_trial(trial_idx):
         """Plot a single trial"""
+        nonlocal trial_lines, current_target_highlight
+
         if trial_idx >= n_trials:
             progress_text.set_text(f'All {n_trials} trials shown!\n(Close window to continue)')
             fig.canvas.draw()
             return
 
+        # Clear previous trial's trajectory
+        for line in trial_lines:
+            line.remove()
+        trial_lines = []
+
+        # Clear previous target highlight
+        for item in current_target_highlight:
+            item.remove()
+        current_target_highlight = []
+
         trial = trials[trial_idx]
         eye_x = trial['eye_x']
         eye_y = trial['eye_y']
+        target_x = trial['target_x']
+        target_y = trial['target_y']
+        target_radius = trial['target_diameter'] / 2.0
         color = cmap(trial_idx / max(1, n_trials - 1))
+
+        # Highlight current target in green
+        target_circle_green = Circle((target_x, target_y), radius=target_radius,
+                                     fill=True, facecolor='green', edgecolor='darkgreen',
+                                     linewidth=3, alpha=0.3)
+        ax.add_patch(target_circle_green)
+        target_dot_green, = ax.plot(target_x, target_y, 'go', markersize=8,
+                                    markeredgecolor='darkgreen', markeredgewidth=2)
+        current_target_highlight = [target_circle_green, target_dot_green]
 
         # Plot trajectory
         line, = ax.plot(eye_x, eye_y, '-', color=color, linewidth=2, alpha=0.7)
