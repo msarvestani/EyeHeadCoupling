@@ -158,17 +158,15 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
         end_frame = eot_df.iloc[i]['frame']
         end_time = eot_df.iloc[i]['timestamp']
 
-        # Get start frame - either from previous trial end or from beginning
-        if i > 0:
-            start_frame = eot_df.iloc[i-1]['frame']
-            start_time = eot_df.iloc[i-1]['timestamp']
-        else:
-            start_frame = 0
-            start_time = eye_df.iloc[0]['timestamp'] if len(eye_df) > 0 else 0
-
         # Find target position for this trial
-        # Target should appear at or just after the start of the trial
-        target_mask = (target_df['frame'] >= start_frame) & (target_df['frame'] <= end_frame)
+        # The trial starts when the target appears (vstim_cue), not at previous trial end
+        # Search for target between previous trial end and current trial end
+        if i > 0:
+            search_start_frame = eot_df.iloc[i-1]['frame']
+        else:
+            search_start_frame = 0
+
+        target_mask = (target_df['frame'] > search_start_frame) & (target_df['frame'] <= end_frame)
         target_samples = target_df[target_mask]
 
         if len(target_samples) > 0:
@@ -176,13 +174,17 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
             target_x = target_samples.iloc[0]['target_x']
             target_y = target_samples.iloc[0]['target_y']
             target_diameter = target_samples.iloc[0]['diameter']
+            # FIXED: Trial starts when target appears, not at previous trial end
+            start_frame = target_samples.iloc[0]['frame']
+            start_time = target_samples.iloc[0]['timestamp']
         else:
             # If no target found, skip this trial
             print(f"Warning: No target found for trial {trial_num}, skipping")
             continue
 
         # Extract eye position trajectory for this trial
-        eye_mask = (eye_df['frame'] > start_frame) & (eye_df['frame'] <= end_frame)
+        # FIXED: Now starts from target onset, excluding inter-trial interval
+        eye_mask = (eye_df['frame'] >= start_frame) & (eye_df['frame'] <= end_frame)
         eye_trajectory = eye_df[eye_mask]
 
         if len(eye_trajectory) == 0:
