@@ -941,7 +941,6 @@ def shuffle_control_analysis(trials: list[dict], n_shuffles: int = 1000, seed: i
     real_metrics = {
         'path_efficiency': [],
         'initial_direction_error': [],
-        'final_distance': [],
         'duration': []
     }
 
@@ -954,8 +953,7 @@ def shuffle_control_analysis(trials: list[dict], n_shuffles: int = 1000, seed: i
     # Initialize shuffled distributions
     shuffled_distributions = {
         'path_efficiency': [],
-        'initial_direction_error': [],
-        'final_distance': []
+        'initial_direction_error': []
     }
 
     print(f"\nRunning shuffle control analysis ({n_shuffles} iterations)...")
@@ -972,7 +970,6 @@ def shuffle_control_analysis(trials: list[dict], n_shuffles: int = 1000, seed: i
         # Calculate metrics for this shuffle
         shuffle_efficiencies = []
         shuffle_dir_errors = []
-        shuffle_distances = []
 
         for trial, (target_x, target_y) in zip(trials, shuffled_targets):
             metrics = calculate_trial_metrics_for_target(trial, target_x, target_y)
@@ -980,18 +977,14 @@ def shuffle_control_analysis(trials: list[dict], n_shuffles: int = 1000, seed: i
                 shuffle_efficiencies.append(metrics['path_efficiency'])
             if not np.isnan(metrics['initial_direction_error']):
                 shuffle_dir_errors.append(metrics['initial_direction_error'])
-            if not np.isnan(metrics['final_distance']):
-                shuffle_distances.append(metrics['final_distance'])
 
         # Store mean for this shuffle
         shuffled_distributions['path_efficiency'].append(np.mean(shuffle_efficiencies))
         shuffled_distributions['initial_direction_error'].append(np.mean(shuffle_dir_errors))
-        shuffled_distributions['final_distance'].append(np.mean(shuffle_distances))
 
     # Calculate p-values (one-tailed tests)
     real_mean_efficiency = np.mean(real_metrics['path_efficiency'])
     real_mean_dir_error = np.mean(real_metrics['initial_direction_error'])
-    real_mean_distance = np.mean(real_metrics['final_distance'])
 
     # P-value: proportion of shuffles with efficiency >= real (real should be higher)
     p_efficiency = np.mean(np.array(shuffled_distributions['path_efficiency']) >= real_mean_efficiency)
@@ -999,21 +992,16 @@ def shuffle_control_analysis(trials: list[dict], n_shuffles: int = 1000, seed: i
     # P-value: proportion of shuffles with dir_error <= real (real should be lower)
     p_dir_error = np.mean(np.array(shuffled_distributions['initial_direction_error']) <= real_mean_dir_error)
 
-    # P-value: proportion of shuffles with distance <= real (real should be lower)
-    p_distance = np.mean(np.array(shuffled_distributions['final_distance']) <= real_mean_distance)
-
     results = {
         'real_metrics': real_metrics,
         'real_means': {
             'path_efficiency': real_mean_efficiency,
-            'initial_direction_error': real_mean_dir_error,
-            'final_distance': real_mean_distance
+            'initial_direction_error': real_mean_dir_error
         },
         'shuffled_distributions': shuffled_distributions,
         'p_values': {
             'path_efficiency': p_efficiency,
-            'initial_direction_error': p_dir_error,
-            'final_distance': p_distance
+            'initial_direction_error': p_dir_error
         },
         'n_shuffles': n_shuffles
     }
@@ -1021,7 +1009,6 @@ def shuffle_control_analysis(trials: list[dict], n_shuffles: int = 1000, seed: i
     print(f"\nShuffle control results:")
     print(f"  Path Efficiency: Real={real_mean_efficiency:.3f}, p={p_efficiency:.4f}")
     print(f"  Direction Error: Real={real_mean_dir_error:.1f}°, p={p_dir_error:.4f}")
-    print(f"  Final Distance:  Real={real_mean_distance:.3f}, p={p_distance:.4f}")
 
     return results
 
@@ -1046,7 +1033,7 @@ def plot_shuffle_control(shuffle_results: dict, results_dir: Optional[Path] = No
     matplotlib.figure.Figure
         The generated figure
     """
-    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
 
     real_means = shuffle_results['real_means']
     shuffled = shuffle_results['shuffled_distributions']
@@ -1080,21 +1067,6 @@ def plot_shuffle_control(shuffle_results: dict, results_dir: Optional[Path] = No
 
     # Add percentile text
     percentile = np.mean(np.array(shuffled['initial_direction_error']) > real_means['initial_direction_error']) * 100
-    ax.text(0.05, 0.95, f'Real < {percentile:.1f}% of shuffles', transform=ax.transAxes,
-            fontsize=10, verticalalignment='top', bbox=dict(boxstyle='round', facecolor='yellow', alpha=0.5))
-
-    # Plot 3: Final Distance to Target
-    ax = axes[2]
-    ax.hist(shuffled['final_distance'], bins=50, color='gray', alpha=0.6, edgecolor='black', label='Shuffled')
-    ax.axvline(real_means['final_distance'], color='red', linewidth=3, label=f"Real (p={p_values['final_distance']:.4f})")
-    ax.set_xlabel('Mean Final Distance to Target', fontsize=12)
-    ax.set_ylabel('Count', fontsize=12)
-    ax.set_title('Final Distance to Target\n(Lower = Better)', fontsize=12, fontweight='bold')
-    ax.legend(fontsize=10)
-    ax.grid(True, alpha=0.3, axis='y')
-
-    # Add percentile text
-    percentile = np.mean(np.array(shuffled['final_distance']) > real_means['final_distance']) * 100
     ax.text(0.05, 0.95, f'Real < {percentile:.1f}% of shuffles', transform=ax.transAxes,
             fontsize=10, verticalalignment='top', bbox=dict(boxstyle='round', facecolor='yellow', alpha=0.5))
 
@@ -1687,8 +1659,8 @@ def test_speed_accuracy_tradeoff(trials: list[dict], results_dir: Optional[Path]
                                  animal_id: Optional[str] = None, session_date: str = "") -> tuple:
     """Test #6: Speed-Accuracy Tradeoff
 
-    Voluntary movements typically show a speed-accuracy tradeoff: faster trials
-    are less accurate. Random movements would show no such relationship.
+    Voluntary movements typically show a speed-accuracy tradeoff: slower trials
+    are more efficient/accurate. Random movements would show no such relationship.
 
     Parameters
     ----------
@@ -1710,102 +1682,56 @@ def test_speed_accuracy_tradeoff(trials: list[dict], results_dir: Optional[Path]
 
     # Extract metrics
     durations = []
-    final_distances = []
     efficiencies = []
 
     for trial in trials:
         durations.append(trial['duration'])
-
-        # Calculate final distance to target
-        final_x = trial['eye_x'][-1]
-        final_y = trial['eye_y'][-1]
-        target_x = trial['target_x']
-        target_y = trial['target_y']
-        final_dist = np.sqrt((final_x - target_x)**2 + (final_y - target_y)**2)
-        final_distances.append(final_dist)
-
         efficiencies.append(trial['path_efficiency'])
 
     durations = np.array(durations)
-    final_distances = np.array(final_distances)
     efficiencies = np.array(efficiencies)
 
-    # Calculate correlations
-    r_dist, p_dist = scipy_stats.pearsonr(durations, final_distances)
+    # Calculate correlation
     r_eff, p_eff = scipy_stats.pearsonr(durations, efficiencies)
 
     # Create visualization
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
+    fig, ax = plt.subplots(1, 1, figsize=(10, 8))
 
-    # Plot 1: Duration vs Final Distance (expect negative correlation for voluntary)
-    ax1.scatter(durations, final_distances, alpha=0.6, s=60, c=efficiencies,
-                cmap='RdYlGn', edgecolors='black', linewidth=0.5)
-
-    # Add regression line
-    z = np.polyfit(durations, final_distances, 1)
-    p = np.poly1d(z)
-    x_fit = np.linspace(durations.min(), durations.max(), 100)
-    ax1.plot(x_fit, p(x_fit), 'r-', linewidth=2, label=f'r={r_dist:.3f}')
-
-    ax1.set_xlabel('Trial Duration (s)', fontsize=12)
-    ax1.set_ylabel('Final Distance to Target', fontsize=12)
-    ax1.set_title(f'Speed vs Accuracy (Distance)\nr = {r_dist:.3f}, p = {p_dist:.4f}',
-                  fontsize=14, fontweight='bold')
-    ax1.legend(fontsize=10)
-    ax1.grid(True, alpha=0.3)
-
-    # Add colorbar
-    cbar = plt.colorbar(ax1.collections[0], ax=ax1, label='Path Efficiency')
-
-    # Add interpretation
-    if r_dist < -0.3 and p_dist < 0.05:
-        interpretation = 'VOLUNTARY\n(faster → less accurate)'
-        box_color = 'lightgreen'
-    elif r_dist > 0.3 and p_dist < 0.05:
-        interpretation = 'VOLUNTARY\n(slower → more accurate)'
-        box_color = 'lightgreen'
-    else:
-        interpretation = 'No clear tradeoff\n(random or consistent speed)'
-        box_color = 'yellow'
-
-    ax1.text(0.05, 0.95, interpretation, transform=ax1.transAxes,
-            fontsize=11, verticalalignment='top', fontweight='bold',
-            bbox=dict(boxstyle='round', facecolor=box_color, alpha=0.8))
-
-    # Plot 2: Duration vs Efficiency (expect positive correlation for voluntary)
-    ax2.scatter(durations, efficiencies, alpha=0.6, s=60, c=final_distances,
-                cmap='RdYlGn_r', edgecolors='black', linewidth=0.5)
+    # Color points by trial number to show temporal progression
+    trial_nums = np.arange(len(trials))
+    scatter = ax.scatter(durations, efficiencies, alpha=0.6, s=80, c=trial_nums,
+                         cmap='coolwarm', edgecolors='black', linewidth=0.5)
 
     # Add regression line
     z = np.polyfit(durations, efficiencies, 1)
     p = np.poly1d(z)
     x_fit = np.linspace(durations.min(), durations.max(), 100)
-    ax2.plot(x_fit, p(x_fit), 'r-', linewidth=2, label=f'r={r_eff:.3f}')
+    ax.plot(x_fit, p(x_fit), 'r-', linewidth=3, label=f'r={r_eff:.3f}')
 
-    ax2.set_xlabel('Trial Duration (s)', fontsize=12)
-    ax2.set_ylabel('Path Efficiency', fontsize=12)
-    ax2.set_title(f'Speed vs Efficiency\nr = {r_eff:.3f}, p = {p_eff:.4f}',
-                  fontsize=14, fontweight='bold')
-    ax2.legend(fontsize=10)
-    ax2.grid(True, alpha=0.3)
+    ax.set_xlabel('Trial Duration (s)', fontsize=13)
+    ax.set_ylabel('Path Efficiency', fontsize=13)
+    ax.set_title(f'Speed vs Efficiency\nr = {r_eff:.3f}, p = {p_eff:.4f}',
+                  fontsize=15, fontweight='bold')
+    ax.legend(fontsize=11)
+    ax.grid(True, alpha=0.3)
 
-    # Add colorbar
-    cbar = plt.colorbar(ax2.collections[0], ax=ax2, label='Final Distance')
+    # Add colorbar for trial progression
+    cbar = plt.colorbar(scatter, ax=ax, label='Trial Number')
 
     # Add interpretation
     if r_eff > 0.3 and p_eff < 0.05:
-        interpretation2 = 'VOLUNTARY\n(slower → more efficient)'
-        box_color2 = 'lightgreen'
+        interpretation = 'VOLUNTARY\n(slower → more efficient)'
+        box_color = 'lightgreen'
     elif r_eff < -0.3 and p_eff < 0.05:
-        interpretation2 = 'VOLUNTARY\n(faster → more efficient)'
-        box_color2 = 'lightgreen'
+        interpretation = 'VOLUNTARY\n(faster → more efficient)'
+        box_color = 'lightgreen'
     else:
-        interpretation2 = 'No clear tradeoff'
-        box_color2 = 'yellow'
+        interpretation = 'No clear tradeoff'
+        box_color = 'yellow'
 
-    ax2.text(0.05, 0.95, interpretation2, transform=ax2.transAxes,
-            fontsize=11, verticalalignment='top', fontweight='bold',
-            bbox=dict(boxstyle='round', facecolor=box_color2, alpha=0.8))
+    ax.text(0.05, 0.95, interpretation, transform=ax.transAxes,
+            fontsize=12, verticalalignment='top', fontweight='bold',
+            bbox=dict(boxstyle='round', facecolor=box_color, alpha=0.8))
 
     # Overall title
     title = 'Test #6: Speed-Accuracy Tradeoff (Voluntary Control Test)'
@@ -1813,7 +1739,7 @@ def test_speed_accuracy_tradeoff(trials: list[dict], results_dir: Optional[Path]
         title += f' - {animal_id}'
     if session_date:
         title += f' ({session_date})'
-    fig.suptitle(title, fontsize=15, fontweight='bold')
+    fig.suptitle(title, fontsize=16, fontweight='bold')
 
     plt.tight_layout()
 
@@ -1828,15 +1754,12 @@ def test_speed_accuracy_tradeoff(trials: list[dict], results_dir: Optional[Path]
         print(f"Saved speed-accuracy tradeoff plot to {results_dir / filename}")
 
     stats_dict = {
-        'r_duration_distance': r_dist,
-        'p_duration_distance': p_dist,
         'r_duration_efficiency': r_eff,
         'p_duration_efficiency': p_eff,
         'n_trials': len(trials)
     }
 
     print(f"\nTest #6: Speed-Accuracy Tradeoff")
-    print(f"  Duration vs Distance: r = {r_dist:.3f}, p = {p_dist:.4f}")
     print(f"  Duration vs Efficiency: r = {r_eff:.3f}, p = {p_eff:.4f}")
 
     return fig, stats_dict
