@@ -424,8 +424,8 @@ def plot_trajectories_by_time(trials: list[dict], results_dir: Optional[Path] = 
     """
     fig, ax = plt.subplots(figsize=(12, 10))
 
-    # Define colors for temporal quartiles
-    quartile_colors = ['#2166ac', '#4393c3', '#f4a582', '#b2182b']  # blue -> orange -> red
+    # Define colors for temporal quartiles - using viridis-like progression (purple -> green -> yellow)
+    quartile_colors = ['#440154', '#31688e', '#35b779', '#fde724']  # purple -> teal -> green -> yellow
     quartile_labels = ['0-25%', '25-50%', '50-75%', '75-100%']
 
     # Plot each trial
@@ -435,8 +435,8 @@ def plot_trajectories_by_time(trials: list[dict], results_dir: Optional[Path] = 
         n_samples = len(eye_x)
 
         if n_samples < 4:
-            # Not enough samples to divide into quartiles, just plot as single line
-            ax.plot(eye_x, eye_y, '-', color='gray', alpha=0.3, linewidth=1)
+            # Not enough samples to divide into quartiles, just plot as scatter
+            ax.scatter(eye_x, eye_y, c='gray', alpha=0.2, s=15, edgecolors='none')
             continue
 
         # Divide trajectory into quartiles
@@ -448,19 +448,19 @@ def plot_trajectories_by_time(trials: list[dict], results_dir: Optional[Path] = 
             end_idx = int((q + 1) * quartile_size) if q < 3 else n_samples
 
             if end_idx > start_idx:
-                # Plot this segment
-                x_segment = eye_x[start_idx:end_idx+1]  # +1 to connect segments
-                y_segment = eye_y[start_idx:end_idx+1]
+                # Plot this segment as scatter points
+                x_segment = eye_x[start_idx:end_idx]
+                y_segment = eye_y[start_idx:end_idx]
 
-                ax.plot(x_segment, y_segment, '-', color=quartile_colors[q],
-                       alpha=0.6, linewidth=2)
+                ax.scatter(x_segment, y_segment, c=quartile_colors[q],
+                          alpha=0.4, s=20, edgecolors='none')
 
         # Mark start point
-        ax.plot(eye_x[0], eye_y[0], 'o', color=quartile_colors[0], markersize=8,
+        ax.plot(eye_x[0], eye_y[0], 'o', color=quartile_colors[0], markersize=10,
                markeredgecolor='white', markeredgewidth=1.5, alpha=0.9)
 
         # Mark end point
-        ax.plot(eye_x[-1], eye_y[-1], 's', color=quartile_colors[3], markersize=8,
+        ax.plot(eye_x[-1], eye_y[-1], 's', color=quartile_colors[3], markersize=10,
                markeredgecolor='white', markeredgewidth=1.5, alpha=0.9)
 
         # Draw target position
@@ -474,15 +474,19 @@ def plot_trajectories_by_time(trials: list[dict], results_dir: Optional[Path] = 
 
     # Create custom legend for quartiles
     from matplotlib.lines import Line2D
-    legend_elements = [Line2D([0], [0], color=quartile_colors[i], linewidth=3,
-                             label=quartile_labels[i]) for i in range(4)]
+    legend_elements = [Line2D([0], [0], marker='o', color='w',
+                             markerfacecolor=quartile_colors[i],
+                             markersize=10, label=quartile_labels[i],
+                             linestyle='None') for i in range(4)]
     legend_elements.append(Line2D([0], [0], marker='o', color='w',
                                  markerfacecolor=quartile_colors[0],
-                                 markeredgecolor='white', markersize=8,
+                                 markeredgecolor='white', markeredgewidth=1.5,
+                                 markersize=10,
                                  label='Trial start', linestyle='None'))
     legend_elements.append(Line2D([0], [0], marker='s', color='w',
                                  markerfacecolor=quartile_colors[3],
-                                 markeredgecolor='white', markersize=8,
+                                 markeredgecolor='white', markeredgewidth=1.5,
+                                 markersize=10,
                                  label='Trial end', linestyle='None'))
 
     ax.legend(handles=legend_elements, loc='upper right', fontsize=10,
@@ -491,7 +495,7 @@ def plot_trajectories_by_time(trials: list[dict], results_dir: Optional[Path] = 
     ax.set_xlabel('Horizontal Position (stimulus units)', fontsize=12)
     ax.set_ylabel('Vertical Position (stimulus units)', fontsize=12)
 
-    title = 'Eye Position Trajectories Colored by Time\n(Blue=early, Red=late within each trial)'
+    title = 'Eye Position Trajectories Colored by Time\n(Purple=early, Yellow=late within each trial)'
     if animal_id:
         title += f' - {animal_id}'
     if session_date:
