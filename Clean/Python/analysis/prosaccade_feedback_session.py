@@ -522,6 +522,205 @@ def plot_trajectories_by_time(trials: list[dict], results_dir: Optional[Path] = 
     return fig
 
 
+def animate_trajectories(trials: list[dict], results_dir: Optional[Path] = None,
+                        animal_id: Optional[str] = None, session_date: str = "",
+                        fps: int = 30, points_per_frame: int = 2) -> str:
+    """Create an animation showing trajectories building over time, one trial at a time.
+
+    Parameters
+    ----------
+    trials : list of dict
+        List of trial data dictionaries
+    results_dir : Path, optional
+        Directory to save the animation
+    animal_id : str, optional
+        Animal identifier for filename
+    session_date : str, optional
+        Session date for title
+    fps : int
+        Frames per second for animation (default: 30)
+    points_per_frame : int
+        Number of points to add per frame when building trajectory (default: 2)
+
+    Returns
+    -------
+    str
+        Path to saved animation file
+    """
+    import matplotlib.animation as animation
+    from matplotlib.patches import Circle
+
+    fig, ax = plt.subplots(figsize=(12, 10))
+
+    # Color map for trials
+    cmap = plt.cm.coolwarm
+    n_trials = len(trials)
+
+    # Set up the plot
+    ax.set_xlim(-1, 1)
+    ax.set_ylim(-1, 1)
+    ax.set_aspect('equal', adjustable='box')
+    ax.grid(True, alpha=0.3)
+    ax.set_xlabel('Horizontal Position (stimulus units)', fontsize=12)
+    ax.set_ylabel('Vertical Position (stimulus units)', fontsize=12)
+
+    title = 'Eye Position Trajectories - Animated'
+    if animal_id:
+        title += f' - {animal_id}'
+    if session_date:
+        title += f' ({session_date})'
+    ax.set_title(title, fontsize=14, fontweight='bold')
+
+    # Pre-draw all targets (they don't animate)
+    for trial in trials:
+        target_x = trial['target_x']
+        target_y = trial['target_y']
+        target_radius = trial['target_diameter'] / 2.0
+        target_circle = Circle((target_x, target_y), radius=target_radius,
+                              fill=False, edgecolor='black', linewidth=2,
+                              linestyle='-', alpha=0.5)
+        ax.add_patch(target_circle)
+        ax.plot(target_x, target_y, 'ko', markersize=3, alpha=0.5)
+
+    # Storage for completed trials (will persist across frames)
+    completed_lines = []
+    completed_markers = []
+
+    # Current trial line and points (updated each frame)
+    current_line, = ax.plot([], [], '-', linewidth=1.5, alpha=0.8)
+    current_start, = ax.plot([], [], 'o', markersize=8, markeredgecolor='white',
+                             markeredgewidth=1, alpha=0.9)
+    current_end, = ax.plot([], [], 's', markersize=8, markeredgecolor='white',
+                           markeredgewidth=1, alpha=0.9)
+
+    # Text showing progress
+    progress_text = ax.text(0.02, 0.98, '', transform=ax.transAxes,
+                           fontsize=11, verticalalignment='top',
+                           bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+
+    # Calculate total number of frames needed
+    total_points = sum(len(trial['eye_x']) for trial in trials)
+    total_frames = int(np.ceil(total_points / points_per_frame))
+
+    # Keep track of where we are
+    current_trial_idx = 0
+    current_point_idx = 0
+
+    def init():
+        """Initialize animation"""
+        current_line.set_data([], [])
+        current_start.set_data([], [])
+        current_end.set_data([], [])
+        progress_text.set_text('')
+        return [current_line, current_start, current_end, progress_text]
+
+    def animate(frame):
+        """Animation function called for each frame"""
+        nonlocal current_trial_idx, current_point_idx, completed_lines, completed_markers
+
+        # Check if we've finished all trials
+        if current_trial_idx >= n_trials:
+            return [current_line, current_start, current_end, progress_text]
+
+        trial = trials[current_trial_idx]
+        eye_x = trial['eye_x']
+        eye_y = trial['eye_y']
+        color = cmap(current_trial_idx / max(1, n_trials - 1))
+
+        # Add points to current trajectory
+        end_idx = min(current_point_idx + points_per_frame, len(eye_x))
+
+        # Update current line
+        current_line.set_data(eye_x[:end_idx], eye_y[:end_idx])
+        current_line.set_color(color)
+
+        # Update start marker
+        current_start.set_data([eye_x[0]], [eye_y[0]])
+        current_start.set_color(color)
+
+        # Update end marker if we're at the end of this trial
+        if end_idx == len(eye_x):
+            current_end.set_data([eye_x[-1]], [eye_y[-1]])
+            current_end.set_color(color)
+        else:
+            current_end.set_data([], [])
+
+        # Update progress text
+        progress_text.set_text(f'Trial {current_trial_idx + 1}/{n_trials}\n' +
+                              f'Point {end_idx}/{len(eye_x)}')
+
+        # Check if current trial is complete
+        if end_idx >= len(eye_x):
+            # Save this trial as a completed line
+            completed_line, = ax.plot(eye_x, eye_y, '-', color=color,
+                                     linewidth=1.5, alpha=0.6)
+            completed_start, = ax.plot(eye_x[0], eye_y[0], 'o', color=color,
+                                      markersize=8, markeredgecolor='white',
+                                      markeredgewidth=1, alpha=0.9)
+            completed_end, = ax.plot(eye_x[-1], eye_y[-1], 's', color=color,
+                                    markersize=8, markeredgecolor='white',
+                                    markeredgewidth=1, alpha=0.9)
+
+            completed_lines.extend([completed_line, completed_start, completed_end])
+
+            # Move to next trial
+            current_trial_idx += 1
+            current_point_idx = 0
+
+            # Clear current line for next trial
+            current_line.set_data([], [])
+            current_start.set_data([], [])
+            current_end.set_data([], [])
+        else:
+            current_point_idx = end_idx
+
+        return [current_line, current_start, current_end, progress_text] + completed_lines
+
+    # Create animation
+    print(f"\nCreating animation ({total_frames} frames at {fps} fps)...")
+    anim = animation.FuncAnimation(fig, animate, init_func=init,
+                                  frames=total_frames, interval=1000/fps,
+                                  blit=True, repeat=False)
+
+    # Save animation
+    if results_dir:
+        results_dir.mkdir(parents=True, exist_ok=True)
+        prefix = f"{animal_id}_" if animal_id else ""
+        filename = f"{prefix}saccade_feedback_trajectories_animated.mp4"
+        filepath = results_dir / filename
+
+        print(f"Saving animation to {filepath}")
+        print("(This may take a minute...)")
+
+        # Try to save as mp4 (requires ffmpeg)
+        try:
+            writer = animation.FFMpegWriter(fps=fps, bitrate=1800)
+            anim.save(str(filepath), writer=writer, dpi=100)
+            print(f"Saved animation to {filepath}")
+            plt.close(fig)
+            return str(filepath)
+        except Exception as e:
+            print(f"Could not save as mp4 (ffmpeg may not be installed): {e}")
+            print("Trying to save as gif instead...")
+
+            # Fall back to gif
+            filename_gif = f"{prefix}saccade_feedback_trajectories_animated.gif"
+            filepath_gif = results_dir / filename_gif
+            try:
+                anim.save(str(filepath_gif), writer='pillow', fps=fps, dpi=80)
+                print(f"Saved animation as gif to {filepath_gif}")
+                plt.close(fig)
+                return str(filepath_gif)
+            except Exception as e2:
+                print(f"Could not save animation: {e2}")
+                print("Please install ffmpeg or pillow to save animations")
+                plt.close(fig)
+                return None
+    else:
+        plt.close(fig)
+        return None
+
+
 def plot_density_heatmap(trials: list[dict], results_dir: Optional[Path] = None,
                          animal_id: Optional[str] = None, session_date: str = "") -> plt.Figure:
     """Plot 2D histogram heatmap showing density of eye positions across all trials.
@@ -2172,6 +2371,12 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
         plt.show()
     plt.close(fig_traj_time)
 
+    print("\nGenerating trajectory animation...")
+    animation_path = animate_trajectories(trials, results_dir=results_dir,
+                                         animal_id=animal_id,
+                                         session_date=date_str)
+    print(f"Animation saved to: {animation_path}")
+
     print("\nGenerating density heatmap...")
     fig_heat = plot_density_heatmap(trials, results_dir, animal_id, date_str)
     if show_plots:
@@ -2352,6 +2557,12 @@ def main(session_id: str) -> pd.DataFrame:
     fig_traj_time = plot_trajectories_by_time(trials, results_dir, animal_id, date_str)
     plt.show()
     plt.close(fig_traj_time)
+
+    print("\nGenerating trajectory animation...")
+    animation_path = animate_trajectories(trials, results_dir=results_dir,
+                                         animal_id=animal_id,
+                                         session_date=date_str)
+    print(f"Animation saved to: {animation_path}")
 
     print("\nGenerating density heatmap...")
     fig_heat = plot_density_heatmap(trials, results_dir, animal_id, date_str)
