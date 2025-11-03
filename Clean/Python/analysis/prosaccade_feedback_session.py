@@ -760,7 +760,7 @@ def interactive_trajectories(trials: list[dict], animal_id: Optional[str] = None
         # Update progress text
         target_dir = 'Left' if trial['target_x'] < 0 else 'Right'
         progress_text.set_text(
-            f"Trial {trial_idx + 1}/{n_trials}\n"
+            f"Trial {trial['trial_number']} (showing {trial_idx + 1}/{n_trials})\n"
             f"Target: {target_dir}\n"
             f"Duration: {trial['duration']:.3f}s\n"
             f"Efficiency: {trial['path_efficiency']:.2f}\n\n"
