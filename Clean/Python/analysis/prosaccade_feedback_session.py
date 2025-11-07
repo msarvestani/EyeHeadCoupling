@@ -378,6 +378,7 @@ def plot_trajectories(trials: list[dict], results_dir: Optional[Path] = None,
     n_trials = len(trials)
 
     # Plot each trial
+    green_dot_radius = 0.1  # Green dot diameter is 0.2
     for i, trial in enumerate(trials):
         # Use absolute eye positions
         eye_x = trial['eye_x']
@@ -387,6 +388,15 @@ def plot_trajectories(trials: list[dict], results_dir: Optional[Path] = None,
         color = cmap(i / max(1, n_trials - 1))
         ax.plot(eye_x, eye_y, '-', color=color, alpha=0.6, linewidth=1.5,
                 label=f"Trial {trial['trial_number']}" if n_trials <= 20 else None)
+
+        # Draw green dot circles along trajectory at intervals
+        # Sample every N points to avoid overcrowding
+        n_samples = len(eye_x)
+        step = max(1, n_samples // 10)  # Show ~10 circles per trajectory
+        for idx in range(0, n_samples, step):
+            green_circle = Circle((eye_x[idx], eye_y[idx]), radius=green_dot_radius,
+                                 fill=False, edgecolor=color, linewidth=0.5, alpha=0.3)
+            ax.add_patch(green_circle)
 
         # Mark start and end points with different markers
         ax.plot(eye_x[0], eye_y[0], 'o', color=color, markersize=8, alpha=0.9,
@@ -480,6 +490,7 @@ def plot_trajectories_by_direction(trials: list[dict], results_dir: Optional[Pat
     # Colors for left and right
     left_color = 'blue'
     right_color = 'red'
+    green_dot_radius = 0.1  # Green dot diameter is 0.2
 
     # Plot left trials
     for trial in left_trials:
@@ -487,6 +498,14 @@ def plot_trajectories_by_direction(trials: list[dict], results_dir: Optional[Pat
         eye_y = trial['eye_y']
 
         ax.plot(eye_x, eye_y, '-', color=left_color, alpha=0.5, linewidth=1.5)
+
+        # Draw green dot circles along trajectory at intervals
+        n_samples = len(eye_x)
+        step = max(1, n_samples // 10)  # Show ~10 circles per trajectory
+        for idx in range(0, n_samples, step):
+            green_circle = Circle((eye_x[idx], eye_y[idx]), radius=green_dot_radius,
+                                 fill=False, edgecolor=left_color, linewidth=0.5, alpha=0.3)
+            ax.add_patch(green_circle)
 
         # Mark start and end points
         ax.plot(eye_x[0], eye_y[0], 'o', color=left_color, markersize=6, alpha=0.7,
@@ -500,6 +519,14 @@ def plot_trajectories_by_direction(trials: list[dict], results_dir: Optional[Pat
         eye_y = trial['eye_y']
 
         ax.plot(eye_x, eye_y, '-', color=right_color, alpha=0.5, linewidth=1.5)
+
+        # Draw green dot circles along trajectory at intervals
+        n_samples = len(eye_x)
+        step = max(1, n_samples // 10)  # Show ~10 circles per trajectory
+        for idx in range(0, n_samples, step):
+            green_circle = Circle((eye_x[idx], eye_y[idx]), radius=green_dot_radius,
+                                 fill=False, edgecolor=right_color, linewidth=0.5, alpha=0.3)
+            ax.add_patch(green_circle)
 
         # Mark start and end points
         ax.plot(eye_x[0], eye_y[0], 'o', color=right_color, markersize=6, alpha=0.7,
@@ -787,6 +814,17 @@ def interactive_trajectories(trials: list[dict], animal_id: Optional[str] = None
 
         # Plot trajectory
         line, = ax.plot(eye_x, eye_y, '-', color=color, linewidth=2, alpha=0.7)
+
+        # Draw green dot circles along trajectory at intervals
+        green_dot_radius = 0.1  # Green dot diameter is 0.2
+        n_samples = len(eye_x)
+        step = max(1, n_samples // 10)  # Show ~10 circles per trajectory
+        for idx in range(0, n_samples, step):
+            green_circle = Circle((eye_x[idx], eye_y[idx]), radius=green_dot_radius,
+                                 fill=False, edgecolor=color, linewidth=0.8, alpha=0.4)
+            ax.add_patch(green_circle)
+            trial_lines.append(green_circle)
+
         start, = ax.plot(eye_x[0], eye_y[0], 'o', color=color,
                         markersize=10, markeredgecolor='white',
                         markeredgewidth=2, alpha=0.9, label='Start')
