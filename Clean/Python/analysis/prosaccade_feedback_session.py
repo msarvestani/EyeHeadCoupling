@@ -348,17 +348,6 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
             print(f"    Mean: {np.mean(dir_errors):.1f}°")
             print(f"    Median: {np.median(dir_errors):.1f}°")
 
-    # Filter out trials that are too short (< 0.1 seconds)
-    # These are likely errors or aborted trials
-    min_duration = 0.1  # seconds
-    original_count = len(trials)
-    trials = [t for t in trials if t['duration'] >= min_duration]
-    filtered_count = original_count - len(trials)
-
-    if filtered_count > 0:
-        print(f"\n  *** Filtered out {filtered_count} trials with duration < {min_duration}s ***")
-        print(f"  Remaining trials: {len(trials)}")
-
     return trials
 
 
