@@ -100,8 +100,8 @@ def load_feedback_data(folder_path: Path, animal_id: str = "Tsh001") -> Tuple[pd
         raise ValueError(f"Error loading end of trial file {endoftrial_file}: {e}")
 
     # Load eye position / green dot position data using standard approach
-    # Columns: Frame, timestamp, placeholder, green_dot_x, green_dot_y, diameter
-    # Note: This file has duplicates that need to be cleaned
+    # Read from end: last column is ignored, -2 is y, -3 is x
+    # This generalizes across files with 5, 6, or more columns
     try:
         print(f"\nLoading {vstim_go_file.name}...")
         cleaned = clean_csv(str(vstim_go_file))
@@ -114,15 +114,17 @@ def load_feedback_data(folder_path: Path, animal_id: str = "Tsh001") -> Tuple[pd
         n_cols = eye_arr.shape[1]
         print(f"  Detected {n_cols} columns in vstim_go file")
 
-        if n_cols == 6:
-            eye_df = pd.DataFrame(eye_arr, columns=['frame', 'timestamp', 'placeholder', 'green_x', 'green_y', 'diameter'])
-        elif n_cols == 5:
-            # Older format without diameter column
-            eye_df = pd.DataFrame(eye_arr, columns=['frame', 'timestamp', 'placeholder', 'green_x', 'green_y'])
-            eye_df['diameter'] = 0.2  # Default diameter if not present
-            print(f"  Warning: 'diameter' column not found, using default value of 0.2")
-        else:
-            raise ValueError(f"Unexpected number of columns: {n_cols}. Expected 5 or 6.")
+        if n_cols < 4:
+            raise ValueError(f"Too few columns: {n_cols}. Expected at least 4 (frame, timestamp, x, y)")
+
+        # Extract columns: first 2 are frame & timestamp, last is ignored, -2 is y, -3 is x
+        eye_df = pd.DataFrame({
+            'frame': eye_arr[:, 0],
+            'timestamp': eye_arr[:, 1],
+            'green_x': eye_arr[:, -3],
+            'green_y': eye_arr[:, -2],
+        })
+        eye_df['diameter'] = 0.2  # Default diameter
 
         eye_df['frame'] = eye_df['frame'].astype(int)
 
