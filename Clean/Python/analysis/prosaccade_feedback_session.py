@@ -75,7 +75,23 @@ def load_feedback_data(folder_path: Path, animal_id: str = "Tsh001") -> Tuple[pd
         cleaned = clean_csv(str(endoftrial_file))
         eot_arr = np.genfromtxt(cleaned, delimiter=",", skip_header=1)
 
-        eot_df = pd.DataFrame(eot_arr, columns=['frame', 'timestamp', 'trial_number', 'green_x', 'green_y', 'diameter'])
+        # Check number of columns
+        if eot_arr.ndim == 1:
+            eot_arr = eot_arr.reshape(1, -1)
+
+        n_cols = eot_arr.shape[1]
+        print(f"  Detected {n_cols} columns in endoftrial file")
+
+        if n_cols == 6:
+            eot_df = pd.DataFrame(eot_arr, columns=['frame', 'timestamp', 'trial_number', 'green_x', 'green_y', 'diameter'])
+        elif n_cols == 5:
+            # Older format without diameter column
+            eot_df = pd.DataFrame(eot_arr, columns=['frame', 'timestamp', 'trial_number', 'green_x', 'green_y'])
+            eot_df['diameter'] = 0.2  # Default diameter if not present
+            print(f"  Warning: 'diameter' column not found, using default value of 0.2")
+        else:
+            raise ValueError(f"Unexpected number of columns: {n_cols}. Expected 5 or 6.")
+
         eot_df['frame'] = eot_df['frame'].astype(int)
         eot_df['trial_number'] = eot_df['trial_number'].astype(int)
 
@@ -91,7 +107,23 @@ def load_feedback_data(folder_path: Path, animal_id: str = "Tsh001") -> Tuple[pd
         cleaned = clean_csv(str(vstim_go_file))
         eye_arr = np.genfromtxt(cleaned, delimiter=",", skip_header=1)
 
-        eye_df = pd.DataFrame(eye_arr, columns=['frame', 'timestamp', 'placeholder', 'green_x', 'green_y', 'diameter'])
+        # Check number of columns
+        if eye_arr.ndim == 1:
+            eye_arr = eye_arr.reshape(1, -1)
+
+        n_cols = eye_arr.shape[1]
+        print(f"  Detected {n_cols} columns in vstim_go file")
+
+        if n_cols == 6:
+            eye_df = pd.DataFrame(eye_arr, columns=['frame', 'timestamp', 'placeholder', 'green_x', 'green_y', 'diameter'])
+        elif n_cols == 5:
+            # Older format without diameter column
+            eye_df = pd.DataFrame(eye_arr, columns=['frame', 'timestamp', 'placeholder', 'green_x', 'green_y'])
+            eye_df['diameter'] = 0.2  # Default diameter if not present
+            print(f"  Warning: 'diameter' column not found, using default value of 0.2")
+        else:
+            raise ValueError(f"Unexpected number of columns: {n_cols}. Expected 5 or 6.")
+
         eye_df['frame'] = eye_df['frame'].astype(int)
 
         # Remove duplicate frame entries - keep only the first occurrence
@@ -113,7 +145,23 @@ def load_feedback_data(folder_path: Path, animal_id: str = "Tsh001") -> Tuple[pd
         cleaned = clean_csv(str(vstim_cue_file))
         target_arr = np.genfromtxt(cleaned, delimiter=",", skip_header=1)
 
-        target_df = pd.DataFrame(target_arr, columns=['frame', 'timestamp', 'target_x', 'target_y', 'diameter'])
+        # Check number of columns
+        if target_arr.ndim == 1:
+            target_arr = target_arr.reshape(1, -1)
+
+        n_cols = target_arr.shape[1]
+        print(f"  Detected {n_cols} columns in vstim_cue file")
+
+        if n_cols == 5:
+            target_df = pd.DataFrame(target_arr, columns=['frame', 'timestamp', 'target_x', 'target_y', 'diameter'])
+        elif n_cols == 4:
+            # Older format without diameter column
+            target_df = pd.DataFrame(target_arr, columns=['frame', 'timestamp', 'target_x', 'target_y'])
+            target_df['diameter'] = 0.5  # Default target diameter if not present
+            print(f"  Warning: 'diameter' column not found, using default value of 0.5")
+        else:
+            raise ValueError(f"Unexpected number of columns: {n_cols}. Expected 4 or 5.")
+
         target_df['frame'] = target_df['frame'].astype(int)
 
         print(f"  Loaded {len(target_df)} target position samples")
