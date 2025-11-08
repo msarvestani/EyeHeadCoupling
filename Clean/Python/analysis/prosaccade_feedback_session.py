@@ -2583,6 +2583,305 @@ def test_reaction_time_consistency(trials: list[dict], movement_threshold: float
     return fig, stats_dict
 
 
+def analyze_repeated_target_learning(trials: list[dict], min_sequence_length: int = 3,
+                                     results_dir: Optional[Path] = None,
+                                     animal_id: Optional[str] = None, session_date: str = "") -> tuple:
+    """Analyze whether animal improves when target stays in same position for consecutive trials.
+
+    This tests for spatial learning/adaptation by examining sequences where the target
+    position remains constant for at least N consecutive trials.
+
+    Parameters
+    ----------
+    trials : list of dict
+        List of trial data dictionaries
+    min_sequence_length : int
+        Minimum number of consecutive trials with same target to include (default: 3)
+    results_dir : Path, optional
+        Directory to save the figure
+    animal_id : str, optional
+        Animal identifier for filename
+    session_date : str, optional
+        Session date for title
+
+    Returns
+    -------
+    tuple of (fig, stats_dict)
+        Figure and dictionary containing sequence statistics
+    """
+    from scipy import stats as scipy_stats
+
+    # Identify sequences of consecutive trials with same target position
+    sequences = []
+    current_sequence = []
+    prev_target = None
+
+    for i, trial in enumerate(trials):
+        target_pos = (round(trial['target_x'], 2), round(trial['target_y'], 2))
+
+        if target_pos == prev_target:
+            # Continue current sequence
+            current_sequence.append(i)
+        else:
+            # Save previous sequence if long enough
+            if len(current_sequence) >= min_sequence_length:
+                sequences.append(current_sequence)
+            # Start new sequence
+            current_sequence = [i]
+            prev_target = target_pos
+
+    # Don't forget last sequence
+    if len(current_sequence) >= min_sequence_length:
+        sequences.append(current_sequence)
+
+    print(f"\nRepeated Target Learning Analysis:")
+    print(f"  Found {len(sequences)} sequences with {min_sequence_length}+ consecutive trials at same target")
+
+    if len(sequences) == 0:
+        print("  Not enough repeated target sequences for analysis")
+        return None, {}
+
+    # Analyze metrics across positions within sequences
+    metrics_by_position = {}
+    max_length = max(len(seq) for seq in sequences)
+
+    for pos in range(max_length):
+        metrics_by_position[pos] = {
+            'efficiency': [],
+            'duration': [],
+            'initial_direction_error': [],
+            'path_length': []
+        }
+
+    for seq in sequences:
+        for pos, trial_idx in enumerate(seq):
+            trial = trials[trial_idx]
+            metrics_by_position[pos]['efficiency'].append(trial['path_efficiency'])
+            metrics_by_position[pos]['duration'].append(trial['duration'])
+            metrics_by_position[pos]['path_length'].append(trial['path_length'])
+            if not np.isnan(trial['initial_direction_error']):
+                metrics_by_position[pos]['initial_direction_error'].append(trial['initial_direction_error'])
+
+    # Create visualization
+    fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+
+    positions = list(range(max_length))
+
+    # Plot 1: Path Efficiency across repetitions
+    ax = axes[0, 0]
+    means = [np.mean(metrics_by_position[p]['efficiency']) if metrics_by_position[p]['efficiency'] else np.nan
+             for p in positions]
+    stds = [np.std(metrics_by_position[p]['efficiency']) if metrics_by_position[p]['efficiency'] else 0
+            for p in positions]
+    counts = [len(metrics_by_position[p]['efficiency']) for p in positions]
+
+    ax.errorbar(positions, means, yerr=stds, fmt='o-', linewidth=2, markersize=8, capsize=5, color='steelblue')
+    ax.set_xlabel('Trial Position in Sequence (0=first)', fontsize=12)
+    ax.set_ylabel('Path Efficiency', fontsize=12)
+    ax.set_title('Path Efficiency Across Repeated Trials', fontsize=13, fontweight='bold')
+    ax.grid(True, alpha=0.3)
+
+    # Add sample sizes
+    for i, (pos, count) in enumerate(zip(positions, counts)):
+        if count > 0:
+            ax.text(pos, means[i] + stds[i] + 0.02, f'n={count}', ha='center', fontsize=9)
+
+    # Linear regression to test for improvement
+    valid_data = [(p, m) for p, m in enumerate(means) if not np.isnan(m)]
+    if len(valid_data) >= 2:
+        pos_arr = np.array([p for p, _ in valid_data])
+        means_arr = np.array([m for _, m in valid_data])
+        slope, intercept, r, p_val, stderr = scipy_stats.linregress(pos_arr, means_arr)
+        ax.plot(positions, slope * np.array(positions) + intercept, '--', color='red', alpha=0.6,
+                label=f'Trend: r={r:.3f}, p={p_val:.4f}')
+        ax.legend()
+
+        if p_val < 0.05 and slope > 0:
+            interpretation = "IMPROVEMENT (efficiency increases)"
+        elif p_val < 0.05 and slope < 0:
+            interpretation = "DECLINE (efficiency decreases)"
+        else:
+            interpretation = "NO SIGNIFICANT TREND"
+        ax.text(0.02, 0.98, interpretation, transform=ax.transAxes,
+                fontsize=10, verticalalignment='top', fontweight='bold',
+                bbox=dict(boxstyle='round', facecolor='lightgreen' if 'IMPROVEMENT' in interpretation else 'yellow', alpha=0.8))
+
+    # Plot 2: Duration across repetitions
+    ax = axes[0, 1]
+    means_dur = [np.mean(metrics_by_position[p]['duration']) if metrics_by_position[p]['duration'] else np.nan
+                 for p in positions]
+    stds_dur = [np.std(metrics_by_position[p]['duration']) if metrics_by_position[p]['duration'] else 0
+                for p in positions]
+
+    ax.errorbar(positions, means_dur, yerr=stds_dur, fmt='o-', linewidth=2, markersize=8, capsize=5, color='coral')
+    ax.set_xlabel('Trial Position in Sequence (0=first)', fontsize=12)
+    ax.set_ylabel('Duration (s)', fontsize=12)
+    ax.set_title('Trial Duration Across Repeated Trials', fontsize=13, fontweight='bold')
+    ax.grid(True, alpha=0.3)
+
+    for i, (pos, count) in enumerate(zip(positions, counts)):
+        if count > 0:
+            ax.text(pos, means_dur[i] + stds_dur[i] + 0.05, f'n={count}', ha='center', fontsize=9)
+
+    # Linear regression
+    valid_data_dur = [(p, m) for p, m in enumerate(means_dur) if not np.isnan(m)]
+    if len(valid_data_dur) >= 2:
+        pos_arr = np.array([p for p, _ in valid_data_dur])
+        means_arr = np.array([m for _, m in valid_data_dur])
+        slope_dur, intercept_dur, r_dur, p_val_dur, stderr_dur = scipy_stats.linregress(pos_arr, means_arr)
+        ax.plot(positions, slope_dur * np.array(positions) + intercept_dur, '--', color='red', alpha=0.6,
+                label=f'Trend: r={r_dur:.3f}, p={p_val_dur:.4f}')
+        ax.legend()
+
+        if p_val_dur < 0.05 and slope_dur < 0:
+            interpretation_dur = "IMPROVEMENT (faster trials)"
+        elif p_val_dur < 0.05 and slope_dur > 0:
+            interpretation_dur = "DECLINE (slower trials)"
+        else:
+            interpretation_dur = "NO SIGNIFICANT TREND"
+        ax.text(0.02, 0.98, interpretation_dur, transform=ax.transAxes,
+                fontsize=10, verticalalignment='top', fontweight='bold',
+                bbox=dict(boxstyle='round', facecolor='lightgreen' if 'IMPROVEMENT' in interpretation_dur else 'yellow', alpha=0.8))
+
+    # Plot 3: Initial Direction Error across repetitions
+    ax = axes[1, 0]
+    means_err = [np.mean(metrics_by_position[p]['initial_direction_error'])
+                 if metrics_by_position[p]['initial_direction_error'] else np.nan
+                 for p in positions]
+    stds_err = [np.std(metrics_by_position[p]['initial_direction_error'])
+                if metrics_by_position[p]['initial_direction_error'] else 0
+                for p in positions]
+    counts_err = [len(metrics_by_position[p]['initial_direction_error']) for p in positions]
+
+    ax.errorbar(positions, means_err, yerr=stds_err, fmt='o-', linewidth=2, markersize=8, capsize=5, color='purple')
+    ax.set_xlabel('Trial Position in Sequence (0=first)', fontsize=12)
+    ax.set_ylabel('Initial Direction Error (degrees)', fontsize=12)
+    ax.set_title('Initial Direction Error Across Repeated Trials', fontsize=13, fontweight='bold')
+    ax.grid(True, alpha=0.3)
+
+    for i, (pos, count) in enumerate(zip(positions, counts_err)):
+        if count > 0 and not np.isnan(means_err[i]):
+            ax.text(pos, means_err[i] + stds_err[i] + 2, f'n={count}', ha='center', fontsize=9)
+
+    # Linear regression
+    valid_data_err = [(p, m) for p, m in enumerate(means_err) if not np.isnan(m)]
+    if len(valid_data_err) >= 2:
+        pos_arr = np.array([p for p, _ in valid_data_err])
+        means_arr = np.array([m for _, m in valid_data_err])
+        slope_err, intercept_err, r_err, p_val_err, stderr_err = scipy_stats.linregress(pos_arr, means_arr)
+        ax.plot(positions, slope_err * np.array(positions) + intercept_err, '--', color='red', alpha=0.6,
+                label=f'Trend: r={r_err:.3f}, p={p_val_err:.4f}')
+        ax.legend()
+
+        if p_val_err < 0.05 and slope_err < 0:
+            interpretation_err = "IMPROVEMENT (more accurate direction)"
+        elif p_val_err < 0.05 and slope_err > 0:
+            interpretation_err = "DECLINE (less accurate direction)"
+        else:
+            interpretation_err = "NO SIGNIFICANT TREND"
+        ax.text(0.02, 0.98, interpretation_err, transform=ax.transAxes,
+                fontsize=10, verticalalignment='top', fontweight='bold',
+                bbox=dict(boxstyle='round', facecolor='lightgreen' if 'IMPROVEMENT' in interpretation_err else 'yellow', alpha=0.8))
+
+    # Plot 4: Summary statistics
+    ax = axes[1, 1]
+    ax.axis('off')
+
+    summary_text = f"""
+REPEATED TARGET LEARNING ANALYSIS
+{'='*50}
+
+Sequences Found: {len(sequences)}
+Min Sequence Length: {min_sequence_length} trials
+Max Sequence Length: {max_length} trials
+Total Trials Analyzed: {sum(len(seq) for seq in sequences)}
+
+Sequence Lengths:
+"""
+
+    from collections import Counter
+    seq_lengths = Counter([len(seq) for seq in sequences])
+    for length in sorted(seq_lengths.keys()):
+        summary_text += f"  {length} trials: {seq_lengths[length]} sequences\n"
+
+    summary_text += f"\n{'='*50}\n"
+    summary_text += "LEARNING INDICATORS:\n\n"
+
+    if len(valid_data) >= 2:
+        summary_text += f"Path Efficiency:\n"
+        summary_text += f"  Slope: {slope:.4f} (per trial)\n"
+        summary_text += f"  r={r:.3f}, p={p_val:.4f}\n"
+        summary_text += f"  → {interpretation}\n\n"
+
+    if len(valid_data_dur) >= 2:
+        summary_text += f"Trial Duration:\n"
+        summary_text += f"  Slope: {slope_dur:.4f}s (per trial)\n"
+        summary_text += f"  r={r_dur:.3f}, p={p_val_dur:.4f}\n"
+        summary_text += f"  → {interpretation_dur}\n\n"
+
+    if len(valid_data_err) >= 2:
+        summary_text += f"Initial Direction Error:\n"
+        summary_text += f"  Slope: {slope_err:.2f}° (per trial)\n"
+        summary_text += f"  r={r_err:.3f}, p={p_val_err:.4f}\n"
+        summary_text += f"  → {interpretation_err}\n"
+
+    ax.text(0.05, 0.95, summary_text, transform=ax.transAxes,
+            fontsize=10, verticalalignment='top', family='monospace',
+            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+
+    # Overall title
+    title = 'Repeated Target Learning Analysis'
+    if animal_id:
+        title += f' - {animal_id}'
+    if session_date:
+        title += f' ({session_date})'
+    fig.suptitle(title, fontsize=15, fontweight='bold')
+
+    plt.tight_layout()
+
+    # Save figure
+    if results_dir:
+        results_dir.mkdir(parents=True, exist_ok=True)
+        prefix = f"{animal_id}_" if animal_id else ""
+        filename = f"{prefix}saccade_feedback_repeated_target_learning.png"
+        fig.savefig(results_dir / filename, dpi=150, bbox_inches='tight')
+        filename_svg = f"{prefix}saccade_feedback_repeated_target_learning.svg"
+        fig.savefig(results_dir / filename_svg, bbox_inches='tight')
+        print(f"Saved repeated target learning plot to {results_dir / filename}")
+
+    stats_dict = {
+        'n_sequences': len(sequences),
+        'max_sequence_length': max_length,
+        'total_trials_analyzed': sum(len(seq) for seq in sequences),
+        'sequence_lengths': dict(seq_lengths)
+    }
+
+    if len(valid_data) >= 2:
+        stats_dict['efficiency_slope'] = slope
+        stats_dict['efficiency_r'] = r
+        stats_dict['efficiency_p'] = p_val
+
+    if len(valid_data_dur) >= 2:
+        stats_dict['duration_slope'] = slope_dur
+        stats_dict['duration_r'] = r_dur
+        stats_dict['duration_p'] = p_val_dur
+
+    if len(valid_data_err) >= 2:
+        stats_dict['direction_error_slope'] = slope_err
+        stats_dict['direction_error_r'] = r_err
+        stats_dict['direction_error_p'] = p_val_err
+
+    print(f"\n  Results:")
+    if len(valid_data) >= 2:
+        print(f"    Efficiency: slope={slope:.4f}, p={p_val:.4f}")
+    if len(valid_data_dur) >= 2:
+        print(f"    Duration: slope={slope_dur:.4f}s, p={p_val_dur:.4f}")
+    if len(valid_data_err) >= 2:
+        print(f"    Direction Error: slope={slope_err:.2f}°, p={p_val_err:.4f}")
+
+    return fig, stats_dict
+
+
 def _clean_path(path_str: str | Path) -> str:
     """Clean path string by removing Python string literal syntax if present.
 
@@ -2769,6 +3068,17 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
         plt.show()
     plt.close(fig_test7)
 
+    # Repeated Target Learning Analysis
+    print("\nAnalyzing learning with repeated target positions...")
+    fig_learning, stats_learning = analyze_repeated_target_learning(trials, min_sequence_length=3,
+                                                                    results_dir=results_dir,
+                                                                    animal_id=animal_id,
+                                                                    session_date=date_str)
+    if fig_learning is not None:
+        if show_plots:
+            plt.show()
+        plt.close(fig_learning)
+
     # Create summary DataFrame
     durations = [t['duration'] for t in trials]
     path_lengths = [t['path_length'] for t in trials]
@@ -2947,6 +3257,16 @@ def main(session_id: str) -> pd.DataFrame:
                                                              session_date=date_str)
     plt.show()
     plt.close(fig_test7)
+
+    # Repeated Target Learning Analysis
+    print("\nAnalyzing learning with repeated target positions...")
+    fig_learning, stats_learning = analyze_repeated_target_learning(trials, min_sequence_length=3,
+                                                                    results_dir=results_dir,
+                                                                    animal_id=animal_id,
+                                                                    session_date=date_str)
+    if fig_learning is not None:
+        plt.show()
+        plt.close(fig_learning)
 
     # Create summary DataFrame
     durations = [t['duration'] for t in trials]
