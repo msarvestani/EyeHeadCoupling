@@ -378,20 +378,14 @@ def plot_trajectories(trials: list[dict], results_dir: Optional[Path] = None,
     n_trials = len(trials)
 
     # Plot each trial
-    # Calculate linewidth to represent green dot diameter of 0.2 in data units
-    # Axes span -1 to 1 (2 units) across ~9 inches of plot area
-    # 0.2 data units = 0.2/2 * 9 inches * 72 points/inch ≈ 65 points
-    green_dot_linewidth = 65  # linewidth in points to represent diameter of 0.2
-
     for i, trial in enumerate(trials):
         # Use absolute eye positions
         eye_x = trial['eye_x']
         eye_y = trial['eye_y']
 
-        # Plot trajectory as thick line representing green dot diameter
+        # Plot trajectory as lines
         color = cmap(i / max(1, n_trials - 1))
-        ax.plot(eye_x, eye_y, '-', color=color, alpha=0.4, linewidth=green_dot_linewidth,
-                solid_capstyle='round', solid_joinstyle='round',
+        ax.plot(eye_x, eye_y, '-', color=color, alpha=0.6, linewidth=1.5,
                 label=f"Trial {trial['trial_number']}" if n_trials <= 20 else None)
 
         # Mark start and end points with different markers
@@ -486,16 +480,13 @@ def plot_trajectories_by_direction(trials: list[dict], results_dir: Optional[Pat
     # Colors for left and right
     left_color = 'blue'
     right_color = 'red'
-    green_dot_linewidth = 65  # linewidth in points to represent diameter of 0.2
 
     # Plot left trials
     for trial in left_trials:
         eye_x = trial['eye_x']
         eye_y = trial['eye_y']
 
-        # Plot trajectory as thick line representing green dot diameter
-        ax.plot(eye_x, eye_y, '-', color=left_color, alpha=0.3, linewidth=green_dot_linewidth,
-                solid_capstyle='round', solid_joinstyle='round')
+        ax.plot(eye_x, eye_y, '-', color=left_color, alpha=0.5, linewidth=1.5)
 
         # Mark start and end points
         ax.plot(eye_x[0], eye_y[0], 'o', color=left_color, markersize=6, alpha=0.7,
@@ -508,9 +499,7 @@ def plot_trajectories_by_direction(trials: list[dict], results_dir: Optional[Pat
         eye_x = trial['eye_x']
         eye_y = trial['eye_y']
 
-        # Plot trajectory as thick line representing green dot diameter
-        ax.plot(eye_x, eye_y, '-', color=right_color, alpha=0.3, linewidth=green_dot_linewidth,
-                solid_capstyle='round', solid_joinstyle='round')
+        ax.plot(eye_x, eye_y, '-', color=right_color, alpha=0.5, linewidth=1.5)
 
         # Mark start and end points
         ax.plot(eye_x[0], eye_y[0], 'o', color=right_color, markersize=6, alpha=0.7,
@@ -796,10 +785,8 @@ def interactive_trajectories(trials: list[dict], animal_id: Optional[str] = None
                                     markeredgecolor='darkgreen', markeredgewidth=2)
         current_target_highlight = [target_circle_green, target_dot_green]
 
-        # Plot trajectory as thick line representing green dot diameter
-        green_dot_linewidth = 65  # linewidth in points to represent diameter of 0.2
-        line, = ax.plot(eye_x, eye_y, '-', color=color, linewidth=green_dot_linewidth, alpha=0.5,
-                       solid_capstyle='round', solid_joinstyle='round')
+        # Plot trajectory
+        line, = ax.plot(eye_x, eye_y, '-', color=color, linewidth=2, alpha=0.7)
 
         start, = ax.plot(eye_x[0], eye_y[0], 'o', color=color,
                         markersize=10, markeredgecolor='white',
