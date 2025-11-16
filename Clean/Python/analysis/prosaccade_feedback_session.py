@@ -204,7 +204,9 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
     n_trials = len(eot_df)
 
     for i in range(n_trials):
-        trial_num = eot_df.iloc[i]['trial_number']
+        # Use sequential trial number (1-indexed) instead of relying on CSV column
+        # which may be unreliable (e.g., all zeros)
+        trial_num = i + 1
         end_frame = eot_df.iloc[i]['frame']
         end_time = eot_df.iloc[i]['timestamp']
 
