@@ -441,8 +441,6 @@ def plot_trajectories(trials: list[dict], results_dir: Optional[Path] = None,
         prefix = f"{animal_id}_" if animal_id else ""
         filename = f"{prefix}saccade_feedback_trajectories.png"
         fig.savefig(results_dir / filename, dpi=150, bbox_inches='tight')
-        filename_svg = f"{prefix}saccade_feedback_trajectories.svg"
-        fig.savefig(results_dir / filename_svg, bbox_inches='tight')
         print(f"Saved trajectory plot to {results_dir / filename}")
 
     return fig
@@ -556,8 +554,6 @@ def plot_trajectories_by_direction(trials: list[dict], results_dir: Optional[Pat
         prefix = f"{animal_id}_" if animal_id else ""
         filename = f"{prefix}saccade_feedback_trajectories_by_direction.png"
         fig.savefig(results_dir / filename, dpi=150, bbox_inches='tight')
-        filename_svg = f"{prefix}saccade_feedback_trajectories_by_direction.svg"
-        fig.savefig(results_dir / filename_svg, bbox_inches='tight')
         print(f"Saved trajectory by direction plot to {results_dir / filename}")
 
     return fig
@@ -977,8 +973,6 @@ def plot_density_heatmap(trials: list[dict], results_dir: Optional[Path] = None,
         prefix = f"{animal_id}_" if animal_id else ""
         filename = f"{prefix}saccade_feedback_heatmap.png"
         fig.savefig(results_dir / filename, dpi=150, bbox_inches='tight')
-        filename_svg = f"{prefix}saccade_feedback_heatmap.svg"
-        fig.savefig(results_dir / filename_svg, bbox_inches='tight')
         print(f"Saved heatmap plot to {results_dir / filename}")
 
     return fig
@@ -1053,8 +1047,6 @@ def plot_time_to_target(trials: list[dict], results_dir: Optional[Path] = None,
         prefix = f"{animal_id}_" if animal_id else ""
         filename = f"{prefix}saccade_feedback_time_to_target.png"
         fig.savefig(results_dir / filename, dpi=150, bbox_inches='tight')
-        filename_svg = f"{prefix}saccade_feedback_time_to_target.svg"
-        fig.savefig(results_dir / filename_svg, bbox_inches='tight')
         print(f"Saved time-to-target plot to {results_dir / filename}")
 
     return fig
@@ -1129,8 +1121,6 @@ def plot_path_length(trials: list[dict], results_dir: Optional[Path] = None,
         prefix = f"{animal_id}_" if animal_id else ""
         filename = f"{prefix}saccade_feedback_path_length.png"
         fig.savefig(results_dir / filename, dpi=150, bbox_inches='tight')
-        filename_svg = f"{prefix}saccade_feedback_path_length.svg"
-        fig.savefig(results_dir / filename_svg, bbox_inches='tight')
         print(f"Saved path length plot to {results_dir / filename}")
 
     return fig
@@ -1236,8 +1226,6 @@ def plot_learning_metrics(trials: list[dict], results_dir: Optional[Path] = None
         prefix = f"{animal_id}_" if animal_id else ""
         filename = f"{prefix}saccade_feedback_learning_metrics.png"
         fig.savefig(results_dir / filename, dpi=150, bbox_inches='tight')
-        filename_svg = f"{prefix}saccade_feedback_learning_metrics.svg"
-        fig.savefig(results_dir / filename_svg, bbox_inches='tight')
         print(f"Saved learning metrics plot to {results_dir / filename}")
 
     return fig
@@ -1486,8 +1474,6 @@ def plot_shuffle_control(shuffle_results: dict, results_dir: Optional[Path] = No
         prefix = f"{animal_id}_" if animal_id else ""
         filename = f"{prefix}saccade_feedback_shuffle_control.png"
         fig.savefig(results_dir / filename, dpi=150, bbox_inches='tight')
-        filename_svg = f"{prefix}saccade_feedback_shuffle_control.svg"
-        fig.savefig(results_dir / filename_svg, bbox_inches='tight')
         print(f"Saved shuffle control plot to {results_dir / filename}")
 
     return fig
@@ -1687,8 +1673,6 @@ def compare_left_right_performance(trials: list[dict], left_x: float = -0.7, rig
         prefix = f"{animal_id}_" if animal_id else ""
         filename = f"{prefix}saccade_feedback_left_vs_right.png"
         fig.savefig(results_dir / filename, dpi=150, bbox_inches='tight')
-        filename_svg = f"{prefix}saccade_feedback_left_vs_right.svg"
-        fig.savefig(results_dir / filename_svg, bbox_inches='tight')
         print(f"Saved left vs right comparison to {results_dir / filename}")
 
     # Compile statistics dictionary
@@ -1873,8 +1857,6 @@ def test_initial_direction_correlation(trials: list[dict], results_dir: Optional
         prefix = f"{animal_id}_" if animal_id else ""
         filename = f"{prefix}saccade_feedback_test2_direction_correlation.png"
         fig.savefig(results_dir / filename, dpi=150, bbox_inches='tight')
-        filename_svg = f"{prefix}saccade_feedback_test2_direction_correlation.svg"
-        fig.savefig(results_dir / filename_svg, bbox_inches='tight')
         print(f"Saved initial direction correlation plot to {results_dir / filename}")
 
     stats_dict = {
@@ -2049,8 +2031,6 @@ def test_trial_to_trial_adaptation(trials: list[dict], results_dir: Optional[Pat
         prefix = f"{animal_id}_" if animal_id else ""
         filename = f"{prefix}saccade_feedback_test3_trial_adaptation.png"
         fig.savefig(results_dir / filename, dpi=150, bbox_inches='tight')
-        filename_svg = f"{prefix}saccade_feedback_test3_trial_adaptation.svg"
-        fig.savefig(results_dir / filename_svg, bbox_inches='tight')
         print(f"Saved trial-to-trial adaptation plot to {results_dir / filename}")
 
     stats_dict = {
@@ -2162,8 +2142,6 @@ def test_speed_accuracy_tradeoff(trials: list[dict], results_dir: Optional[Path]
         prefix = f"{animal_id}_" if animal_id else ""
         filename = f"{prefix}saccade_feedback_test6_speed_accuracy.png"
         fig.savefig(results_dir / filename, dpi=150, bbox_inches='tight')
-        filename_svg = f"{prefix}saccade_feedback_test6_speed_accuracy.svg"
-        fig.savefig(results_dir / filename_svg, bbox_inches='tight')
         print(f"Saved speed-accuracy tradeoff plot to {results_dir / filename}")
 
     stats_dict = {
@@ -2335,8 +2313,6 @@ def test_reaction_time_consistency(trials: list[dict], movement_threshold: float
         prefix = f"{animal_id}_" if animal_id else ""
         filename = f"{prefix}saccade_feedback_test7_reaction_time.png"
         fig.savefig(results_dir / filename, dpi=150, bbox_inches='tight')
-        filename_svg = f"{prefix}saccade_feedback_test7_reaction_time.svg"
-        fig.savefig(results_dir / filename_svg, bbox_inches='tight')
         print(f"Saved reaction time consistency plot to {results_dir / filename}")
 
     stats_dict = {
