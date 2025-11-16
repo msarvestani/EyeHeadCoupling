@@ -375,8 +375,10 @@ def plot_trajectories(trials: list[dict], results_dir: Optional[Path] = None,
     """
     fig, ax = plt.subplots(figsize=(12, 10))
 
-    # Color map for trials - use coolwarm to show temporal progression (blue=early, red=late)
-    cmap = plt.cm.coolwarm
+    # Color map for trials - purple to green (early to late)
+    from matplotlib.colors import LinearSegmentedColormap
+    colors_list = ['#9b59b6', '#3498db', '#2ecc71']  # purple -> blue -> green
+    cmap = LinearSegmentedColormap.from_list('purple_green', colors_list)
     n_trials = len(trials)
 
     # Plot each trial
@@ -562,129 +564,6 @@ def plot_trajectories_by_direction(trials: list[dict], results_dir: Optional[Pat
         filename_svg = f"{prefix}saccade_feedback_trajectories_by_direction.svg"
         fig.savefig(results_dir / filename_svg, bbox_inches='tight')
         print(f"Saved trajectory by direction plot to {results_dir / filename}")
-
-    return fig
-
-
-def plot_trajectories_by_time(trials: list[dict], results_dir: Optional[Path] = None,
-                                animal_id: Optional[str] = None, session_date: str = "") -> plt.Figure:
-    """Plot eye position trajectories colored by temporal progression within each trial.
-
-    Each trajectory is divided into quartiles (0-25%, 25-50%, 50-75%, 75-100% of trial duration)
-    with different colors to show if movements diverge early for left vs right targets.
-
-    Parameters
-    ----------
-    trials : list of dict
-        List of trial data dictionaries
-    results_dir : Path, optional
-        Directory to save the figure
-    animal_id : str, optional
-        Animal identifier for filename
-    session_date : str, optional
-        Session date for title
-
-    Returns
-    -------
-    matplotlib.figure.Figure
-        The generated figure
-    """
-    fig, ax = plt.subplots(figsize=(12, 10))
-
-    # Define colors for temporal quartiles - using viridis-like progression (purple -> green -> yellow)
-    quartile_colors = ['#440154', '#31688e', '#35b779', '#fde724']  # purple -> teal -> green -> yellow
-    quartile_labels = ['0-25%', '25-50%', '50-75%', '75-100%']
-
-    # Plot each trial
-    for trial in trials:
-        eye_x = trial['eye_x']
-        eye_y = trial['eye_y']
-        n_samples = len(eye_x)
-
-        if n_samples < 4:
-            # Not enough samples to divide into quartiles, just plot as scatter
-            ax.scatter(eye_x, eye_y, c='gray', alpha=0.2, s=15, edgecolors='none')
-            continue
-
-        # Divide trajectory into quartiles
-        quartile_size = n_samples / 4.0
-
-        for q in range(4):
-            # Get indices for this quartile
-            start_idx = int(q * quartile_size)
-            end_idx = int((q + 1) * quartile_size) if q < 3 else n_samples
-
-            if end_idx > start_idx:
-                # Plot this segment as scatter points
-                x_segment = eye_x[start_idx:end_idx]
-                y_segment = eye_y[start_idx:end_idx]
-
-                ax.scatter(x_segment, y_segment, c=quartile_colors[q],
-                          alpha=0.4, s=20, edgecolors='none')
-
-        # Mark start point
-        ax.plot(eye_x[0], eye_y[0], 'o', color=quartile_colors[0], markersize=10,
-               markeredgecolor='white', markeredgewidth=1.5, alpha=0.9)
-
-        # Mark end point
-        ax.plot(eye_x[-1], eye_y[-1], 's', color=quartile_colors[3], markersize=10,
-               markeredgecolor='white', markeredgewidth=1.5, alpha=0.9)
-
-        # Draw target position
-        target_x = trial['target_x']
-        target_y = trial['target_y']
-        target_radius = trial['target_diameter'] / 2.0
-        target_circle = Circle((target_x, target_y), radius=target_radius, fill=False,
-                              edgecolor='black', linewidth=2.5, linestyle='-', alpha=0.8)
-        ax.add_patch(target_circle)
-        ax.plot(target_x, target_y, 'ko', markersize=4)
-
-    # Create custom legend for quartiles
-    from matplotlib.lines import Line2D
-    legend_elements = [Line2D([0], [0], marker='o', color='w',
-                             markerfacecolor=quartile_colors[i],
-                             markersize=10, label=quartile_labels[i],
-                             linestyle='None') for i in range(4)]
-    legend_elements.append(Line2D([0], [0], marker='o', color='w',
-                                 markerfacecolor=quartile_colors[0],
-                                 markeredgecolor='white', markeredgewidth=1.5,
-                                 markersize=10,
-                                 label='Trial start', linestyle='None'))
-    legend_elements.append(Line2D([0], [0], marker='s', color='w',
-                                 markerfacecolor=quartile_colors[3],
-                                 markeredgecolor='white', markeredgewidth=1.5,
-                                 markersize=10,
-                                 label='Trial end', linestyle='None'))
-
-    ax.legend(handles=legend_elements, loc='upper right', fontsize=10,
-             title='Trial Time', framealpha=0.9)
-
-    ax.set_xlabel('Horizontal Position (stimulus units)', fontsize=12)
-    ax.set_ylabel('Vertical Position (stimulus units)', fontsize=12)
-
-    title = 'Eye Position Trajectories Colored by Time\n(Purple=early, Yellow=late within each trial)'
-    if animal_id:
-        title += f' - {animal_id}'
-    if session_date:
-        title += f' ({session_date})'
-    ax.set_title(title, fontsize=14, fontweight='bold')
-
-    ax.grid(True, alpha=0.3)
-    ax.set_xlim(-1, 1)
-    ax.set_ylim(-1, 1)
-    ax.set_aspect('equal', adjustable='box')
-
-    plt.tight_layout()
-
-    # Save figure if results directory provided
-    if results_dir:
-        results_dir.mkdir(parents=True, exist_ok=True)
-        prefix = f"{animal_id}_" if animal_id else ""
-        filename = f"{prefix}saccade_feedback_trajectories_by_time.png"
-        fig.savefig(results_dir / filename, dpi=150, bbox_inches='tight')
-        filename_svg = f"{prefix}saccade_feedback_trajectories_by_time.svg"
-        fig.savefig(results_dir / filename_svg, bbox_inches='tight')
-        print(f"Saved trajectory by time plot to {results_dir / filename}")
 
     return fig
 
@@ -1365,125 +1244,6 @@ def plot_learning_metrics(trials: list[dict], results_dir: Optional[Path] = None
         filename_svg = f"{prefix}saccade_feedback_learning_metrics.svg"
         fig.savefig(results_dir / filename_svg, bbox_inches='tight')
         print(f"Saved learning metrics plot to {results_dir / filename}")
-
-    return fig
-
-
-def plot_spatial_bias_by_phase(trials: list[dict], results_dir: Optional[Path] = None,
-                                animal_id: Optional[str] = None, session_date: str = "") -> plt.Figure:
-    """Plot spatial heatmaps split by trial phase (early/middle/late).
-
-    Parameters
-    ----------
-    trials : list of dict
-        List of trial data dictionaries
-    results_dir : Path, optional
-        Directory to save the figure
-    animal_id : str, optional
-        Animal identifier for filename
-    session_date : str, optional
-        Session date for title
-
-    Returns
-    -------
-    matplotlib.figure.Figure
-        The generated figure
-    """
-    n_trials = len(trials)
-    # Split into thirds
-    early_end = n_trials // 3
-    middle_end = 2 * n_trials // 3
-
-    early_trials = trials[:early_end]
-    middle_trials = trials[early_end:middle_end]
-    late_trials = trials[middle_end:]
-
-    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
-
-    bins = 50
-    vmax = None  # Will be set to max across all phases for consistent colorbar
-
-    # Function to collect all positions from a trial subset
-    def collect_positions(trial_list):
-        all_x = []
-        all_y = []
-        for trial in trial_list:
-            all_x.extend(trial['eye_x'])
-            all_y.extend(trial['eye_y'])
-        return np.array(all_x), np.array(all_y)
-
-    # First pass: determine vmax for consistent color scale
-    all_counts = []
-    for trial_subset in [early_trials, middle_trials, late_trials]:
-        if len(trial_subset) > 0:
-            x, y = collect_positions(trial_subset)
-            h, _, _ = np.histogram2d(x, y, bins=bins, range=[[-1, 1], [-1, 1]])
-            all_counts.append(h.max())
-    vmax = max(all_counts) if all_counts else 1
-
-    # Plot each phase
-    phases = [
-        (early_trials, 'Early Trials', f'Trials 1-{early_end}'),
-        (middle_trials, 'Middle Trials', f'Trials {early_end+1}-{middle_end}'),
-        (late_trials, 'Late Trials', f'Trials {middle_end+1}-{n_trials}')
-    ]
-
-    for ax, (trial_subset, phase_name, trial_range) in zip(axes, phases):
-        if len(trial_subset) == 0:
-            ax.text(0.5, 0.5, 'No trials', ha='center', va='center', transform=ax.transAxes)
-            ax.set_xlim(-1, 1)
-            ax.set_ylim(-1, 1)
-            continue
-
-        # Collect positions
-        x, y = collect_positions(trial_subset)
-
-        # Create 2D histogram
-        h, xedges, yedges = np.histogram2d(x, y, bins=bins, range=[[-1, 1], [-1, 1]])
-
-        # Plot heatmap
-        extent = [xedges[0], xedges[-1], yedges[0], yedges[-1]]
-        im = ax.imshow(h.T, extent=extent, origin='lower', cmap='hot',
-                       aspect='auto', interpolation='bilinear', vmin=0, vmax=vmax)
-
-        # Overlay target positions
-        for trial in trial_subset:
-            target_x = trial['target_x']
-            target_y = trial['target_y']
-            target_radius = trial['target_diameter'] / 2.0
-            target_circle = Circle((target_x, target_y), radius=target_radius, fill=False,
-                                  edgecolor='cyan', linewidth=1.5, linestyle='-', alpha=0.6)
-            ax.add_patch(target_circle)
-
-        ax.set_xlabel('Horizontal Position', fontsize=10)
-        ax.set_ylabel('Vertical Position', fontsize=10)
-        ax.set_title(f'{phase_name}\n({trial_range})', fontsize=11, fontweight='bold')
-        ax.set_xlim(-1, 1)
-        ax.set_ylim(-1, 1)
-        ax.set_aspect('equal', adjustable='box')
-
-    # Add colorbar
-    fig.colorbar(im, ax=axes, label='Number of Samples', fraction=0.046, pad=0.04)
-
-    # Overall title
-    title = 'Spatial Distribution by Trial Phase'
-    if animal_id:
-        title += f' - {animal_id}'
-    if session_date:
-        title += f' ({session_date})'
-    fig.suptitle(title, fontsize=14, fontweight='bold')
-
-    plt.tight_layout()
-
-    # Save figure if results directory provided
-    if results_dir:
-        results_dir.mkdir(parents=True, exist_ok=True)
-        prefix = f"{animal_id}_" if animal_id else ""
-        filename = f"{prefix}saccade_feedback_spatial_bias.png"
-        fig.savefig(results_dir / filename, dpi=150, bbox_inches='tight')
-        filename_svg = f"{prefix}saccade_feedback_spatial_bias.svg"
-        fig.savefig(results_dir / filename_svg, bbox_inches='tight')
-        print(f"Saved spatial bias plot to {results_dir / filename}")
 
     return fig
 
@@ -2993,12 +2753,6 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
         plt.show()
     plt.close(fig_traj_dir)
 
-    print("\nGenerating trajectory plot colored by time...")
-    fig_traj_time = plot_trajectories_by_time(trials, results_dir, animal_id, date_str)
-    if show_plots:
-        plt.show()
-    plt.close(fig_traj_time)
-
     print("\nShowing interactive trajectory viewer...")
     print("(Press SPACE to advance to next trial)")
     if show_plots:
@@ -3027,12 +2781,6 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
     if show_plots:
         plt.show()
     plt.close(fig_learn)
-
-    print("\nGenerating spatial bias by phase plot...")
-    fig_spatial = plot_spatial_bias_by_phase(trials, results_dir, animal_id, date_str)
-    if show_plots:
-        plt.show()
-    plt.close(fig_spatial)
 
     print("\nRunning shuffle control analysis (voluntary control test)...")
     shuffle_results = shuffle_control_analysis(trials, n_shuffles=1000, seed=42)
@@ -3162,11 +2910,6 @@ def main(session_id: str) -> pd.DataFrame:
     plt.show()
     plt.close(fig_traj_dir)
 
-    print("\nGenerating trajectory plot colored by time...")
-    fig_traj_time = plot_trajectories_by_time(trials, results_dir, animal_id, date_str)
-    plt.show()
-    plt.close(fig_traj_time)
-
     print("\nShowing interactive trajectory viewer...")
     print("(Press SPACE to advance to next trial)")
     interactive_trajectories(trials, animal_id=animal_id, session_date=date_str)
@@ -3190,11 +2933,6 @@ def main(session_id: str) -> pd.DataFrame:
     fig_learn = plot_learning_metrics(trials, results_dir, animal_id, date_str)
     plt.show()
     plt.close(fig_learn)
-
-    print("\nGenerating spatial bias by phase plot...")
-    fig_spatial = plot_spatial_bias_by_phase(trials, results_dir, animal_id, date_str)
-    plt.show()
-    plt.close(fig_spatial)
 
     print("\nRunning shuffle control analysis (voluntary control test)...")
     shuffle_results = shuffle_control_analysis(trials, n_shuffles=1000, seed=42)
