@@ -3049,40 +3049,6 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
             plt.show()
         plt.close(fig_lr)
 
-    print("\nRunning additional voluntary control tests...")
-
-    # Test #2: Initial Direction Correlation
-    fig_test2, stats_test2 = test_initial_direction_correlation(trials, results_dir=results_dir,
-                                                                 animal_id=animal_id,
-                                                                 session_date=date_str)
-    if show_plots:
-        plt.show()
-    plt.close(fig_test2)
-
-    # Test #3: Trial-to-Trial Adaptation
-    fig_test3, stats_test3 = test_trial_to_trial_adaptation(trials, results_dir=results_dir,
-                                                             animal_id=animal_id,
-                                                             session_date=date_str)
-    if show_plots:
-        plt.show()
-    plt.close(fig_test3)
-
-    # Test #6: Speed-Accuracy Tradeoff
-    fig_test6, stats_test6 = test_speed_accuracy_tradeoff(trials, results_dir=results_dir,
-                                                           animal_id=animal_id,
-                                                           session_date=date_str)
-    if show_plots:
-        plt.show()
-    plt.close(fig_test6)
-
-    # Test #7: Reaction Time Consistency
-    fig_test7, stats_test7 = test_reaction_time_consistency(trials, results_dir=results_dir,
-                                                             animal_id=animal_id,
-                                                             session_date=date_str)
-    if show_plots:
-        plt.show()
-    plt.close(fig_test7)
-
     # Repeated Target Learning Analysis
     print("\nAnalyzing learning with repeated target positions...")
     fig_learning, stats_learning = analyze_repeated_target_learning(trials, min_sequence_length=3,
@@ -3242,36 +3208,6 @@ def main(session_id: str) -> pd.DataFrame:
     if fig_lr is not None:
         plt.show()
         plt.close(fig_lr)
-
-    print("\nRunning additional voluntary control tests...")
-
-    # Test #2: Initial Direction Correlation
-    fig_test2, stats_test2 = test_initial_direction_correlation(trials, results_dir=results_dir,
-                                                                 animal_id=animal_id,
-                                                                 session_date=date_str)
-    plt.show()
-    plt.close(fig_test2)
-
-    # Test #3: Trial-to-Trial Adaptation
-    fig_test3, stats_test3 = test_trial_to_trial_adaptation(trials, results_dir=results_dir,
-                                                             animal_id=animal_id,
-                                                             session_date=date_str)
-    plt.show()
-    plt.close(fig_test3)
-
-    # Test #6: Speed-Accuracy Tradeoff
-    fig_test6, stats_test6 = test_speed_accuracy_tradeoff(trials, results_dir=results_dir,
-                                                           animal_id=animal_id,
-                                                           session_date=date_str)
-    plt.show()
-    plt.close(fig_test6)
-
-    # Test #7: Reaction Time Consistency
-    fig_test7, stats_test7 = test_reaction_time_consistency(trials, results_dir=results_dir,
-                                                             animal_id=animal_id,
-                                                             session_date=date_str)
-    plt.show()
-    plt.close(fig_test7)
 
     # Repeated Target Learning Analysis
     print("\nAnalyzing learning with repeated target positions...")
