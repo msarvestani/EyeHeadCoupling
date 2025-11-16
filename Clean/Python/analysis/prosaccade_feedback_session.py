@@ -389,8 +389,7 @@ def plot_trajectories(trials: list[dict], results_dir: Optional[Path] = None,
 
         # Plot trajectory as lines
         color = cmap(i / max(1, n_trials - 1))
-        ax.plot(eye_x, eye_y, '-', color=color, alpha=0.6, linewidth=1.5,
-                label=f"Trial {trial['trial_number']}" if n_trials <= 20 else None)
+        ax.plot(eye_x, eye_y, '-', color=color, alpha=0.6, linewidth=1.5)
 
         # Mark start and end points with different markers
         ax.plot(eye_x[0], eye_y[0], 'o', color=color, markersize=8, alpha=0.9,
@@ -429,14 +428,10 @@ def plot_trajectories(trials: list[dict], results_dir: Optional[Path] = None,
     # Use set_aspect instead of axis('equal') to preserve the limits
     ax.set_aspect('equal', adjustable='box')
 
-    # Add legend if not too many trials
-    if n_trials <= 20:
-        ax.legend(loc='upper right', fontsize=8, ncol=2)
-    else:
-        # Just show a colorbar for trial number
-        sm = plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(vmin=1, vmax=n_trials))
-        sm.set_array([])
-        cbar = plt.colorbar(sm, ax=ax, label='Trial Number')
+    # Add colorbar for trial number
+    sm = plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(vmin=1, vmax=n_trials))
+    sm.set_array([])
+    cbar = plt.colorbar(sm, ax=ax, label='Trial Number')
 
     plt.tight_layout()
 
