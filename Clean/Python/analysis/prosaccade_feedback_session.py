@@ -1303,14 +1303,24 @@ def plot_learning_metrics(trials: list[dict], results_dir: Optional[Path] = None
     ax1.grid(True, alpha=0.3)
     ax1.axhline(1.0, color='green', linestyle='--', linewidth=2, alpha=0.5, label='Perfect (1.0)')
 
-    # Add trend line
-    z = np.polyfit(trial_numbers, efficiencies, 1)
-    p = np.poly1d(z)
-    ax1.plot(trial_numbers, p(trial_numbers), "k--", linewidth=2, alpha=0.7, label=f'Trend: {z[0]:+.4f}/trial')
+    # Add trend line (with error handling)
+    # Filter out NaN/inf values and check for variance in trial numbers
+    valid_mask = np.isfinite(efficiencies) & np.isfinite(trial_numbers)
+    valid_trials = np.array(trial_numbers)[valid_mask]
+    valid_effs = np.array(efficiencies)[valid_mask]
+
+    if len(valid_trials) > 1 and np.std(valid_trials) > 0:
+        try:
+            z = np.polyfit(valid_trials, valid_effs, 1)
+            p = np.poly1d(z)
+            ax1.plot(valid_trials, p(valid_trials), "k--", linewidth=2, alpha=0.7, label=f'Trend: {z[0]:+.4f}/trial')
+        except (np.linalg.LinAlgError, ValueError) as e:
+            print(f"  Warning: Could not fit trend line for efficiency: {e}")
+
     ax1.legend(fontsize=10)
 
     # Add mean line
-    mean_eff = np.mean(efficiencies)
+    mean_eff = np.mean(valid_effs) if len(valid_effs) > 0 else 0
     ax1.axhline(mean_eff, color='gray', linestyle=':', linewidth=1.5, alpha=0.5)
 
     # Plot 2: Initial Direction Error (lower = better aiming, better learning)
@@ -1326,15 +1336,20 @@ def plot_learning_metrics(trials: list[dict], results_dir: Optional[Path] = None
     ax2.grid(True, alpha=0.3)
     ax2.axhline(0, color='green', linestyle='--', linewidth=2, alpha=0.5, label='Perfect (0°)')
 
-    # Add trend line
-    if len(valid_trial_nums) > 1:
-        z2 = np.polyfit(valid_trial_nums, valid_errors, 1)
-        p2 = np.poly1d(z2)
-        ax2.plot(valid_trial_nums, p2(valid_trial_nums), "k--", linewidth=2, alpha=0.7, label=f'Trend: {z2[0]:+.3f}°/trial')
+    # Add trend line (with error handling)
+    if len(valid_trial_nums) > 1 and len(valid_errors) > 1 and np.std(valid_trial_nums) > 0:
+        try:
+            z2 = np.polyfit(valid_trial_nums, valid_errors, 1)
+            p2 = np.poly1d(z2)
+            ax2.plot(valid_trial_nums, p2(valid_trial_nums), "k--", linewidth=2, alpha=0.7, label=f'Trend: {z2[0]:+.3f}°/trial')
+        except (np.linalg.LinAlgError, ValueError) as e:
+            print(f"  Warning: Could not fit trend line for direction error: {e}")
+
+    if len(valid_trial_nums) > 0:
         ax2.legend(fontsize=10)
 
     # Add mean line
-    mean_err = np.mean(valid_errors)
+    mean_err = np.mean(valid_errors) if len(valid_errors) > 0 else 0
     ax2.axhline(mean_err, color='gray', linestyle=':', linewidth=1.5, alpha=0.5)
 
     plt.tight_layout()
