@@ -671,11 +671,14 @@ def interactive_trajectories(trials: list[dict], animal_id: Optional[str] = None
 
         # Update progress text
         target_dir = 'Left' if trial['target_x'] < 0 else 'Right'
+        init_dir_error = trial['initial_direction_error']
+        init_dir_text = f"{init_dir_error:.2f}°" if not np.isnan(init_dir_error) else "N/A"
         progress_text.set_text(
             f"Trial {trial['trial_number']} (showing {trial_idx + 1}/{n_trials})\n"
             f"Target: {target_dir}\n"
             f"Duration: {trial['duration']:.3f}s\n"
-            f"Efficiency: {trial['path_efficiency']:.2f}\n\n"
+            f"Efficiency: {trial['path_efficiency']:.2f}\n"
+            f"Initial Dir Error: {init_dir_text}\n\n"
             f"Press SPACE for next"
         )
 
