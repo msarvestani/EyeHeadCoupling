@@ -82,7 +82,7 @@ def main(session_id: str) -> pd.DataFrame:
 
         }
     )
-    sorted_data,left_angle,right_angle,fig_sorted, _ = sort_saccades(config, saccade_cfg, saccades, stim_type=stim_type, plot=True)
+    sorted_data,left_angle,right_angle,fig_sorted, _ = sort_saccades(config, saccade_cfg, saccades, stim_type=stim_type, plot=True, data=data)
     if fig_sorted is not None:
         plt.close(fig_sorted)
     df = pd.DataFrame(

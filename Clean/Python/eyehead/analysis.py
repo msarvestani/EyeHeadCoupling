@@ -559,6 +559,7 @@ def sort_saccades(
     saccades: Dict[str, np.ndarray],
     stim_type: str = "None",
     plot: bool = False,
+    data: SessionData | None = None,
 ) -> Dict[str, np.ndarray] | Tuple[Dict[str, np.ndarray], plt.Figure, Tuple[plt.Axes, plt.Axes, plt.Axes]]:
     """Sort saccades by stimulus and optionally plot summaries.
 
@@ -569,6 +570,9 @@ def sort_saccades(
     plot : bool, optional
         When ``True`` the function generates the same diagnostic plots as
         before and returns them alongside the sorted saccade indices.
+    data : SessionData, optional
+        Session data containing target direction information for calculating
+        initial direction errors.
 
     Returns
     -------
@@ -721,6 +725,40 @@ def sort_saccades(
         ang = np.arctan2(dy[idx_use], dx[idx_use])
         n_cond = len(idx_use)
 
+        # Calculate initial direction errors if data is available
+        initial_direction_errors = None
+        if data is not None and hasattr(data, 'go_direction_x') and hasattr(data, 'go_direction_y'):
+            direction_errors = []
+            saccade_frames_for_label = saccade_frames_xy[np.isin(saccade_indices_xy, idx_use)]
+
+            # Match each saccade to its trial
+            for sacc_frame in saccade_frames_for_label:
+                # Find the trial (go_frame) that corresponds to this saccade
+                # A saccade belongs to a trial if it occurs within the saccade window after go_frame
+                trial_idx = None
+                for i, go_f in enumerate(data.go_frame):
+                    if go_f <= sacc_frame <= go_f + saccade_window_frames:
+                        trial_idx = i
+                        break
+
+                if trial_idx is not None:
+                    # Get target direction for this trial
+                    target_x = data.go_direction_x[trial_idx]
+                    target_y = data.go_direction_y[trial_idx]
+                    target_angle = np.arctan2(target_y, target_x)
+
+                    # Get saccade direction for this specific saccade
+                    sacc_idx = saccade_indices_xy[np.where(saccade_frames_xy == sacc_frame)[0][0]]
+                    sacc_angle = np.arctan2(dy[sacc_idx], dx[sacc_idx])
+
+                    # Calculate angular error (shortest angular distance)
+                    error = np.arctan2(np.sin(sacc_angle - target_angle),
+                                      np.cos(sacc_angle - target_angle))
+                    direction_errors.append(np.degrees(error))
+
+            if direction_errors:
+                initial_direction_errors = np.array(direction_errors)
+
         if plot:
             fig = plt.figure(figsize=(9, 5))
             gs = gridspec.GridSpec(3, 2, width_ratios=[3, 2])
@@ -733,7 +771,14 @@ def sort_saccades(
             ax_q.set_ylim(*Y_LIM)
             ax_q.set_xlabel("X (°)")
             ax_q.set_ylabel("Y (°)")
-            ax_q.set_title(f"{session_name}\n{eye_name} — {label} (n={n_cond})")
+
+            # Add initial direction error to title if available
+            title = f"{session_name}\n{eye_name} — {label} (n={n_cond})"
+            if initial_direction_errors is not None and len(initial_direction_errors) > 0:
+                mean_error = np.mean(initial_direction_errors)
+                std_error = np.std(initial_direction_errors)
+                title += f"\nInitial Dir Error: {mean_error:.2f}° ± {std_error:.2f}°"
+            ax_q.set_title(title)
 
             cols = np.array([vector_to_rgb(a) for a in ang])
             ax_q.quiver(
