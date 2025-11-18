@@ -957,51 +957,92 @@ def plot_density_heatmap(trials: list[dict], results_dir: Optional[Path] = None,
     matplotlib.figure.Figure
         The generated figure
     """
-    fig, ax = plt.subplots(figsize=(12, 10))
+    # Create figure with GridSpec: top row for all trials, bottom row for left/right split
+    fig = plt.figure(figsize=(14, 16))
+    gs = fig.add_gridspec(2, 2, height_ratios=[1, 1], hspace=0.3, wspace=0.3)
 
-    # Collect all eye positions from all trials
-    all_x = []
-    all_y = []
-    for trial in trials:
-        all_x.extend(trial['eye_x'])
-        all_y.extend(trial['eye_y'])
+    # Separate trials by target location
+    left_trials = [t for t in trials if t['target_x'] < 0]
+    right_trials = [t for t in trials if t['target_x'] > 0]
 
-    all_x = np.array(all_x)
-    all_y = np.array(all_y)
+    print(f"  Total trials: {len(trials)}, Left: {len(left_trials)}, Right: {len(right_trials)}")
 
-    # Create 2D histogram
-    bins = 50  # Number of bins in each dimension
-    h, xedges, yedges = np.histogram2d(all_x, all_y, bins=bins, range=[[-1, 1], [-1, 1]])
+    # Helper function to plot a heatmap on a given axis
+    def plot_heatmap_on_axis(ax, trial_subset, title_suffix, colorbar_label='Number of Samples'):
+        # Collect all eye positions from trial subset
+        all_x = []
+        all_y = []
+        for trial in trial_subset:
+            all_x.extend(trial['eye_x'])
+            all_y.extend(trial['eye_y'])
 
-    # Plot heatmap
-    extent = [xedges[0], xedges[-1], yedges[0], yedges[-1]]
-    im = ax.imshow(h.T, extent=extent, origin='lower', cmap='hot', aspect='auto', interpolation='bilinear')
+        all_x = np.array(all_x)
+        all_y = np.array(all_y)
 
-    # Add colorbar
-    cbar = plt.colorbar(im, ax=ax, label='Number of Samples')
+        # Create 2D histogram
+        bins = 50  # Number of bins in each dimension
+        h, xedges, yedges = np.histogram2d(all_x, all_y, bins=bins, range=[[-1, 1], [-1, 1]])
 
-    # Overlay target positions
-    for i, trial in enumerate(trials):
-        target_x = trial['target_x']
-        target_y = trial['target_y']
-        target_radius = trial['target_diameter'] / 2.0
-        target_circle = Circle((target_x, target_y), radius=target_radius, fill=False,
-                              edgecolor='cyan', linewidth=2, linestyle='-', alpha=0.7)
-        ax.add_patch(target_circle)
+        # Plot heatmap
+        extent = [xedges[0], xedges[-1], yedges[0], yedges[-1]]
+        im = ax.imshow(h.T, extent=extent, origin='lower', cmap='hot', aspect='auto', interpolation='bilinear')
 
-    ax.set_xlabel('Horizontal Position (stimulus units)', fontsize=12)
-    ax.set_ylabel('Vertical Position (stimulus units)', fontsize=12)
+        # Add colorbar
+        cbar = plt.colorbar(im, ax=ax, label=colorbar_label)
 
-    title = 'Eye Position Density Heatmap'
+        # Overlay target positions
+        for trial in trial_subset:
+            target_x = trial['target_x']
+            target_y = trial['target_y']
+            target_radius = trial['target_diameter'] / 2.0
+            target_circle = Circle((target_x, target_y), radius=target_radius, fill=False,
+                                  edgecolor='cyan', linewidth=2, linestyle='-', alpha=0.7)
+            ax.add_patch(target_circle)
+
+        ax.set_xlabel('Horizontal Position (stimulus units)', fontsize=11)
+        ax.set_ylabel('Vertical Position (stimulus units)', fontsize=11)
+        ax.set_title(title_suffix, fontsize=12, fontweight='bold')
+        ax.set_xlim(-1, 1)
+        ax.set_ylim(-1, 1)
+        ax.set_aspect('equal', adjustable='box')
+
+        return im
+
+    # TOP: All trials (spanning both columns)
+    ax_all = fig.add_subplot(gs[0, :])
+    title = 'Eye Position Density Heatmap - All Trials'
     if animal_id:
         title += f' - {animal_id}'
     if session_date:
         title += f' ({session_date})'
-    ax.set_title(title, fontsize=14, fontweight='bold')
+    title += f' (n={len(trials)})'
+    plot_heatmap_on_axis(ax_all, trials, title)
 
-    ax.set_xlim(-1, 1)
-    ax.set_ylim(-1, 1)
-    ax.set_aspect('equal', adjustable='box')
+    # BOTTOM LEFT: Left trials only
+    ax_left = fig.add_subplot(gs[1, 0])
+    title_left = f'Left Trials (target_x < 0, n={len(left_trials)})'
+    if len(left_trials) > 0:
+        plot_heatmap_on_axis(ax_left, left_trials, title_left)
+    else:
+        ax_left.text(0.5, 0.5, 'No left trials', ha='center', va='center',
+                    transform=ax_left.transAxes, fontsize=14)
+        ax_left.set_xlim(-1, 1)
+        ax_left.set_ylim(-1, 1)
+        ax_left.set_aspect('equal', adjustable='box')
+        ax_left.set_title(title_left, fontsize=12, fontweight='bold')
+
+    # BOTTOM RIGHT: Right trials only
+    ax_right = fig.add_subplot(gs[1, 1])
+    title_right = f'Right Trials (target_x > 0, n={len(right_trials)})'
+    if len(right_trials) > 0:
+        plot_heatmap_on_axis(ax_right, right_trials, title_right)
+    else:
+        ax_right.text(0.5, 0.5, 'No right trials', ha='center', va='center',
+                     transform=ax_right.transAxes, fontsize=14)
+        ax_right.set_xlim(-1, 1)
+        ax_right.set_ylim(-1, 1)
+        ax_right.set_aspect('equal', adjustable='box')
+        ax_right.set_title(title_right, fontsize=12, fontweight='bold')
 
     plt.tight_layout()
 
