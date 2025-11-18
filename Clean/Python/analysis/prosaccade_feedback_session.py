@@ -2475,12 +2475,11 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
         plt.close(fig_lr)
 
     print("\nRunning feedback control analysis...")
-    feedback_results = analyze_feedback_control(trials, results_dir=results_dir,
-                                               animal_id=animal_id, session_date=date_str)
-    if feedback_results:
-        if show_plots:
-            plt.show()
-        plt.close()
+    feedback_results, fig_feedback = analyze_feedback_control(trials, results_dir=results_dir,
+                                                              animal_id=animal_id, session_date=date_str)
+    if show_plots:
+        plt.show()
+    plt.close(fig_feedback)
 
     # Create summary DataFrame
     durations = [t['duration'] for t in trials]
@@ -2541,7 +2540,7 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
 
 
 def analyze_feedback_control(trials: list[dict], results_dir: Optional[Path] = None,
-                             animal_id: Optional[str] = None, session_date: str = "") -> dict:
+                             animal_id: Optional[str] = None, session_date: str = "") -> tuple[dict, plt.Figure]:
     """Analyze metrics that distinguish visual feedback (closed-loop) vs feedforward (open-loop) control.
 
     This analysis helps determine if the animal is using visual feedback (cursor) to correct
@@ -2572,12 +2571,14 @@ def analyze_feedback_control(trials: list[dict], results_dir: Optional[Path] = N
 
     Returns
     -------
-    dict
+    results : dict
         Dictionary containing analysis results and metrics
+    fig : matplotlib.figure.Figure
+        The generated 9-panel analysis figure
     """
     if len(trials) == 0:
         print("No trials to analyze")
-        return {}
+        return {}, None
 
     # Calculate additional per-trial metrics
     for trial in trials:
@@ -2860,7 +2861,7 @@ Success rate flat across bins:
         fig.savefig(results_dir / filename, dpi=150, bbox_inches='tight')
         print(f"\nSaved feedback control analysis to {results_dir / filename}")
 
-    return results
+    return results, fig
 
 
 def main(session_id: str) -> pd.DataFrame:
@@ -2951,11 +2952,10 @@ def main(session_id: str) -> pd.DataFrame:
         plt.close(fig_lr)
 
     print("\nRunning feedback control analysis...")
-    feedback_results = analyze_feedback_control(trials, results_dir=results_dir,
-                                               animal_id=animal_id, session_date=date_str)
-    if feedback_results:
-        plt.show()
-        plt.close()
+    feedback_results, fig_feedback = analyze_feedback_control(trials, results_dir=results_dir,
+                                                              animal_id=animal_id, session_date=date_str)
+    plt.show()
+    plt.close(fig_feedback)
 
     # Create summary DataFrame
     durations = [t['duration'] for t in trials]
