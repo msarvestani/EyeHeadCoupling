@@ -321,6 +321,10 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
             straight_line_distance = 0.0
             initial_direction_error = np.nan
 
+        # Classify trial as successful or failed based on duration
+        # Failed trials: duration > 1.9 seconds
+        trial_success = (end_time - start_time) <= 1.9
+
         trial_data = {
             'trial_number': trial_num,
             'start_frame': start_frame,
@@ -328,6 +332,7 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
             'start_time': start_time,
             'end_time': end_time,
             'duration': end_time - start_time,
+            'success': trial_success,
             'target_x': target_x,
             'target_y': target_y,
             'target_diameter': target_diameter,
@@ -346,6 +351,12 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
 
     print(f"\nExtracted {len(trials)} valid trials out of {n_trials} total")
     if len(trials) > 0:
+        # Report successful vs failed trials
+        n_successful = sum(1 for t in trials if t['success'])
+        n_failed = len(trials) - n_successful
+        print(f"  Successful trials (duration ≤ 1.9s): {n_successful} ({n_successful/len(trials)*100:.1f}%)")
+        print(f"  Failed trials (duration > 1.9s): {n_failed} ({n_failed/len(trials)*100:.1f}%)")
+
         print(f"  First trial duration: {trials[0]['duration']:.2f}s")
         if len(trials) > 1:
             print(f"  Second trial duration: {trials[1]['duration']:.2f}s")
@@ -2764,7 +2775,18 @@ def analyze_feedback_control(trials: list[dict], results_dir: Optional[Path] = N
     elif remove_outliers:
         print(f"\nSkipping outlier detection (only {n_trials_original} trials, need >10)")
 
-    # Extract metrics for analysis
+    # Separate trials by success/failure
+    successful_trials = [t for t in trials if t['success']]
+    failed_trials = [t for t in trials if not t['success']]
+
+    n_successful = len(successful_trials)
+    n_failed = len(failed_trials)
+
+    print(f"\nTrial success breakdown (after outlier removal):")
+    print(f"  Successful trials (duration ≤ 1.9s): {n_successful} ({n_successful/len(trials)*100:.1f}%)")
+    print(f"  Failed trials (duration > 1.9s): {n_failed} ({n_failed/len(trials)*100:.1f}%)")
+
+    # Extract metrics for analysis (all trials)
     initial_errors = np.array([t['initial_direction_error'] for t in trials])
     final_errors = np.array([t['final_position_error'] for t in trials])
     path_curvatures = np.array([t['path_curvature'] for t in trials])
@@ -2850,67 +2872,181 @@ def analyze_feedback_control(trials: list[dict], results_dir: Optional[Path] = N
         'bin_counts': bin_counts,
     }
 
-    # Create comprehensive plot
-    fig = plt.figure(figsize=(15, 5))
-    gs = fig.add_gridspec(1, 3, hspace=0.3, wspace=0.3)
+    # Helper function to compute metrics for a subset of trials
+    def compute_metrics_for_trials(trial_subset):
+        if len(trial_subset) == 0:
+            return None
 
-    # 1. Initial error vs final error scatter
-    ax1 = fig.add_subplot(gs[0, 0])
-    ax1.scatter(initial_errors_valid, final_errors_valid, alpha=0.6, s=50)
-    if not np.isnan(pearson_corr):
-        ax1.plot(initial_errors_valid,
-                np.poly1d(np.polyfit(initial_errors_valid, final_errors_valid, 1))(initial_errors_valid),
-                'r--', linewidth=2, label=f'r={pearson_corr:.3f}, p={pearson_p:.3f}')
+        init_err = np.array([t['initial_direction_error'] for t in trial_subset])
+        fin_err = np.array([t['final_position_error'] for t in trial_subset])
+        curv = np.array([t['path_curvature'] for t in trial_subset])
+        eff = np.array([t['path_efficiency'] for t in trial_subset])
+
+        return {
+            'initial_errors': init_err[~np.isnan(init_err)],
+            'final_errors': fin_err[~np.isnan(init_err)],
+            'path_curvatures': curv,
+            'efficiencies': eff,
+            'n_trials': len(trial_subset),
+        }
+
+    # Compute metrics for successful and failed trials
+    successful_metrics = compute_metrics_for_trials(successful_trials)
+    failed_metrics = compute_metrics_for_trials(failed_trials)
+
+    # Create comprehensive plot comparing successful vs failed trials
+    fig = plt.figure(figsize=(18, 10))
+    gs = fig.add_gridspec(2, 4, hspace=0.35, wspace=0.3)
+
+    # ROW 1: SUCCESSFUL TRIALS (duration ≤ 1.9s)
+    row_label = 'Successful Trials (duration ≤ 1.9s)'
+    if successful_metrics is not None:
+        # Panel 1: Initial direction error distribution
+        ax1 = fig.add_subplot(gs[0, 0])
+        ax1.hist(successful_metrics['initial_errors'], bins=15, alpha=0.7, edgecolor='black', color='green')
+        ax1.axvline(np.median(successful_metrics['initial_errors']), color='red', linestyle='--', linewidth=2,
+                   label=f'Median={np.median(successful_metrics["initial_errors"]):.1f}°')
+        ax1.set_xlabel('Initial Direction Error (°)', fontsize=10)
+        ax1.set_ylabel('Count', fontsize=10)
+        ax1.set_title(f'{row_label}\nInitial Direction Error', fontsize=11, fontweight='bold')
         ax1.legend()
-    ax1.set_xlabel('Initial Direction Error (°)', fontsize=11)
-    ax1.set_ylabel('Final Position Error', fontsize=11)
-    ax1.set_title('Initial vs Final Error\n(Low correlation = feedback control)', fontsize=12, fontweight='bold')
-    ax1.grid(True, alpha=0.3)
+        ax1.grid(True, alpha=0.3, axis='y')
 
-    # 2. Path curvature by initial error bin
-    if binned_curvatures is not None:
+        # Panel 2: Path curvature distribution
         ax2 = fig.add_subplot(gs[0, 1])
-        x_pos = np.arange(len(bin_labels))
-        bars = ax2.bar(x_pos, binned_curvatures, alpha=0.7, color=['green', 'orange', 'red'])
-        ax2.set_xlabel('Initial Direction Error Bin', fontsize=11)
-        ax2.set_ylabel('Mean Path Curvature (rad)', fontsize=11)
-        ax2.set_title('Curvature by Initial Error\n(Increasing = feedback control)', fontsize=12, fontweight='bold')
-        ax2.set_xticks(x_pos)
-        ax2.set_xticklabels(bin_labels)
+        ax2.hist(successful_metrics['path_curvatures'], bins=15, alpha=0.7, edgecolor='black', color='green')
+        ax2.axvline(np.median(successful_metrics['path_curvatures']), color='red', linestyle='--', linewidth=2,
+                   label=f'Median={np.median(successful_metrics["path_curvatures"]):.2f}')
+        ax2.set_xlabel('Path Curvature (rad)', fontsize=10)
+        ax2.set_ylabel('Count', fontsize=10)
+        ax2.set_title('Path Curvature', fontsize=11, fontweight='bold')
+        ax2.legend()
         ax2.grid(True, alpha=0.3, axis='y')
 
-        # Add count labels
-        for i, (bar, count) in enumerate(zip(bars, bin_counts)):
-            height = bar.get_height()
-            if not np.isnan(height):
-                ax2.text(bar.get_x() + bar.get_width()/2, height + 0.02 * max(binned_curvatures),
-                        f'n={count}', ha='center', va='bottom', fontsize=9)
-
-    # 3. Path efficiency by initial error bin
-    if binned_efficiencies is not None:
+        # Panel 3: Path efficiency distribution
         ax3 = fig.add_subplot(gs[0, 2])
-        bars = ax3.bar(x_pos, binned_efficiencies, alpha=0.7, color=['green', 'orange', 'red'])
-        ax3.set_xlabel('Initial Direction Error Bin', fontsize=11)
-        ax3.set_ylabel('Mean Path Efficiency', fontsize=11)
-        ax3.set_title('Efficiency by Initial Error\n(Flat/maintained = feedback control)', fontsize=12, fontweight='bold')
-        ax3.set_xticks(x_pos)
-        ax3.set_xticklabels(bin_labels)
-        ax3.set_ylim([0, 1])  # Efficiency is between 0 and 1
+        ax3.hist(successful_metrics['efficiencies'], bins=15, alpha=0.7, edgecolor='black', color='green')
+        ax3.axvline(np.median(successful_metrics['efficiencies']), color='red', linestyle='--', linewidth=2,
+                   label=f'Median={np.median(successful_metrics["efficiencies"]):.3f}')
+        ax3.set_xlabel('Path Efficiency', fontsize=10)
+        ax3.set_ylabel('Count', fontsize=10)
+        ax3.set_title('Path Efficiency', fontsize=11, fontweight='bold')
+        ax3.set_xlim([0, 1])
+        ax3.legend()
         ax3.grid(True, alpha=0.3, axis='y')
+
+    # ROW 2: FAILED TRIALS (duration > 1.9s)
+    row_label = 'Failed Trials (duration > 1.9s)'
+    if failed_metrics is not None:
+        # Panel 1: Initial direction error distribution
+        ax4 = fig.add_subplot(gs[1, 0])
+        ax4.hist(failed_metrics['initial_errors'], bins=15, alpha=0.7, edgecolor='black', color='red')
+        ax4.axvline(np.median(failed_metrics['initial_errors']), color='darkred', linestyle='--', linewidth=2,
+                   label=f'Median={np.median(failed_metrics["initial_errors"]):.1f}°')
+        ax4.set_xlabel('Initial Direction Error (°)', fontsize=10)
+        ax4.set_ylabel('Count', fontsize=10)
+        ax4.set_title(f'{row_label}\nInitial Direction Error', fontsize=11, fontweight='bold')
+        ax4.legend()
+        ax4.grid(True, alpha=0.3, axis='y')
+
+        # Panel 2: Path curvature distribution
+        ax5 = fig.add_subplot(gs[1, 1])
+        ax5.hist(failed_metrics['path_curvatures'], bins=15, alpha=0.7, edgecolor='black', color='red')
+        ax5.axvline(np.median(failed_metrics['path_curvatures']), color='darkred', linestyle='--', linewidth=2,
+                   label=f'Median={np.median(failed_metrics["path_curvatures"]):.2f}')
+        ax5.set_xlabel('Path Curvature (rad)', fontsize=10)
+        ax5.set_ylabel('Count', fontsize=10)
+        ax5.set_title('Path Curvature', fontsize=11, fontweight='bold')
+        ax5.legend()
+        ax5.grid(True, alpha=0.3, axis='y')
+
+        # Panel 3: Path efficiency distribution
+        ax6 = fig.add_subplot(gs[1, 2])
+        ax6.hist(failed_metrics['efficiencies'], bins=15, alpha=0.7, edgecolor='black', color='red')
+        ax6.axvline(np.median(failed_metrics['efficiencies']), color='darkred', linestyle='--', linewidth=2,
+                   label=f'Median={np.median(failed_metrics["efficiencies"]):.3f}')
+        ax6.set_xlabel('Path Efficiency', fontsize=10)
+        ax6.set_ylabel('Count', fontsize=10)
+        ax6.set_title('Path Efficiency', fontsize=11, fontweight='bold')
+        ax6.set_xlim([0, 1])
+        ax6.legend()
+        ax6.grid(True, alpha=0.3, axis='y')
+
+    # COLUMN 4: COMPARISON SUMMARY
+    ax_summary = fig.add_subplot(gs[:, 3])
+    ax_summary.axis('off')
+
+    # Compute statistics for comparison
+    if successful_metrics and failed_metrics:
+        from scipy import stats
+
+        # Statistical tests
+        init_err_pval = stats.mannwhitneyu(successful_metrics['initial_errors'],
+                                          failed_metrics['initial_errors'],
+                                          alternative='two-sided').pvalue if len(successful_metrics['initial_errors']) > 0 and len(failed_metrics['initial_errors']) > 0 else np.nan
+
+        curv_pval = stats.mannwhitneyu(successful_metrics['path_curvatures'],
+                                       failed_metrics['path_curvatures'],
+                                       alternative='two-sided').pvalue if len(successful_metrics['path_curvatures']) > 0 and len(failed_metrics['path_curvatures']) > 0 else np.nan
+
+        eff_pval = stats.mannwhitneyu(successful_metrics['efficiencies'],
+                                     failed_metrics['efficiencies'],
+                                     alternative='two-sided').pvalue if len(successful_metrics['efficiencies']) > 0 and len(failed_metrics['efficiencies']) > 0 else np.nan
+
+        summary_text = f"""SUCCESSFUL vs FAILED
+
+Success: duration ≤ 1.9s
+━━━━━━━━━━━━━━━━━━━━━━
+Successful: n={n_successful}
+Failed: n={n_failed}
+
+COMPARISONS:
+━━━━━━━━━━━━━━━━━━━━━━
+
+Initial Dir Error (°):
+ Success: {np.median(successful_metrics['initial_errors']):.1f}
+ Failed: {np.median(failed_metrics['initial_errors']):.1f}
+ p = {init_err_pval:.4f}
+
+Path Curvature (rad):
+ Success: {np.median(successful_metrics['path_curvatures']):.2f}
+ Failed: {np.median(failed_metrics['path_curvatures']):.2f}
+ p = {curv_pval:.4f}
+
+Path Efficiency:
+ Success: {np.median(successful_metrics['efficiencies']):.3f}
+ Failed: {np.median(failed_metrics['efficiencies']):.3f}
+ p = {eff_pval:.4f}
+
+INTERPRETATION:
+━━━━━━━━━━━━━━━━━━━━━━
+p < 0.05 = significant
+
+If successful trials differ
+in metrics beyond just
+duration/path_length, it
+suggests different control
+strategies, not just better
+execution.
+"""
+
+        ax_summary.text(0.05, 0.95, summary_text, transform=ax_summary.transAxes,
+                       fontsize=9, verticalalignment='top', fontfamily='monospace',
+                       bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
 
     plt.tight_layout()
 
     # Overall title
-    title = 'Visual Feedback Control Analysis'
+    title = 'Successful vs Failed Trials Comparison'
     if animal_id:
         title += f' - {animal_id}'
     if session_date:
         title += f' ({session_date})'
     if n_outliers_removed > 0:
-        title += f' | n={len(trials)} ({n_outliers_removed} outliers removed)'
+        title += f' | Total n={len(trials)} ({n_outliers_removed} outliers removed)'
     else:
-        title += f' | n={len(trials)}'
-    fig.suptitle(title, fontsize=14, fontweight='bold', y=1.02)
+        title += f' | Total n={len(trials)}'
+    fig.suptitle(title, fontsize=14, fontweight='bold', y=0.995)
 
     # Save figure
     if results_dir:
