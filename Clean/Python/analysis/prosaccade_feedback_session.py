@@ -389,7 +389,8 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
 
 
 def plot_trajectories(trials: list[dict], results_dir: Optional[Path] = None,
-                      animal_id: Optional[str] = None, session_date: str = "") -> plt.Figure:
+                      animal_id: Optional[str] = None, session_date: str = "",
+                      trial_selection_label: str = "All Trials") -> plt.Figure:
     """Plot eye position trajectories and target positions in absolute coordinates.
 
     Parameters
@@ -402,6 +403,8 @@ def plot_trajectories(trials: list[dict], results_dir: Optional[Path] = None,
         Animal identifier for filename
     session_date : str, optional
         Session date for title
+    trial_selection_label : str, optional
+        Label indicating trial selection ("All Trials" or "Successful Trials Only")
 
     Returns
     -------
@@ -448,7 +451,7 @@ def plot_trajectories(trials: list[dict], results_dir: Optional[Path] = None,
     ax.set_xlabel('Horizontal Position (stimulus units)', fontsize=12)
     ax.set_ylabel('Vertical Position (stimulus units)', fontsize=12)
 
-    title = 'Eye Position Trajectories to Target'
+    title = f'Eye Position Trajectories to Target - {trial_selection_label}'
     if animal_id:
         title += f' - {animal_id}'
     if session_date:
@@ -482,7 +485,8 @@ def plot_trajectories(trials: list[dict], results_dir: Optional[Path] = None,
 
 
 def plot_trajectories_by_direction(trials: list[dict], results_dir: Optional[Path] = None,
-                                   animal_id: Optional[str] = None, session_date: str = "") -> plt.Figure:
+                                   animal_id: Optional[str] = None, session_date: str = "",
+                                   trial_selection_label: str = "All Trials") -> plt.Figure:
     """Plot eye position trajectories with different colors for left vs right targets.
 
     Parameters
@@ -495,6 +499,8 @@ def plot_trajectories_by_direction(trials: list[dict], results_dir: Optional[Pat
         Animal identifier for filename
     session_date : str, optional
         Session date for title
+    trial_selection_label : str, optional
+        Label indicating trial selection ("All Trials" or "Successful Trials Only")
 
     Returns
     -------
@@ -557,7 +563,7 @@ def plot_trajectories_by_direction(trials: list[dict], results_dir: Optional[Pat
     ax.set_xlabel('Horizontal Position (stimulus units)', fontsize=12)
     ax.set_ylabel('Vertical Position (stimulus units)', fontsize=12)
 
-    title = 'Eye Position Trajectories by Target Direction'
+    title = f'Eye Position Trajectories by Target Direction - {trial_selection_label}'
     if animal_id:
         title += f' - {animal_id}'
     if session_date:
@@ -595,7 +601,7 @@ def plot_trajectories_by_direction(trials: list[dict], results_dir: Optional[Pat
 
 
 def interactive_trajectories(trials: list[dict], animal_id: Optional[str] = None,
-                            session_date: str = ""):
+                            session_date: str = "", trial_selection_label: str = "All Trials"):
     """Interactive plot showing trajectories one trial at a time. Press spacebar to advance.
 
     Parameters
@@ -604,6 +610,8 @@ def interactive_trajectories(trials: list[dict], animal_id: Optional[str] = None
         List of trial data dictionaries
     animal_id : str, optional
         Animal identifier for title
+    trial_selection_label : str, optional
+        Label indicating trial selection ("All Trials" or "Successful Trials Only")
     session_date : str, optional
         Session date for title
     """
@@ -623,7 +631,7 @@ def interactive_trajectories(trials: list[dict], animal_id: Optional[str] = None
     ax.set_xlabel('Horizontal Position (stimulus units)', fontsize=12)
     ax.set_ylabel('Vertical Position (stimulus units)', fontsize=12)
 
-    title = 'Eye Position Trajectories - Interactive (Press SPACE for next trial)'
+    title = f'Eye Position Trajectories - Interactive (Press SPACE for next trial) - {trial_selection_label}'
     if animal_id:
         title += f' - {animal_id}'
     if session_date:
@@ -938,7 +946,8 @@ def animate_trajectories(trials: list[dict], results_dir: Optional[Path] = None,
 
 
 def plot_density_heatmap(trials: list[dict], results_dir: Optional[Path] = None,
-                         animal_id: Optional[str] = None, session_date: str = "") -> plt.Figure:
+                         animal_id: Optional[str] = None, session_date: str = "",
+                         trial_selection_label: str = "All Trials") -> plt.Figure:
     """Plot 2D histogram heatmap showing density of eye positions across all trials.
 
     Parameters
@@ -951,6 +960,8 @@ def plot_density_heatmap(trials: list[dict], results_dir: Optional[Path] = None,
         Animal identifier for filename
     session_date : str, optional
         Session date for title
+    trial_selection_label : str, optional
+        Label indicating trial selection ("All Trials" or "Successful Trials Only")
 
     Returns
     -------
@@ -992,7 +1003,7 @@ def plot_density_heatmap(trials: list[dict], results_dir: Optional[Path] = None,
     ax.set_xlabel('Horizontal Position (stimulus units)', fontsize=12)
     ax.set_ylabel('Vertical Position (stimulus units)', fontsize=12)
 
-    title = 'Eye Position Density Heatmap'
+    title = f'Eye Position Density Heatmap - {trial_selection_label}'
     if animal_id:
         title += f' - {animal_id}'
     if session_date:
@@ -1017,7 +1028,7 @@ def plot_density_heatmap(trials: list[dict], results_dir: Optional[Path] = None,
 
 
 def plot_time_to_target(trials: list[dict], results_dir: Optional[Path] = None,
-                        animal_id: Optional[str] = None, session_date: str = "") -> plt.Figure:
+                        animal_id: Optional[str] = None, session_date: str = "", trial_selection_label: str = "All Trials") -> plt.Figure:
     """Plot time from trial onset to trial end (time to reach target).
 
     Parameters
@@ -1048,7 +1059,7 @@ def plot_time_to_target(trials: list[dict], results_dir: Optional[Path] = None,
     ax1.set_xlabel('Trial Number', fontsize=12)
     ax1.set_ylabel('Time to Target (seconds)', fontsize=12)
 
-    title = 'Time to Reach Target Across Trials'
+    title = f'Time to Reach Target Across Trials - {trial_selection_label}'
     if animal_id:
         title += f' - {animal_id}'
     if session_date:
@@ -1091,7 +1102,7 @@ def plot_time_to_target(trials: list[dict], results_dir: Optional[Path] = None,
 
 
 def plot_path_length(trials: list[dict], results_dir: Optional[Path] = None,
-                     animal_id: Optional[str] = None, session_date: str = "") -> plt.Figure:
+                     animal_id: Optional[str] = None, session_date: str = "", trial_selection_label: str = "All Trials") -> plt.Figure:
     """Plot trajectory path length by trial.
 
     Parameters
@@ -1122,7 +1133,7 @@ def plot_path_length(trials: list[dict], results_dir: Optional[Path] = None,
     ax1.set_xlabel('Trial Number', fontsize=12)
     ax1.set_ylabel('Path Length (stimulus units)', fontsize=12)
 
-    title = 'Trajectory Path Length Across Trials'
+    title = f'Trajectory Path Length Across Trials - {trial_selection_label}'
     if animal_id:
         title += f' - {animal_id}'
     if session_date:
@@ -1165,7 +1176,7 @@ def plot_path_length(trials: list[dict], results_dir: Optional[Path] = None,
 
 
 def plot_learning_metrics(trials: list[dict], results_dir: Optional[Path] = None,
-                          animal_id: Optional[str] = None, session_date: str = "") -> plt.Figure:
+                          animal_id: Optional[str] = None, session_date: str = "", trial_selection_label: str = "All Trials") -> plt.Figure:
     """Plot learning metrics: path efficiency and initial direction error across trials.
 
     Parameters
@@ -1198,7 +1209,7 @@ def plot_learning_metrics(trials: list[dict], results_dir: Optional[Path] = None
     ax1.set_xlabel('Trial Number', fontsize=12)
     ax1.set_ylabel('Path Efficiency (straight-line / actual path)', fontsize=12)
 
-    title = 'Path Efficiency Across Trials'
+    title = f'Path Efficiency Across Trials - {trial_selection_label}'
     if animal_id:
         title += f' - {animal_id}'
     if session_date:
@@ -1440,7 +1451,7 @@ def shuffle_control_analysis(trials: list[dict], n_shuffles: int = 1000, seed: i
 
 
 def plot_shuffle_control(shuffle_results: dict, results_dir: Optional[Path] = None,
-                         animal_id: Optional[str] = None, session_date: str = "") -> plt.Figure:
+                         animal_id: Optional[str] = None, session_date: str = "", trial_selection_label: str = "All Trials") -> plt.Figure:
     """Plot shuffle control analysis results.
 
     Parameters
@@ -1497,7 +1508,7 @@ def plot_shuffle_control(shuffle_results: dict, results_dir: Optional[Path] = No
             fontsize=10, verticalalignment='top', bbox=dict(boxstyle='round', facecolor='yellow', alpha=0.5))
 
     # Overall title
-    title = f'Shuffle Control Analysis (n={n_shuffles} shuffles)\nReal vs Shuffled Trial-Target Pairings'
+    title = f'Shuffle Control Analysis (n={n_shuffles} shuffles) - {trial_selection_label}\nReal vs Shuffled Trial-Target Pairings'
     if animal_id:
         title += f' - {animal_id}'
     if session_date:
@@ -1519,7 +1530,8 @@ def plot_shuffle_control(shuffle_results: dict, results_dir: Optional[Path] = No
 
 def compare_left_right_performance(trials: list[dict], left_x: float = -0.7, right_x: float = 0.7,
                                    tolerance: float = 0.1, results_dir: Optional[Path] = None,
-                                   animal_id: Optional[str] = None, session_date: str = "") -> tuple:
+                                   animal_id: Optional[str] = None, session_date: str = "",
+                                   trial_selection_label: str = "All Trials") -> tuple:
     """Compare performance metrics for left vs right target trials.
 
     Parameters
@@ -1538,6 +1550,8 @@ def compare_left_right_performance(trials: list[dict], left_x: float = -0.7, rig
         Animal identifier for filename
     session_date : str, optional
         Session date for title
+    trial_selection_label : str, optional
+        Label indicating trial selection ("All Trials" or "Successful Trials Only")
 
     Returns
     -------
@@ -1696,7 +1710,7 @@ def compare_left_right_performance(trials: list[dict], left_x: float = -0.7, rig
     ax.set_title('Summary Statistics\n(Mann-Whitney U Test)', fontsize=12, fontweight='bold')
 
     # Overall title
-    title = 'Left vs Right Target Performance'
+    title = f'Left vs Right Target Performance - {trial_selection_label}'
     if animal_id:
         title += f' - {animal_id}'
     if session_date:
@@ -2394,7 +2408,8 @@ def _clean_path(path_str: str | Path) -> str:
 
 
 def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = None,
-                   animal_id: str = "Tsh001", show_plots: bool = True) -> pd.DataFrame:
+                   animal_id: str = "Tsh001", show_plots: bool = True,
+                   use_successful_trials_only: bool = False) -> pd.DataFrame:
     """Run saccade feedback analysis directly on a folder (without session manifest).
 
     Parameters
@@ -2407,6 +2422,8 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
         Animal identifier (default: "Tsh001")
     show_plots : bool
         Whether to display plots (default: True)
+    use_successful_trials_only : bool, optional
+        If True, analyze only successful trials (duration ≤ 1.9s). Default: False (all trials)
 
     Returns
     -------
@@ -2450,15 +2467,42 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
         print("No valid trials found, exiting")
         return pd.DataFrame()
 
+    # Filter trials based on success criterion if requested
+    trial_selection_label = "All Trials"
+    n_trials_before_filter = len(trials)
+    if use_successful_trials_only:
+        successful_trials = [t for t in trials if t['success']]
+        failed_trials = [t for t in trials if not t['success']]
+        trials = successful_trials
+        trial_selection_label = "Successful Trials Only"
+        print(f"\n{'='*60}")
+        print(f"TRIAL SELECTION: Analyzing Successful Trials Only (duration ≤ 1.9s)")
+        print(f"{'='*60}")
+        print(f"  Total trials extracted: {n_trials_before_filter}")
+        print(f"  Successful trials: {len(successful_trials)} ({len(successful_trials)/n_trials_before_filter*100:.1f}%)")
+        print(f"  Failed trials (excluded): {len(failed_trials)} ({len(failed_trials)/n_trials_before_filter*100:.1f}%)")
+        print(f"  Proceeding with {len(trials)} successful trials")
+        print(f"{'='*60}\n")
+
+        if len(trials) == 0:
+            print("No successful trials found, exiting")
+            return pd.DataFrame()
+    else:
+        print(f"\n{'='*60}")
+        print(f"TRIAL SELECTION: Analyzing All Trials")
+        print(f"{'='*60}")
+        print(f"  Total trials: {len(trials)}")
+        print(f"{'='*60}\n")
+
     # Generate plots
     print("\nGenerating trajectory plot...")
-    fig_traj = plot_trajectories(trials, results_dir, animal_id, date_str)
+    fig_traj = plot_trajectories(trials, results_dir, animal_id, date_str, trial_selection_label)
     if show_plots:
         plt.show()
     plt.close(fig_traj)
 
     print("\nGenerating trajectory plot by direction (left vs right)...")
-    fig_traj_dir = plot_trajectories_by_direction(trials, results_dir, animal_id, date_str)
+    fig_traj_dir = plot_trajectories_by_direction(trials, results_dir, animal_id, date_str, trial_selection_label)
     if show_plots:
         plt.show()
     plt.close(fig_traj_dir)
@@ -2466,35 +2510,35 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
     print("\nShowing interactive trajectory viewer...")
     print("(Press SPACE to advance to next trial)")
     if show_plots:
-        interactive_trajectories(trials, animal_id=animal_id, session_date=date_str)
+        interactive_trajectories(trials, animal_id=animal_id, session_date=date_str, trial_selection_label=trial_selection_label)
 
     print("\nGenerating density heatmap...")
-    fig_heat = plot_density_heatmap(trials, results_dir, animal_id, date_str)
+    fig_heat = plot_density_heatmap(trials, results_dir, animal_id, date_str, trial_selection_label)
     if show_plots:
         plt.show()
     plt.close(fig_heat)
 
     print("\nGenerating time-to-target plot...")
-    fig_time = plot_time_to_target(trials, results_dir, animal_id, date_str)
+    fig_time = plot_time_to_target(trials, results_dir, animal_id, date_str, trial_selection_label)
     if show_plots:
         plt.show()
     plt.close(fig_time)
 
     print("\nGenerating path length plot...")
-    fig_path = plot_path_length(trials, results_dir, animal_id, date_str)
+    fig_path = plot_path_length(trials, results_dir, animal_id, date_str, trial_selection_label)
     if show_plots:
         plt.show()
     plt.close(fig_path)
 
     print("\nGenerating learning metrics plot...")
-    fig_learn = plot_learning_metrics(trials, results_dir, animal_id, date_str)
+    fig_learn = plot_learning_metrics(trials, results_dir, animal_id, date_str, trial_selection_label)
     if show_plots:
         plt.show()
     plt.close(fig_learn)
 
     print("\nRunning shuffle control analysis (voluntary control test)...")
     shuffle_results = shuffle_control_analysis(trials, n_shuffles=1000, seed=42)
-    fig_shuffle = plot_shuffle_control(shuffle_results, results_dir, animal_id, date_str)
+    fig_shuffle = plot_shuffle_control(shuffle_results, results_dir, animal_id, date_str, trial_selection_label)
     if show_plots:
         plt.show()
     plt.close(fig_shuffle)
@@ -2503,18 +2547,17 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
     fig_lr, lr_stats = compare_left_right_performance(trials, left_x=-0.7, right_x=0.7,
                                                        results_dir=results_dir,
                                                        animal_id=animal_id,
-                                                       session_date=date_str)
+                                                       session_date=date_str,
+                                                       trial_selection_label=trial_selection_label)
     if fig_lr is not None:
         if show_plots:
             plt.show()
         plt.close(fig_lr)
 
     print("\nRunning feedback control analysis...")
-    # Set use_successful_trials_only=True to analyze only successful trials (duration ≤ 1.9s)
-    # Set use_successful_trials_only=False to analyze all trials (default)
     feedback_results, fig_feedback = analyze_feedback_control(trials, results_dir=results_dir,
                                                               animal_id=animal_id, session_date=date_str,
-                                                              use_successful_trials_only=False)
+                                                              trial_selection_label=trial_selection_label)
     if show_plots:
         plt.show()
     plt.close(fig_feedback)
@@ -2580,7 +2623,7 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
 def analyze_feedback_control(trials: list[dict], results_dir: Optional[Path] = None,
                              animal_id: Optional[str] = None, session_date: str = "",
                              remove_outliers: bool = True, outlier_max_fraction: float = 0.05,
-                             use_successful_trials_only: bool = False) -> tuple[dict, plt.Figure]:
+                             trial_selection_label: str = "All Trials") -> tuple[dict, plt.Figure]:
     """Analyze metrics that distinguish visual feedback (closed-loop) vs feedforward (open-loop) control.
 
     This analysis helps determine if the animal is using visual feedback (cursor) to correct
@@ -2612,8 +2655,8 @@ def analyze_feedback_control(trials: list[dict], results_dir: Optional[Path] = N
         Whether to remove outlier trials (default: True)
     outlier_max_fraction : float, optional
         Maximum fraction of trials to remove as outliers (default: 0.05 = 5%)
-    use_successful_trials_only : bool, optional
-        If True, analyze only successful trials (duration ≤ 1.9s). Default: False (all trials)
+    trial_selection_label : str, optional
+        Label indicating trial selection ("All Trials" or "Successful Trials Only")
 
     Returns
     -------
@@ -2781,22 +2824,7 @@ def analyze_feedback_control(trials: list[dict], results_dir: Optional[Path] = N
     elif remove_outliers:
         print(f"\nSkipping outlier detection (only {n_trials_original} trials, need >10)")
 
-    # Filter to successful trials only if requested
-    trial_selection_label = "All Trials"
-    if use_successful_trials_only:
-        n_before_filter = len(trials)
-        successful_trials = [t for t in trials if t['success']]
-        failed_trials = [t for t in trials if not t['success']]
-        trials = successful_trials
-        trial_selection_label = "Successful Trials Only"
-        print(f"\nFiltering to successful trials only (duration ≤ 1.9s):")
-        print(f"  Successful: {len(successful_trials)} ({len(successful_trials)/n_before_filter*100:.1f}%)")
-        print(f"  Failed (excluded): {len(failed_trials)} ({len(failed_trials)/n_before_filter*100:.1f}%)")
-        print(f"  Analyzing {len(trials)} successful trials")
-    else:
-        print(f"\nAnalyzing all trials (n={len(trials)})")
-
-    # Extract metrics for analysis (all trials)
+    # Extract metrics for analysis
     initial_errors = np.array([t['initial_direction_error'] for t in trials])
     final_errors = np.array([t['final_position_error'] for t in trials])
     path_curvatures = np.array([t['path_curvature'] for t in trials])
@@ -3142,11 +3170,14 @@ if __name__ == "__main__":
     parser.add_argument("--folder", type=str, help="Direct path to data folder (alternative to session_id)")
     parser.add_argument("--animal", type=str, default="Tsh001", help="Animal ID (for --folder mode)")
     parser.add_argument("--results", type=str, help="Results directory (for --folder mode)")
+    parser.add_argument("--successful-only", action="store_true",
+                        help="Analyze only successful trials (duration ≤ 1.9s)")
     args = parser.parse_args()
 
     if args.folder:
         # Direct folder analysis mode
-        analyze_folder(args.folder, args.results, args.animal, show_plots=True)
+        analyze_folder(args.folder, args.results, args.animal, show_plots=True,
+                      use_successful_trials_only=args.successful_only)
     elif args.session_id:
         # Session manifest mode
         main(args.session_id)
