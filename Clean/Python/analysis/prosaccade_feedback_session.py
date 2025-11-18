@@ -2526,6 +2526,329 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
     return df
 
 
+def analyze_feedback_control(trials: list[dict], results_dir: Optional[Path] = None,
+                             animal_id: Optional[str] = None, session_date: str = "") -> dict:
+    """Analyze metrics that distinguish visual feedback (closed-loop) vs feedforward (open-loop) control.
+
+    This analysis helps determine if the animal is using visual feedback (cursor) to correct
+    movements vs executing pre-planned movements without visual feedback.
+
+    Key indicators of feedback control:
+    - Low correlation between initial error and final error (can correct mistakes)
+    - Multiple direction changes / curved paths (online corrections)
+    - Success rate independent of initial error (corrections compensate)
+    - Multiple velocity peaks (correction movements)
+
+    Key indicators of feedforward control:
+    - High correlation between initial error and final error (mistakes persist)
+    - Smooth, ballistic paths with few direction changes
+    - Success rate drops sharply with higher initial error
+    - Single velocity peak (ballistic movement)
+
+    Parameters
+    ----------
+    trials : list of dict
+        List of trial data dictionaries
+    results_dir : Path, optional
+        Directory to save the analysis plots
+    animal_id : str, optional
+        Animal identifier for labeling
+    session_date : str, optional
+        Session date for labeling
+
+    Returns
+    -------
+    dict
+        Dictionary containing analysis results and metrics
+    """
+    if len(trials) == 0:
+        print("No trials to analyze")
+        return {}
+
+    # Calculate additional per-trial metrics
+    for trial in trials:
+        eye_x = trial['eye_x']
+        eye_y = trial['eye_y']
+        target_x = trial['target_x']
+        target_y = trial['target_y']
+
+        # Calculate path curvature (sum of angular changes)
+        if len(eye_x) > 2:
+            # Calculate direction angle at each point
+            dx = np.diff(eye_x)
+            dy = np.diff(eye_y)
+            angles = np.arctan2(dy, dx)
+
+            # Calculate angular changes between consecutive segments
+            angle_changes = np.diff(angles)
+            # Wrap to [-pi, pi]
+            angle_changes = np.arctan2(np.sin(angle_changes), np.cos(angle_changes))
+
+            # Sum of absolute angular changes
+            total_curvature = np.sum(np.abs(angle_changes))
+            n_direction_changes = np.sum(np.abs(angle_changes) > np.radians(15))  # >15 degree changes
+        else:
+            total_curvature = 0.0
+            n_direction_changes = 0
+
+        trial['path_curvature'] = total_curvature
+        trial['n_direction_changes'] = n_direction_changes
+
+        # Calculate final position error (distance from final position to target)
+        final_x = eye_x[-1]
+        final_y = eye_y[-1]
+        final_error = np.sqrt((final_x - target_x)**2 + (final_y - target_y)**2)
+        trial['final_position_error'] = final_error
+
+        # Calculate velocity profile characteristics
+        if len(eye_x) > 1:
+            velocities = np.sqrt(dx**2 + dy**2)
+
+            # Find velocity peaks (local maxima)
+            from scipy.signal import find_peaks
+            peaks, _ = find_peaks(velocities, prominence=0.01)
+            n_velocity_peaks = len(peaks)
+
+            # Calculate velocity smoothness (negative jerk - integrated rate of change of acceleration)
+            if len(velocities) > 2:
+                accel = np.diff(velocities)
+                jerk = np.diff(accel)
+                integrated_jerk = np.sum(np.abs(jerk))
+            else:
+                integrated_jerk = 0.0
+        else:
+            n_velocity_peaks = 0
+            integrated_jerk = 0.0
+
+        trial['n_velocity_peaks'] = n_velocity_peaks
+        trial['integrated_jerk'] = integrated_jerk
+
+    # Extract metrics for analysis
+    initial_errors = np.array([t['initial_direction_error'] for t in trials])
+    final_errors = np.array([t['final_position_error'] for t in trials])
+    path_curvatures = np.array([t['path_curvature'] for t in trials])
+    n_changes = np.array([t['n_direction_changes'] for t in trials])
+    n_peaks = np.array([t['n_velocity_peaks'] for t in trials])
+    efficiencies = np.array([t['path_efficiency'] for t in trials])
+
+    # Remove NaN initial errors for correlation analysis
+    valid_mask = ~np.isnan(initial_errors)
+    initial_errors_valid = initial_errors[valid_mask]
+    final_errors_valid = final_errors[valid_mask]
+
+    # 1. Correlation between initial error and final error
+    if len(initial_errors_valid) > 2:
+        from scipy.stats import pearsonr, spearmanr
+        pearson_corr, pearson_p = pearsonr(initial_errors_valid, final_errors_valid)
+        spearman_corr, spearman_p = spearmanr(initial_errors_valid, final_errors_valid)
+    else:
+        pearson_corr = pearson_p = spearman_corr = spearman_p = np.nan
+
+    # 2. Success rate binned by initial error
+    # Define success as final error < target radius
+    target_radius = np.mean([t['target_diameter']/2.0 for t in trials])
+    successes = final_errors < target_radius
+
+    # Bin initial errors into quartiles
+    if len(initial_errors_valid) > 4:
+        quartiles = np.percentile(initial_errors_valid, [25, 50, 75])
+        bins = [0, quartiles[0], quartiles[1], quartiles[2], 180]
+        bin_labels = ['Low\n(Q1)', 'Med-Low\n(Q2)', 'Med-High\n(Q3)', 'High\n(Q4)']
+
+        binned_success_rates = []
+        binned_final_errors = []
+        bin_counts = []
+
+        for i in range(len(bins)-1):
+            mask = (initial_errors >= bins[i]) & (initial_errors < bins[i+1]) & valid_mask
+            if np.sum(mask) > 0:
+                success_rate = np.mean(successes[mask])
+                mean_final_error = np.mean(final_errors[mask])
+                binned_success_rates.append(success_rate)
+                binned_final_errors.append(mean_final_error)
+                bin_counts.append(np.sum(mask))
+            else:
+                binned_success_rates.append(np.nan)
+                binned_final_errors.append(np.nan)
+                bin_counts.append(0)
+    else:
+        bins = bin_labels = binned_success_rates = binned_final_errors = bin_counts = None
+
+    # Compile results
+    results = {
+        'n_trials': len(trials),
+        'pearson_correlation': pearson_corr,
+        'pearson_p_value': pearson_p,
+        'spearman_correlation': spearman_corr,
+        'spearman_p_value': spearman_p,
+        'mean_path_curvature': np.mean(path_curvatures),
+        'median_path_curvature': np.median(path_curvatures),
+        'mean_direction_changes': np.mean(n_changes),
+        'median_direction_changes': np.median(n_changes),
+        'mean_velocity_peaks': np.mean(n_peaks),
+        'median_velocity_peaks': np.median(n_peaks),
+        'overall_success_rate': np.mean(successes),
+        'binned_success_rates': binned_success_rates,
+        'binned_final_errors': binned_final_errors,
+        'bin_labels': bin_labels,
+        'bin_counts': bin_counts,
+    }
+
+    # Create comprehensive plot
+    fig = plt.figure(figsize=(16, 12))
+    gs = fig.add_gridspec(3, 3, hspace=0.3, wspace=0.3)
+
+    # 1. Initial error vs final error scatter
+    ax1 = fig.add_subplot(gs[0, 0])
+    ax1.scatter(initial_errors_valid, final_errors_valid, alpha=0.6, s=50)
+    if not np.isnan(pearson_corr):
+        ax1.plot(initial_errors_valid,
+                np.poly1d(np.polyfit(initial_errors_valid, final_errors_valid, 1))(initial_errors_valid),
+                'r--', linewidth=2, label=f'r={pearson_corr:.3f}, p={pearson_p:.3f}')
+        ax1.legend()
+    ax1.set_xlabel('Initial Direction Error (°)', fontsize=11)
+    ax1.set_ylabel('Final Position Error', fontsize=11)
+    ax1.set_title('Initial vs Final Error\n(Low correlation = feedback control)', fontsize=12, fontweight='bold')
+    ax1.grid(True, alpha=0.3)
+
+    # 2. Success rate by initial error bin
+    if binned_success_rates is not None:
+        ax2 = fig.add_subplot(gs[0, 1])
+        x_pos = np.arange(len(bin_labels))
+        bars = ax2.bar(x_pos, binned_success_rates, alpha=0.7, color=['green', 'yellow', 'orange', 'red'])
+        ax2.set_xlabel('Initial Direction Error Bin', fontsize=11)
+        ax2.set_ylabel('Success Rate', fontsize=11)
+        ax2.set_title('Success Rate by Initial Error\n(Flat = feedback control)', fontsize=12, fontweight='bold')
+        ax2.set_xticks(x_pos)
+        ax2.set_xticklabels(bin_labels)
+        ax2.set_ylim([0, 1])
+        ax2.grid(True, alpha=0.3, axis='y')
+
+        # Add count labels
+        for i, (bar, count) in enumerate(zip(bars, bin_counts)):
+            ax2.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.02,
+                    f'n={count}', ha='center', va='bottom', fontsize=9)
+
+    # 3. Final error by initial error bin
+    if binned_final_errors is not None:
+        ax3 = fig.add_subplot(gs[0, 2])
+        ax3.bar(x_pos, binned_final_errors, alpha=0.7, color=['green', 'yellow', 'orange', 'red'])
+        ax3.set_xlabel('Initial Direction Error Bin', fontsize=11)
+        ax3.set_ylabel('Mean Final Position Error', fontsize=11)
+        ax3.set_title('Final Error by Initial Error\n(Flat = feedback control)', fontsize=12, fontweight='bold')
+        ax3.set_xticks(x_pos)
+        ax3.set_xticklabels(bin_labels)
+        ax3.grid(True, alpha=0.3, axis='y')
+
+    # 4. Path curvature distribution
+    ax4 = fig.add_subplot(gs[1, 0])
+    ax4.hist(path_curvatures, bins=20, alpha=0.7, edgecolor='black')
+    ax4.axvline(np.median(path_curvatures), color='red', linestyle='--', linewidth=2,
+               label=f'Median={np.median(path_curvatures):.2f}')
+    ax4.set_xlabel('Total Path Curvature (radians)', fontsize=11)
+    ax4.set_ylabel('Number of Trials', fontsize=11)
+    ax4.set_title('Path Curvature Distribution\n(Higher = more corrections)', fontsize=12, fontweight='bold')
+    ax4.legend()
+    ax4.grid(True, alpha=0.3, axis='y')
+
+    # 5. Number of direction changes
+    ax5 = fig.add_subplot(gs[1, 1])
+    ax5.hist(n_changes, bins=range(int(np.max(n_changes))+2), alpha=0.7, edgecolor='black')
+    ax5.axvline(np.median(n_changes), color='red', linestyle='--', linewidth=2,
+               label=f'Median={np.median(n_changes):.1f}')
+    ax5.set_xlabel('Number of Direction Changes (>15°)', fontsize=11)
+    ax5.set_ylabel('Number of Trials', fontsize=11)
+    ax5.set_title('Direction Changes Distribution\n(More = feedback control)', fontsize=12, fontweight='bold')
+    ax5.legend()
+    ax5.grid(True, alpha=0.3, axis='y')
+
+    # 6. Number of velocity peaks
+    ax6 = fig.add_subplot(gs[1, 2])
+    ax6.hist(n_peaks, bins=range(int(np.max(n_peaks))+2), alpha=0.7, edgecolor='black')
+    ax6.axvline(np.median(n_peaks), color='red', linestyle='--', linewidth=2,
+               label=f'Median={np.median(n_peaks):.1f}')
+    ax6.set_xlabel('Number of Velocity Peaks', fontsize=11)
+    ax6.set_ylabel('Number of Trials', fontsize=11)
+    ax6.set_title('Velocity Peaks Distribution\n(>1 = corrective movements)', fontsize=12, fontweight='bold')
+    ax6.legend()
+    ax6.grid(True, alpha=0.3, axis='y')
+
+    # 7. Path efficiency vs initial error
+    ax7 = fig.add_subplot(gs[2, 0])
+    ax7.scatter(initial_errors_valid, efficiencies[valid_mask], alpha=0.6, s=50)
+    ax7.set_xlabel('Initial Direction Error (°)', fontsize=11)
+    ax7.set_ylabel('Path Efficiency', fontsize=11)
+    ax7.set_title('Efficiency vs Initial Error', fontsize=12, fontweight='bold')
+    ax7.grid(True, alpha=0.3)
+
+    # 8. Curvature vs initial error
+    ax8 = fig.add_subplot(gs[2, 1])
+    ax8.scatter(initial_errors_valid, path_curvatures[valid_mask], alpha=0.6, s=50)
+    ax8.set_xlabel('Initial Direction Error (°)', fontsize=11)
+    ax8.set_ylabel('Path Curvature (radians)', fontsize=11)
+    ax8.set_title('Curvature vs Initial Error\n(Positive correlation = corrections)', fontsize=12, fontweight='bold')
+    ax8.grid(True, alpha=0.3)
+
+    # 9. Summary text box
+    ax9 = fig.add_subplot(gs[2, 2])
+    ax9.axis('off')
+
+    summary_text = f"""FEEDBACK CONTROL ANALYSIS
+
+Session: {animal_id or 'Unknown'} ({session_date or 'Unknown date'})
+Trials: {len(trials)}
+
+KEY METRICS:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Initial vs Final Error:
+  Pearson r = {pearson_corr:.3f} (p={pearson_p:.4f})
+  Spearman ρ = {spearman_corr:.3f} (p={spearman_p:.4f})
+
+Path Characteristics:
+  Curvature: {np.median(path_curvatures):.2f} rad
+  Dir. changes: {np.median(n_changes):.1f}
+  Velocity peaks: {np.median(n_peaks):.1f}
+
+Success Rate: {np.mean(successes)*100:.1f}%
+
+INTERPRETATION:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Low correlation (<0.3):
+  → Feedback control
+
+High correlation (>0.6):
+  → Feedforward control
+
+Median >1 direction change:
+  → Online corrections
+
+Success rate flat across bins:
+  → Can correct mistakes
+"""
+
+    ax9.text(0.05, 0.95, summary_text, transform=ax9.transAxes,
+            fontsize=10, verticalalignment='top', fontfamily='monospace',
+            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+
+    # Overall title
+    title = 'Visual Feedback Control Analysis'
+    if animal_id:
+        title += f' - {animal_id}'
+    if session_date:
+        title += f' ({session_date})'
+    fig.suptitle(title, fontsize=16, fontweight='bold', y=0.995)
+
+    # Save figure
+    if results_dir:
+        results_dir.mkdir(parents=True, exist_ok=True)
+        prefix = f"{animal_id}_" if animal_id else ""
+        filename = f"{prefix}feedback_control_analysis.png"
+        fig.savefig(results_dir / filename, dpi=150, bbox_inches='tight')
+        print(f"\nSaved feedback control analysis to {results_dir / filename}")
+
+    return results
+
+
 def main(session_id: str) -> pd.DataFrame:
     """Run the saccade feedback analysis pipeline for ``session_id``.
 
@@ -2613,6 +2936,13 @@ def main(session_id: str) -> pd.DataFrame:
         plt.show()
         plt.close(fig_lr)
 
+    print("\nRunning feedback control analysis...")
+    feedback_results = analyze_feedback_control(trials, results_dir=results_dir,
+                                               animal_id=animal_id, session_date=date_str)
+    if feedback_results:
+        plt.show()
+        plt.close()
+
     # Create summary DataFrame
     durations = [t['duration'] for t in trials]
     path_lengths = [t['path_length'] for t in trials]
@@ -2636,6 +2966,12 @@ def main(session_id: str) -> pd.DataFrame:
         'median_path_efficiency': [np.median(efficiencies)],
         'mean_initial_dir_error': [np.mean(dir_errors) if dir_errors else np.nan],
         'median_initial_dir_error': [np.median(dir_errors) if dir_errors else np.nan],
+        # Feedback control metrics
+        'initial_final_error_correlation': [feedback_results.get('pearson_correlation', np.nan) if feedback_results else np.nan],
+        'correlation_p_value': [feedback_results.get('pearson_p_value', np.nan) if feedback_results else np.nan],
+        'median_path_curvature': [feedback_results.get('median_path_curvature', np.nan) if feedback_results else np.nan],
+        'median_direction_changes': [feedback_results.get('median_direction_changes', np.nan) if feedback_results else np.nan],
+        'median_velocity_peaks': [feedback_results.get('median_velocity_peaks', np.nan) if feedback_results else np.nan],
     })
 
     print("\n" + "="*60)
