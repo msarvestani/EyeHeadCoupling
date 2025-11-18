@@ -2540,7 +2540,8 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
 
 
 def analyze_feedback_control(trials: list[dict], results_dir: Optional[Path] = None,
-                             animal_id: Optional[str] = None, session_date: str = "") -> tuple[dict, plt.Figure]:
+                             animal_id: Optional[str] = None, session_date: str = "",
+                             remove_outliers: bool = True, outlier_max_fraction: float = 0.05) -> tuple[dict, plt.Figure]:
     """Analyze metrics that distinguish visual feedback (closed-loop) vs feedforward (open-loop) control.
 
     This analysis helps determine if the animal is using visual feedback (cursor) to correct
@@ -2568,6 +2569,10 @@ def analyze_feedback_control(trials: list[dict], results_dir: Optional[Path] = N
         Animal identifier for labeling
     session_date : str, optional
         Session date for labeling
+    remove_outliers : bool, optional
+        Whether to remove outlier trials (default: True)
+    outlier_max_fraction : float, optional
+        Maximum fraction of trials to remove as outliers (default: 0.05 = 5%)
 
     Returns
     -------
@@ -2638,6 +2643,103 @@ def analyze_feedback_control(trials: list[dict], results_dir: Optional[Path] = N
         trial['n_velocity_peaks'] = n_velocity_peaks
         trial['integrated_jerk'] = integrated_jerk
 
+    # Outlier detection using IQR method
+    n_trials_original = len(trials)
+    if remove_outliers and n_trials_original > 10:  # Only remove outliers if we have enough trials
+        print(f"\nOutlier detection (max {outlier_max_fraction*100:.0f}% removal):")
+
+        # Key metrics to check for outliers
+        durations = np.array([t['duration'] for t in trials])
+        initial_dir_errors = np.array([t['initial_direction_error'] for t in trials])
+        path_lengths = np.array([t['path_length'] for t in trials])
+        efficiencies_check = np.array([t['path_efficiency'] for t in trials])
+        curvatures_check = np.array([t['path_curvature'] for t in trials])
+
+        outlier_mask = np.zeros(n_trials_original, dtype=bool)
+
+        # Function to detect outliers using IQR method
+        def is_outlier_iqr(data, mask_existing):
+            """Detect outliers using IQR method, excluding already-masked values and NaNs"""
+            valid_data = data[~mask_existing & ~np.isnan(data)]
+            if len(valid_data) < 4:
+                return np.zeros(len(data), dtype=bool)
+
+            Q1 = np.percentile(valid_data, 25)
+            Q3 = np.percentile(valid_data, 75)
+            IQR = Q3 - Q1
+            lower_bound = Q1 - 1.5 * IQR
+            upper_bound = Q3 + 1.5 * IQR
+
+            is_outlier = (data < lower_bound) | (data > upper_bound)
+            is_outlier[np.isnan(data)] = False  # Don't mark NaN as outlier
+            return is_outlier
+
+        # Check each metric
+        metrics_to_check = {
+            'duration': durations,
+            'initial_direction_error': initial_dir_errors,
+            'path_length': path_lengths,
+            'path_efficiency': efficiencies_check,
+            'path_curvature': curvatures_check,
+        }
+
+        outlier_reasons = {}
+        for metric_name, metric_data in metrics_to_check.items():
+            metric_outliers = is_outlier_iqr(metric_data, outlier_mask)
+            new_outliers = metric_outliers & ~outlier_mask
+
+            if np.any(new_outliers):
+                outlier_indices = np.where(new_outliers)[0]
+                for idx in outlier_indices:
+                    if idx not in outlier_reasons:
+                        outlier_reasons[idx] = []
+                    outlier_reasons[idx].append(f"{metric_name}={metric_data[idx]:.3f}")
+
+                outlier_mask |= metric_outliers
+
+        # Enforce maximum fraction
+        n_outliers = np.sum(outlier_mask)
+        max_outliers = int(n_trials_original * outlier_max_fraction)
+
+        if n_outliers > max_outliers:
+            # Keep only the most extreme outliers
+            print(f"  Found {n_outliers} outliers, limiting to {max_outliers} (max {outlier_max_fraction*100:.0f}%)")
+
+            # Calculate outlier score for each outlier (sum of z-scores across metrics)
+            outlier_scores = np.zeros(n_trials_original)
+            for metric_name, metric_data in metrics_to_check.items():
+                valid_data = metric_data[~outlier_mask & ~np.isnan(metric_data)]
+                if len(valid_data) > 0:
+                    median = np.median(valid_data)
+                    mad = np.median(np.abs(valid_data - median))
+                    if mad > 0:
+                        z_scores = np.abs((metric_data - median) / (1.4826 * mad))  # 1.4826 * MAD ≈ std for normal dist
+                        outlier_scores += z_scores
+
+            # Keep only the most extreme outliers
+            outlier_indices = np.where(outlier_mask)[0]
+            outlier_scores_subset = outlier_scores[outlier_indices]
+            threshold_idx = np.argsort(outlier_scores_subset)[-max_outliers]
+            threshold_score = outlier_scores_subset[np.argsort(outlier_scores_subset)[threshold_idx]]
+
+            outlier_mask = outlier_scores >= threshold_score
+            n_outliers = max_outliers
+
+        # Remove outliers
+        if n_outliers > 0:
+            print(f"  Removing {n_outliers} outlier trials ({n_outliers/n_trials_original*100:.1f}%):")
+            removed_indices = np.where(outlier_mask)[0]
+            for idx in removed_indices:
+                if idx in outlier_reasons:
+                    print(f"    Trial {trials[idx]['trial_number']}: {', '.join(outlier_reasons[idx])}")
+
+            trials = [t for i, t in enumerate(trials) if not outlier_mask[i]]
+            print(f"  Kept {len(trials)} trials for analysis")
+        else:
+            print(f"  No outliers detected")
+    elif remove_outliers:
+        print(f"\nSkipping outlier detection (only {n_trials_original} trials, need >10)")
+
     # Extract metrics for analysis
     initial_errors = np.array([t['initial_direction_error'] for t in trials])
     final_errors = np.array([t['final_position_error'] for t in trials])
@@ -2699,8 +2801,12 @@ def analyze_feedback_control(trials: list[dict], results_dir: Optional[Path] = N
         binned_curvatures = binned_efficiencies = None
 
     # Compile results
+    n_outliers_removed = n_trials_original - len(trials) if remove_outliers else 0
     results = {
         'n_trials': len(trials),
+        'n_trials_original': n_trials_original,
+        'n_outliers_removed': n_outliers_removed,
+        'outliers_removed': remove_outliers,
         'pearson_correlation': pearson_corr,
         'pearson_p_value': pearson_p,
         'spearman_correlation': spearman_corr,
@@ -2776,6 +2882,10 @@ def analyze_feedback_control(trials: list[dict], results_dir: Optional[Path] = N
         title += f' - {animal_id}'
     if session_date:
         title += f' ({session_date})'
+    if n_outliers_removed > 0:
+        title += f' | n={len(trials)} ({n_outliers_removed} outliers removed)'
+    else:
+        title += f' | n={len(trials)}'
     fig.suptitle(title, fontsize=14, fontweight='bold', y=1.02)
 
     # Save figure
