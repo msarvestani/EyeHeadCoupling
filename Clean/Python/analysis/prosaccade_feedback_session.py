@@ -2672,34 +2672,31 @@ def analyze_feedback_control(trials: list[dict], results_dir: Optional[Path] = N
 
         binned_success_rates = []
         binned_final_errors = []
-        binned_durations = []
-        binned_corrections = []
+        binned_curvatures = []
+        binned_efficiencies = []
         bin_counts = []
-
-        # Get trial durations
-        durations = np.array([t['duration'] for t in trials])
 
         for i in range(len(bins)-1):
             mask = (initial_errors >= bins[i]) & (initial_errors < bins[i+1]) & valid_mask
             if np.sum(mask) > 0:
                 success_rate = np.mean(successes[mask])
                 mean_final_error = np.mean(final_errors[mask])
-                mean_duration = np.mean(durations[mask])
-                mean_corrections = np.mean(n_changes[mask])
+                mean_curvature = np.mean(path_curvatures[mask])
+                mean_efficiency = np.mean(efficiencies[mask])
                 binned_success_rates.append(success_rate)
                 binned_final_errors.append(mean_final_error)
-                binned_durations.append(mean_duration)
-                binned_corrections.append(mean_corrections)
+                binned_curvatures.append(mean_curvature)
+                binned_efficiencies.append(mean_efficiency)
                 bin_counts.append(np.sum(mask))
             else:
                 binned_success_rates.append(np.nan)
                 binned_final_errors.append(np.nan)
-                binned_durations.append(np.nan)
-                binned_corrections.append(np.nan)
+                binned_curvatures.append(np.nan)
+                binned_efficiencies.append(np.nan)
                 bin_counts.append(0)
     else:
         bins = bin_labels = binned_success_rates = binned_final_errors = bin_counts = None
-        binned_durations = binned_corrections = None
+        binned_curvatures = binned_efficiencies = None
 
     # Compile results
     results = {
@@ -2717,8 +2714,8 @@ def analyze_feedback_control(trials: list[dict], results_dir: Optional[Path] = N
         'overall_success_rate': np.mean(successes),
         'binned_success_rates': binned_success_rates,
         'binned_final_errors': binned_final_errors,
-        'binned_durations': binned_durations,
-        'binned_corrections': binned_corrections,
+        'binned_curvatures': binned_curvatures,
+        'binned_efficiencies': binned_efficiencies,
         'bin_labels': bin_labels,
         'bin_counts': bin_counts,
     }
@@ -2740,14 +2737,14 @@ def analyze_feedback_control(trials: list[dict], results_dir: Optional[Path] = N
     ax1.set_title('Initial vs Final Error\n(Low correlation = feedback control)', fontsize=12, fontweight='bold')
     ax1.grid(True, alpha=0.3)
 
-    # 2. Trial duration by initial error bin
-    if binned_durations is not None:
+    # 2. Path curvature by initial error bin
+    if binned_curvatures is not None:
         ax2 = fig.add_subplot(gs[0, 1])
         x_pos = np.arange(len(bin_labels))
-        bars = ax2.bar(x_pos, binned_durations, alpha=0.7, color=['green', 'orange', 'red'])
+        bars = ax2.bar(x_pos, binned_curvatures, alpha=0.7, color=['green', 'orange', 'red'])
         ax2.set_xlabel('Initial Direction Error Bin', fontsize=11)
-        ax2.set_ylabel('Mean Trial Duration (s)', fontsize=11)
-        ax2.set_title('Duration by Initial Error\n(Flat = feedback control)', fontsize=12, fontweight='bold')
+        ax2.set_ylabel('Mean Path Curvature (rad)', fontsize=11)
+        ax2.set_title('Curvature by Initial Error\n(Increasing = feedback control)', fontsize=12, fontweight='bold')
         ax2.set_xticks(x_pos)
         ax2.set_xticklabels(bin_labels)
         ax2.grid(True, alpha=0.3, axis='y')
@@ -2756,18 +2753,19 @@ def analyze_feedback_control(trials: list[dict], results_dir: Optional[Path] = N
         for i, (bar, count) in enumerate(zip(bars, bin_counts)):
             height = bar.get_height()
             if not np.isnan(height):
-                ax2.text(bar.get_x() + bar.get_width()/2, height + 0.02 * ax2.get_ylim()[1],
+                ax2.text(bar.get_x() + bar.get_width()/2, height + 0.02 * max(binned_curvatures),
                         f'n={count}', ha='center', va='bottom', fontsize=9)
 
-    # 3. Number of corrections by initial error bin
-    if binned_corrections is not None:
+    # 3. Path efficiency by initial error bin
+    if binned_efficiencies is not None:
         ax3 = fig.add_subplot(gs[0, 2])
-        bars = ax3.bar(x_pos, binned_corrections, alpha=0.7, color=['green', 'orange', 'red'])
+        bars = ax3.bar(x_pos, binned_efficiencies, alpha=0.7, color=['green', 'orange', 'red'])
         ax3.set_xlabel('Initial Direction Error Bin', fontsize=11)
-        ax3.set_ylabel('Mean Direction Changes', fontsize=11)
-        ax3.set_title('Corrections by Initial Error\n(Increasing = feedback control)', fontsize=12, fontweight='bold')
+        ax3.set_ylabel('Mean Path Efficiency', fontsize=11)
+        ax3.set_title('Efficiency by Initial Error\n(Flat/maintained = feedback control)', fontsize=12, fontweight='bold')
         ax3.set_xticks(x_pos)
         ax3.set_xticklabels(bin_labels)
+        ax3.set_ylim([0, 1])  # Efficiency is between 0 and 1
         ax3.grid(True, alpha=0.3, axis='y')
 
     plt.tight_layout()
