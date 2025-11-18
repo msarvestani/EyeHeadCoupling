@@ -2664,11 +2664,11 @@ def analyze_feedback_control(trials: list[dict], results_dir: Optional[Path] = N
     target_radius = np.mean([t['target_diameter']/2.0 for t in trials])
     successes = final_errors < target_radius
 
-    # Bin initial errors into quartiles for other metrics
-    if len(initial_errors_valid) > 4:
-        quartiles = np.percentile(initial_errors_valid, [25, 50, 75])
-        bins = [0, quartiles[0], quartiles[1], quartiles[2], 180]
-        bin_labels = ['Low\n(Q1)', 'Med-Low\n(Q2)', 'Med-High\n(Q3)', 'High\n(Q4)']
+    # Bin initial errors into tertiles (3 bins) for other metrics
+    if len(initial_errors_valid) > 3:
+        tertiles = np.percentile(initial_errors_valid, [33.33, 66.67])
+        bins = [0, tertiles[0], tertiles[1], 180]
+        bin_labels = ['Low\n(T1)', 'Medium\n(T2)', 'High\n(T3)']
 
         binned_success_rates = []
         binned_final_errors = []
@@ -2724,8 +2724,8 @@ def analyze_feedback_control(trials: list[dict], results_dir: Optional[Path] = N
     }
 
     # Create comprehensive plot
-    fig = plt.figure(figsize=(16, 12))
-    gs = fig.add_gridspec(3, 3, hspace=0.3, wspace=0.3)
+    fig = plt.figure(figsize=(15, 5))
+    gs = fig.add_gridspec(1, 3, hspace=0.3, wspace=0.3)
 
     # 1. Initial error vs final error scatter
     ax1 = fig.add_subplot(gs[0, 0])
@@ -2744,7 +2744,7 @@ def analyze_feedback_control(trials: list[dict], results_dir: Optional[Path] = N
     if binned_durations is not None:
         ax2 = fig.add_subplot(gs[0, 1])
         x_pos = np.arange(len(bin_labels))
-        bars = ax2.bar(x_pos, binned_durations, alpha=0.7, color=['green', 'yellow', 'orange', 'red'])
+        bars = ax2.bar(x_pos, binned_durations, alpha=0.7, color=['green', 'orange', 'red'])
         ax2.set_xlabel('Initial Direction Error Bin', fontsize=11)
         ax2.set_ylabel('Mean Trial Duration (s)', fontsize=11)
         ax2.set_title('Duration by Initial Error\n(Flat = feedback control)', fontsize=12, fontweight='bold')
@@ -2762,7 +2762,7 @@ def analyze_feedback_control(trials: list[dict], results_dir: Optional[Path] = N
     # 3. Number of corrections by initial error bin
     if binned_corrections is not None:
         ax3 = fig.add_subplot(gs[0, 2])
-        bars = ax3.bar(x_pos, binned_corrections, alpha=0.7, color=['green', 'yellow', 'orange', 'red'])
+        bars = ax3.bar(x_pos, binned_corrections, alpha=0.7, color=['green', 'orange', 'red'])
         ax3.set_xlabel('Initial Direction Error Bin', fontsize=11)
         ax3.set_ylabel('Mean Direction Changes', fontsize=11)
         ax3.set_title('Corrections by Initial Error\n(Increasing = feedback control)', fontsize=12, fontweight='bold')
@@ -2770,96 +2770,7 @@ def analyze_feedback_control(trials: list[dict], results_dir: Optional[Path] = N
         ax3.set_xticklabels(bin_labels)
         ax3.grid(True, alpha=0.3, axis='y')
 
-    # 4. Path curvature distribution
-    ax4 = fig.add_subplot(gs[1, 0])
-    ax4.hist(path_curvatures, bins=20, alpha=0.7, edgecolor='black')
-    ax4.axvline(np.median(path_curvatures), color='red', linestyle='--', linewidth=2,
-               label=f'Median={np.median(path_curvatures):.2f}')
-    ax4.set_xlabel('Total Path Curvature (radians)', fontsize=11)
-    ax4.set_ylabel('Number of Trials', fontsize=11)
-    ax4.set_title('Path Curvature Distribution\n(Higher = more corrections)', fontsize=12, fontweight='bold')
-    ax4.legend()
-    ax4.grid(True, alpha=0.3, axis='y')
-
-    # 5. Number of direction changes
-    ax5 = fig.add_subplot(gs[1, 1])
-    ax5.hist(n_changes, bins=range(int(np.max(n_changes))+2), alpha=0.7, edgecolor='black')
-    ax5.axvline(np.median(n_changes), color='red', linestyle='--', linewidth=2,
-               label=f'Median={np.median(n_changes):.1f}')
-    ax5.set_xlabel('Number of Direction Changes (>15°)', fontsize=11)
-    ax5.set_ylabel('Number of Trials', fontsize=11)
-    ax5.set_title('Direction Changes Distribution\n(More = feedback control)', fontsize=12, fontweight='bold')
-    ax5.legend()
-    ax5.grid(True, alpha=0.3, axis='y')
-
-    # 6. Number of velocity peaks
-    ax6 = fig.add_subplot(gs[1, 2])
-    ax6.hist(n_peaks, bins=range(int(np.max(n_peaks))+2), alpha=0.7, edgecolor='black')
-    ax6.axvline(np.median(n_peaks), color='red', linestyle='--', linewidth=2,
-               label=f'Median={np.median(n_peaks):.1f}')
-    ax6.set_xlabel('Number of Velocity Peaks', fontsize=11)
-    ax6.set_ylabel('Number of Trials', fontsize=11)
-    ax6.set_title('Velocity Peaks Distribution\n(>1 = corrective movements)', fontsize=12, fontweight='bold')
-    ax6.legend()
-    ax6.grid(True, alpha=0.3, axis='y')
-
-    # 7. Path efficiency vs initial error
-    ax7 = fig.add_subplot(gs[2, 0])
-    ax7.scatter(initial_errors_valid, efficiencies[valid_mask], alpha=0.6, s=50)
-    ax7.set_xlabel('Initial Direction Error (°)', fontsize=11)
-    ax7.set_ylabel('Path Efficiency', fontsize=11)
-    ax7.set_title('Efficiency vs Initial Error', fontsize=12, fontweight='bold')
-    ax7.grid(True, alpha=0.3)
-
-    # 8. Curvature vs initial error
-    ax8 = fig.add_subplot(gs[2, 1])
-    ax8.scatter(initial_errors_valid, path_curvatures[valid_mask], alpha=0.6, s=50)
-    ax8.set_xlabel('Initial Direction Error (°)', fontsize=11)
-    ax8.set_ylabel('Path Curvature (radians)', fontsize=11)
-    ax8.set_title('Curvature vs Initial Error\n(Positive correlation = corrections)', fontsize=12, fontweight='bold')
-    ax8.grid(True, alpha=0.3)
-
-    # 9. Summary text box
-    ax9 = fig.add_subplot(gs[2, 2])
-    ax9.axis('off')
-
-    summary_text = f"""FEEDBACK CONTROL ANALYSIS
-
-Session: {animal_id or 'Unknown'} ({session_date or 'Unknown date'})
-Trials: {len(trials)}
-
-KEY METRICS:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Initial vs Final Error:
-  Pearson r = {pearson_corr:.3f} (p={pearson_p:.4f})
-  Spearman ρ = {spearman_corr:.3f} (p={spearman_p:.4f})
-
-Path Characteristics:
-  Curvature: {np.median(path_curvatures):.2f} rad
-  Dir. changes: {np.median(n_changes):.1f}
-  Velocity peaks: {np.median(n_peaks):.1f}
-
-INTERPRETATION:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Low correlation (<0.3):
-  → Feedback control
-
-High correlation (>0.6):
-  → Feedforward control
-
-Duration flat across bins:
-  → Feedback compensates
-
-Corrections increase with error:
-  → Online error correction
-
-Median >1 direction change:
-  → Multiple corrections
-"""
-
-    ax9.text(0.05, 0.95, summary_text, transform=ax9.transAxes,
-            fontsize=10, verticalalignment='top', fontfamily='monospace',
-            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+    plt.tight_layout()
 
     # Overall title
     title = 'Visual Feedback Control Analysis'
@@ -2867,7 +2778,7 @@ Median >1 direction change:
         title += f' - {animal_id}'
     if session_date:
         title += f' ({session_date})'
-    fig.suptitle(title, fontsize=16, fontweight='bold', y=0.995)
+    fig.suptitle(title, fontsize=14, fontweight='bold', y=1.02)
 
     # Save figure
     if results_dir:
