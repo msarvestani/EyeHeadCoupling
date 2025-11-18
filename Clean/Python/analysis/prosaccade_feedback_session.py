@@ -2474,6 +2474,14 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
             plt.show()
         plt.close(fig_lr)
 
+    print("\nRunning feedback control analysis...")
+    feedback_results = analyze_feedback_control(trials, results_dir=results_dir,
+                                               animal_id=animal_id, session_date=date_str)
+    if feedback_results:
+        if show_plots:
+            plt.show()
+        plt.close()
+
     # Create summary DataFrame
     durations = [t['duration'] for t in trials]
     path_lengths = [t['path_length'] for t in trials]
@@ -2497,6 +2505,12 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
         'median_path_efficiency': [np.median(efficiencies)],
         'mean_initial_dir_error': [np.mean(dir_errors) if dir_errors else np.nan],
         'median_initial_dir_error': [np.median(dir_errors) if dir_errors else np.nan],
+        # Feedback control metrics
+        'initial_final_error_correlation': [feedback_results.get('pearson_correlation', np.nan) if feedback_results else np.nan],
+        'correlation_p_value': [feedback_results.get('pearson_p_value', np.nan) if feedback_results else np.nan],
+        'median_path_curvature': [feedback_results.get('median_path_curvature', np.nan) if feedback_results else np.nan],
+        'median_direction_changes': [feedback_results.get('median_direction_changes', np.nan) if feedback_results else np.nan],
+        'median_velocity_peaks': [feedback_results.get('median_velocity_peaks', np.nan) if feedback_results else np.nan],
     })
 
     print("\n" + "="*60)
