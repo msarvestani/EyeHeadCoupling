@@ -665,14 +665,25 @@ def interactive_trajectories(trials: list[dict], animal_id: Optional[str] = None
         target_x = trial['target_x']
         target_y = trial['target_y']
         target_radius = trial['target_diameter'] / 2.0
+        target_visible = trial.get('target_visible', 1)  # Default to visible if not present
         key = (round(target_x, 2), round(target_y, 2))
 
         if key not in target_circles:
+            # Use dashed line for invisible targets
+            linestyle = '-' if target_visible else '--'
+            alpha_val = 0.5 if target_visible else 0.3
+
             target_circle = Circle((target_x, target_y), radius=target_radius,
                                   fill=False, edgecolor='black', linewidth=2,
-                                  linestyle='-', alpha=0.5)
+                                  linestyle=linestyle, alpha=alpha_val)
             ax.add_patch(target_circle)
-            ax.plot(target_x, target_y, 'ko', markersize=3, alpha=0.5)
+
+            # Use hollow marker for invisible targets
+            if target_visible:
+                ax.plot(target_x, target_y, 'ko', markersize=3, alpha=0.5)
+            else:
+                ax.plot(target_x, target_y, 'ko', markersize=3, markerfacecolor='none',
+                       markeredgewidth=1, alpha=0.4)
             target_circles[key] = (target_circle, target_x, target_y)
 
     # Storage for current trial elements (will be cleared each time)
