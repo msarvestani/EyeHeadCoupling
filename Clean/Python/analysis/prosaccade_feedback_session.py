@@ -1137,7 +1137,7 @@ def plot_path_length(trials: list[dict], results_dir: Optional[Path] = None,
 
 
 def analyze_starting_position_bias(trials: list[dict], min_duration: float = 0.1, max_duration: float = 10.0,
-                                   time_window: tuple = (0.1, 0.5),
+                                   time_window: tuple = (0.0, 0.1),
                                    results_dir: Optional[Path] = None, animal_id: Optional[str] = None,
                                    session_date: str = "") -> tuple:
     """Analyze if average eye position during early trial period differs between left and right targets.
@@ -1154,7 +1154,7 @@ def analyze_starting_position_bias(trials: list[dict], min_duration: float = 0.1
     max_duration : float
         Maximum trial duration in seconds (default: 10.0)
     time_window : tuple
-        Time window (start, end) in seconds for averaging position (default: 0.1-0.5s)
+        Time window (start, end) in seconds for averaging position (default: first 0.1s)
     results_dir : Path, optional
         Directory to save the figure
     animal_id : str, optional
@@ -1175,7 +1175,7 @@ def analyze_starting_position_bias(trials: list[dict], min_duration: float = 0.1
 
     window_start, window_end = time_window
 
-    print(f"\nEarly Position Bias Analysis (averaging {window_start}-{window_end}s):")
+    print(f"\nStarting Position Bias Analysis (avg first 0.1s):")
     print(f"  Total trials: {len(trials)}")
     print(f"  Excluded trials (duration < {min_duration}s or > {max_duration}s): {n_excluded}")
     print(f"  Trials included in analysis: {len(filtered_trials)}")
@@ -1268,10 +1268,10 @@ def analyze_starting_position_bias(trials: list[dict], min_duration: float = 0.1
         'time_window': time_window,
     }
 
-    print(f"\n  Left trials - Average position ({window_start}-{window_end}s):")
+    print(f"\n  Left trials - Starting position (first 0.1s):")
     print(f"    X: {stats_dict['left']['avg_x_mean']:.3f} ± {stats_dict['left']['avg_x_std']:.3f}")
     print(f"    Y: {stats_dict['left']['avg_y_mean']:.3f} ± {stats_dict['left']['avg_y_std']:.3f}")
-    print(f"  Right trials - Average position ({window_start}-{window_end}s):")
+    print(f"  Right trials - Starting position (first 0.1s):")
     print(f"    X: {stats_dict['right']['avg_x_mean']:.3f} ± {stats_dict['right']['avg_x_std']:.3f}")
     print(f"    Y: {stats_dict['right']['avg_y_mean']:.3f} ± {stats_dict['right']['avg_y_std']:.3f}")
     print(f"\n  Mann-Whitney U test:")
@@ -1287,7 +1287,7 @@ def analyze_starting_position_bias(trials: list[dict], min_duration: float = 0.1
     ax.hist(right_avg_x, bins=20, alpha=0.6, color='red', label=f'Right (n={n_valid_right})')
     ax.axvline(np.mean(left_avg_x), color='blue', linestyle='--', linewidth=2, label=f'Left mean: {np.mean(left_avg_x):.3f}')
     ax.axvline(np.mean(right_avg_x), color='red', linestyle='--', linewidth=2, label=f'Right mean: {np.mean(right_avg_x):.3f}')
-    ax.set_xlabel(f'Avg X Position ({window_start}-{window_end}s)', fontsize=12)
+    ax.set_xlabel('Avg X Position (first 0.1s)', fontsize=12)
     ax.set_ylabel('Count', fontsize=12)
     ax.set_title(f'X-Position Distribution\np = {p_x:.4f}', fontsize=12, fontweight='bold')
     ax.legend(fontsize=9)
@@ -1299,7 +1299,7 @@ def analyze_starting_position_bias(trials: list[dict], min_duration: float = 0.1
     ax.hist(right_avg_y, bins=20, alpha=0.6, color='red', label=f'Right (n={n_valid_right})')
     ax.axvline(np.mean(left_avg_y), color='blue', linestyle='--', linewidth=2, label=f'Left mean: {np.mean(left_avg_y):.3f}')
     ax.axvline(np.mean(right_avg_y), color='red', linestyle='--', linewidth=2, label=f'Right mean: {np.mean(right_avg_y):.3f}')
-    ax.set_xlabel(f'Avg Y Position ({window_start}-{window_end}s)', fontsize=12)
+    ax.set_xlabel('Avg Y Position (first 0.1s)', fontsize=12)
     ax.set_ylabel('Count', fontsize=12)
     ax.set_title(f'Y-Position Distribution\np = {p_y:.4f}', fontsize=12, fontweight='bold')
     ax.legend(fontsize=9)
@@ -1314,8 +1314,8 @@ def analyze_starting_position_bias(trials: list[dict], min_duration: float = 0.1
                marker='*', edgecolors='black', linewidths=2, label='Left mean', zorder=10)
     ax.scatter([np.mean(right_avg_x)], [np.mean(right_avg_y)], color='red', s=200,
                marker='*', edgecolors='black', linewidths=2, label='Right mean', zorder=10)
-    ax.set_xlabel(f'Avg X Position ({window_start}-{window_end}s)', fontsize=12)
-    ax.set_ylabel(f'Avg Y Position ({window_start}-{window_end}s)', fontsize=12)
+    ax.set_xlabel('Avg X Position (first 0.1s)', fontsize=12)
+    ax.set_ylabel('Avg Y Position (first 0.1s)', fontsize=12)
     ax.set_title('Average Positions (2D)', fontsize=12, fontweight='bold')
     ax.legend(fontsize=9)
     ax.grid(True, alpha=0.3)
@@ -1350,7 +1350,7 @@ def analyze_starting_position_bias(trials: list[dict], min_duration: float = 0.1
     ax.set_title('Summary Statistics\n(Mann-Whitney U Test)', fontsize=12, fontweight='bold', pad=20)
 
     # Overall title
-    title = f'Early Position Bias Analysis ({window_start}-{window_end}s): Left vs Right Targets'
+    title = f'Starting Position Bias Analysis (avg first 0.1s): Left vs Right Targets'
     if animal_id:
         title += f' - {animal_id}'
     if session_date:
