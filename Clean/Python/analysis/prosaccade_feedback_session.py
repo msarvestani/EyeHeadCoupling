@@ -1310,6 +1310,7 @@ def analyze_starting_position_bias(trials: list[dict], min_duration: float = 0.1
     ax.set_xlabel('Avg X Position (first 0.1s)', fontsize=12)
     ax.set_ylabel('Count', fontsize=12)
     ax.set_title(f'X-Position Distribution\np = {p_x:.4f}', fontsize=12, fontweight='bold')
+    ax.set_xlim(-1, 1)
     ax.legend(fontsize=9)
     ax.grid(True, alpha=0.3, axis='y')
 
@@ -1322,6 +1323,7 @@ def analyze_starting_position_bias(trials: list[dict], min_duration: float = 0.1
     ax.set_xlabel('Avg Y Position (first 0.1s)', fontsize=12)
     ax.set_ylabel('Count', fontsize=12)
     ax.set_title(f'Y-Position Distribution\np = {p_y:.4f}', fontsize=12, fontweight='bold')
+    ax.set_xlim(-1, 1)
     ax.legend(fontsize=9)
     ax.grid(True, alpha=0.3, axis='y')
 
@@ -1337,9 +1339,11 @@ def analyze_starting_position_bias(trials: list[dict], min_duration: float = 0.1
     ax.set_xlabel('Avg X Position (first 0.1s)', fontsize=12)
     ax.set_ylabel('Avg Y Position (first 0.1s)', fontsize=12)
     ax.set_title('Average Positions (2D)', fontsize=12, fontweight='bold')
+    ax.set_xlim(-1, 1)
+    ax.set_ylim(-1, 1)
     ax.legend(fontsize=9)
     ax.grid(True, alpha=0.3)
-    ax.axis('equal')
+    ax.set_aspect('equal')
 
     # Plot 4: Summary statistics table
     ax = axes[1, 1]
@@ -1548,6 +1552,7 @@ def analyze_ending_position_bias(trials: list[dict], min_duration: float = 0.1, 
     ax.set_xlabel('Final X Position', fontsize=12)
     ax.set_ylabel('Count', fontsize=12)
     ax.set_title(f'X-Position Distribution\np = {p_x:.4f}', fontsize=12, fontweight='bold')
+    ax.set_xlim(-1, 1)
     ax.legend(fontsize=9)
     ax.grid(True, alpha=0.3, axis='y')
 
@@ -1560,6 +1565,7 @@ def analyze_ending_position_bias(trials: list[dict], min_duration: float = 0.1, 
     ax.set_xlabel('Final Y Position', fontsize=12)
     ax.set_ylabel('Count', fontsize=12)
     ax.set_title(f'Y-Position Distribution\np = {p_y:.4f}', fontsize=12, fontweight='bold')
+    ax.set_xlim(-1, 1)
     ax.legend(fontsize=9)
     ax.grid(True, alpha=0.3, axis='y')
 
@@ -1575,9 +1581,11 @@ def analyze_ending_position_bias(trials: list[dict], min_duration: float = 0.1, 
     ax.set_xlabel('Final X Position', fontsize=12)
     ax.set_ylabel('Final Y Position', fontsize=12)
     ax.set_title('Final Positions (2D)', fontsize=12, fontweight='bold')
+    ax.set_xlim(-1, 1)
+    ax.set_ylim(-1, 1)
     ax.legend(fontsize=9)
     ax.grid(True, alpha=0.3)
-    ax.axis('equal')
+    ax.set_aspect('equal')
 
     # Plot 4: Summary statistics table
     ax = axes[1, 1]
