@@ -186,14 +186,20 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
                                 target_df: pd.DataFrame) -> list[dict]:
     """Extract eye position trajectories for each trial.
 
+    Trial timing is calculated from vstim_cue (target_df):
+    - Each trial starts at the timestamp/frame from vstim_cue
+    - Inter-trial interval (ITI) is inferred by finding the minimum difference
+      between consecutive vstim_cue timestamps, rounded down to nearest whole second
+    - Trial end: trial_end(i) = trial_start(i+1) - ITI
+
     Parameters
     ----------
     eot_df : pd.DataFrame
-        End of trial data
+        End of trial data (used only for last trial's end time)
     eye_df : pd.DataFrame
         Eye position data (cleaned, no duplicates)
     target_df : pd.DataFrame
-        Target position data
+        Target position data from vstim_cue
 
     Returns
     -------
@@ -201,38 +207,51 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
         List of trial dictionaries containing trajectory and metadata
     """
     trials = []
-    n_trials = len(eot_df)
+    n_trials = len(target_df)
+
+    # Calculate inter-trial interval (ITI) from vstim_cue timestamps
+    # ITI = minimum difference between consecutive target presentations, rounded down
+    if n_trials > 1:
+        time_diffs = np.diff(target_df['timestamp'].values)
+        min_diff = np.min(time_diffs)
+        ITI = np.floor(min_diff)  # Round down to nearest whole second
+        print(f"\nCalculated ITI (inter-trial interval): {ITI:.0f} seconds")
+        print(f"  (from minimum difference in vstim_cue: {min_diff:.3f}s)")
+    else:
+        ITI = 0
+        print(f"\nWarning: Only 1 trial found, ITI set to 0")
 
     for i in range(n_trials):
-        # Use sequential trial number (1-indexed) instead of relying on CSV column
-        # which may be unreliable (e.g., all zeros)
         trial_num = i + 1
-        end_frame = eot_df.iloc[i]['frame']
-        end_time = eot_df.iloc[i]['timestamp']
 
-        # Find target position for this trial
-        # The trial starts when the target appears (vstim_cue), not at previous trial end
-        # Search for target between previous trial end and current trial end
-        if i > 0:
-            search_start_frame = eot_df.iloc[i-1]['frame']
+        # Trial starts at target onset (vstim_cue)
+        target_x = target_df.iloc[i]['target_x']
+        target_y = target_df.iloc[i]['target_y']
+        target_diameter = target_df.iloc[i]['diameter']
+        start_frame = target_df.iloc[i]['frame']
+        start_time = target_df.iloc[i]['timestamp']
+
+        # Calculate trial end time
+        if i < n_trials - 1:
+            # trial_end(i) = trial_start(i+1) - ITI
+            next_start_time = target_df.iloc[i+1]['timestamp']
+            next_start_frame = target_df.iloc[i+1]['frame']
+            end_time = next_start_time - ITI
+            # Estimate end frame based on time difference (assuming constant frame rate)
+            if start_time != end_time:
+                frame_rate = (next_start_frame - start_frame) / (next_start_time - start_time)
+                end_frame = int(start_frame + (end_time - start_time) * frame_rate)
+            else:
+                end_frame = start_frame
         else:
-            search_start_frame = 0
-
-        target_mask = (target_df['frame'] > search_start_frame) & (target_df['frame'] <= end_frame)
-        target_samples = target_df[target_mask]
-
-        if len(target_samples) > 0:
-            # Use the first target position for this trial
-            target_x = target_samples.iloc[0]['target_x']
-            target_y = target_samples.iloc[0]['target_y']
-            target_diameter = target_samples.iloc[0]['diameter']
-            # FIXED: Trial starts when target appears, not at previous trial end
-            start_frame = target_samples.iloc[0]['frame']
-            start_time = target_samples.iloc[0]['timestamp']
-        else:
-            # If no target found, skip this trial
-            print(f"Warning: No target found for trial {trial_num}, skipping")
-            continue
+            # Last trial: use end_of_trial data
+            if len(eot_df) > 0:
+                end_frame = eot_df.iloc[-1]['frame']
+                end_time = eot_df.iloc[-1]['timestamp']
+            else:
+                # If no eot data, estimate from ITI
+                end_time = start_time + ITI
+                end_frame = start_frame + 1000  # Rough estimate
 
         # Extract eye position trajectory for this trial
         # FIXED: Now starts from target onset, excluding inter-trial interval
@@ -322,10 +341,10 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
 
     print(f"\nExtracted {len(trials)} valid trials out of {n_trials} total")
     if len(trials) > 0:
-        print(f"  First trial duration: {trials[0]['duration']:.2f} (units: check if seconds or frames)")
+        print(f"  First trial duration: {trials[0]['duration']:.2f}s")
         if len(trials) > 1:
-            print(f"  Second trial duration: {trials[1]['duration']:.2f}")
-        print(f"  Mean trial duration: {np.mean([t['duration'] for t in trials]):.2f}")
+            print(f"  Second trial duration: {trials[1]['duration']:.2f}s")
+        print(f"  Mean trial duration: {np.mean([t['duration'] for t in trials]):.2f}s")
 
         print(f"\n  Starting eye positions:")
         for i, trial in enumerate(trials[:5]):  # Show first 5 trials
