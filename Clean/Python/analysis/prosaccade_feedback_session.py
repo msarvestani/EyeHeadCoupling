@@ -1329,8 +1329,16 @@ def analyze_starting_position_bias(trials: list[dict], min_duration: float = 0.1
 
     # Plot 3: 2D scatter of average positions
     ax = axes[1, 0]
-    ax.scatter(left_avg_x, left_avg_y, alpha=0.5, color='blue', s=30, label='Left targets')
-    ax.scatter(right_avg_x, right_avg_y, alpha=0.5, color='red', s=30, label='Right targets')
+    # Draw target positions
+    from matplotlib.patches import Circle
+    left_target_circle = Circle((-0.7, 0), radius=0.1, fill=False, edgecolor='blue',
+                                linewidth=2, linestyle='--', alpha=0.5, label='Left target')
+    right_target_circle = Circle((0.7, 0), radius=0.1, fill=False, edgecolor='red',
+                                 linewidth=2, linestyle='--', alpha=0.5, label='Right target')
+    ax.add_patch(left_target_circle)
+    ax.add_patch(right_target_circle)
+    ax.scatter(left_avg_x, left_avg_y, alpha=0.5, color='blue', s=30, label='Left trials')
+    ax.scatter(right_avg_x, right_avg_y, alpha=0.5, color='red', s=30, label='Right trials')
     # Plot means as larger markers
     ax.scatter([np.mean(left_avg_x)], [np.mean(left_avg_y)], color='blue', s=200,
                marker='*', edgecolors='black', linewidths=2, label='Left mean', zorder=10)
@@ -1571,8 +1579,16 @@ def analyze_ending_position_bias(trials: list[dict], min_duration: float = 0.1, 
 
     # Plot 3: 2D scatter of final positions
     ax = axes[1, 0]
-    ax.scatter(left_final_x, left_final_y, alpha=0.5, color='blue', s=30, label='Left targets')
-    ax.scatter(right_final_x, right_final_y, alpha=0.5, color='red', s=30, label='Right targets')
+    # Draw target positions
+    from matplotlib.patches import Circle
+    left_target_circle = Circle((-0.7, 0), radius=0.1, fill=False, edgecolor='blue',
+                                linewidth=2, linestyle='--', alpha=0.5, label='Left target')
+    right_target_circle = Circle((0.7, 0), radius=0.1, fill=False, edgecolor='red',
+                                 linewidth=2, linestyle='--', alpha=0.5, label='Right target')
+    ax.add_patch(left_target_circle)
+    ax.add_patch(right_target_circle)
+    ax.scatter(left_final_x, left_final_y, alpha=0.5, color='blue', s=30, label='Left trials')
+    ax.scatter(right_final_x, right_final_y, alpha=0.5, color='red', s=30, label='Right trials')
     # Plot means as larger markers
     ax.scatter([np.mean(left_final_x)], [np.mean(left_final_y)], color='blue', s=200,
                marker='*', edgecolors='black', linewidths=2, label='Left mean', zorder=10)
