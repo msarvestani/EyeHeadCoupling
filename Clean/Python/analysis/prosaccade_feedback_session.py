@@ -1269,9 +1269,9 @@ def plot_path_length(trials: list[dict], results_dir: Optional[Path] = None,
 def plot_final_positions_by_target(trials: list[dict], min_duration: float = 0.1, max_duration: float = 10.0,
                                    results_dir: Optional[Path] = None, animal_id: Optional[str] = None,
                                    session_date: str = "") -> plt.Figure:
-    """Plot final cursor positions grouped by target type (position + visibility).
+    """Plot final cursor positions grouped by target position.
 
-    Shows the last sample position for each trial, grouped by target location and visibility.
+    Shows the last sample position for each trial, grouped by target location.
 
     Parameters
     ----------
@@ -1309,43 +1309,41 @@ def plot_final_positions_by_target(trials: list[dict], min_duration: float = 0.1
         print("  Warning: No trials left after filtering!")
         return None
 
-    # Group trials by target type (position + visibility)
+    # Group trials by target position only (ignore visibility)
     target_groups = defaultdict(list)
     for t in filtered_trials:
         # Get final position (last sample)
         final_x = t['eye_x'][-1]
         final_y = t['eye_y'][-1]
 
-        # Key: (target_x, target_y, visibility)
-        target_key = (round(t['target_x'], 2), round(t['target_y'], 2), t.get('target_visible', 1))
+        # Key: (target_x, target_y) - NO visibility
+        target_key = (round(t['target_x'], 2), round(t['target_y'], 2))
         target_groups[target_key].append({
             'final_x': final_x,
             'final_y': final_y,
             'target_x': t['target_x'],
             'target_y': t['target_y'],
-            'target_diameter': t['target_diameter'],
-            'target_visible': t.get('target_visible', 1)
+            'target_diameter': t['target_diameter']
         })
 
     # Sort groups by position
-    sorted_groups = sorted(target_groups.keys(), key=lambda k: (k[0], k[1], k[2]))
+    sorted_groups = sorted(target_groups.keys(), key=lambda k: (k[0], k[1]))
 
-    print(f"  Detected {len(sorted_groups)} unique target types:")
+    print(f"  Detected {len(sorted_groups)} unique target positions:")
     for target_key in sorted_groups:
-        tx, ty, vis = target_key
+        tx, ty = target_key
         n_trials = len(target_groups[target_key])
-        vis_str = "visible" if vis else "invisible"
-        print(f"    Target ({tx:+.2f}, {ty:+.2f}) [{vis_str}]: {n_trials} trials")
+        print(f"    Target ({tx:+.2f}, {ty:+.2f}): {n_trials} trials")
 
     # Create figure
     fig, ax = plt.subplots(figsize=(10, 10))
 
-    # Use different colors for each unique target type
+    # Use different colors for each unique target position
     colors = plt.cm.tab10(np.linspace(0, 1, len(sorted_groups)))
 
-    # Plot each target type
+    # Plot each target position
     for idx, target_key in enumerate(sorted_groups):
-        tx, ty, vis = target_key
+        tx, ty = target_key
         trials_data = target_groups[target_key]
 
         # Extract final positions
@@ -1357,8 +1355,7 @@ def plot_final_positions_by_target(trials: list[dict], min_duration: float = 0.1
         mean_y = np.mean(final_ys)
 
         color = colors[idx]
-        vis_str = "vis" if vis else "invis"
-        label = f"Target ({tx:+.1f}, {ty:+.1f}) [{vis_str}] (n={len(trials_data)})"
+        label = f"Target ({tx:+.1f}, {ty:+.1f}) (n={len(trials_data)})"
 
         # Plot individual trial endpoints
         ax.scatter(final_xs, final_ys, alpha=0.4, color=color, s=30, label=label)
@@ -1369,23 +1366,17 @@ def plot_final_positions_by_target(trials: list[dict], min_duration: float = 0.1
 
         # Draw target circle at actual position
         target_radius = trials_data[0]['target_diameter'] / 2.0
-        linestyle = '-' if vis else '--'
-        alpha_val = 0.7 if vis else 0.4
 
         circle = Circle((tx, ty), radius=target_radius, fill=False,
-                       edgecolor=color, linewidth=2.5, linestyle=linestyle,
-                       alpha=alpha_val)
+                       edgecolor=color, linewidth=2.5, linestyle='-',
+                       alpha=0.7)
         ax.add_patch(circle)
 
         # Add small marker at target center
-        if vis:
-            ax.plot(tx, ty, 'o', color=color, markersize=5, markeredgecolor='black',
-                   markeredgewidth=0.5)
-        else:
-            ax.plot(tx, ty, 'o', color=color, markersize=5, markerfacecolor='none',
-                   markeredgecolor=color, markeredgewidth=1.5)
+        ax.plot(tx, ty, 'o', color=color, markersize=5, markeredgecolor='black',
+               markeredgewidth=0.5)
 
-        print(f"    Mean final position for ({tx:+.2f}, {ty:+.2f}) [{vis_str}]: "
+        print(f"    Mean final position for ({tx:+.2f}, {ty:+.2f}): "
               f"({mean_x:.3f}, {mean_y:.3f})")
 
     ax.set_xlabel('Horizontal Position (stimulus units)', fontsize=14)
