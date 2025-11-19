@@ -186,14 +186,17 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
                                 target_df: pd.DataFrame) -> list[dict]:
     """Extract eye position trajectories for each trial.
 
-    Trial timing is calculated from vstim_cue (target_df) and end_of_trial (eot_df):
+    Trial timing is calculated from vstim_cue (target_df):
     - Each trial starts at the timestamp/frame from vstim_cue
-    - Each trial ends at the timestamp/frame from end_of_trial (when cursor reaches target)
+    - Inter-trial interval (ITI) is inferred by finding the minimum difference
+      between consecutive vstim_cue timestamps, rounded down to nearest whole second
+    - Trial end: trial_end(i) = trial_start(i+1) - ITI
+    - Last trial uses end_of_trial data if available
 
     Parameters
     ----------
     eot_df : pd.DataFrame
-        End of trial data with trial_number column
+        End of trial data (used only for last trial if available)
     eye_df : pd.DataFrame
         Eye position data (cleaned, no duplicates)
     target_df : pd.DataFrame
@@ -207,13 +210,18 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
     trials = []
     n_trials = len(target_df)
 
-    # Debug: print trial info
-    print(f"\nTrial matching info:")
-    print(f"  Number of target trials (vstim_cue): {n_trials}")
-    print(f"  Number of end_of_trial events: {len(eot_df)}")
+    # Calculate inter-trial interval (ITI) from vstim_cue timestamps
+    # ITI = minimum difference between consecutive target presentations, rounded down
+    if n_trials > 1:
+        time_diffs = np.diff(target_df['timestamp'].values)
+        min_diff = np.min(time_diffs)
+        ITI = np.floor(min_diff)  # Round down to nearest whole second
+        print(f"\nCalculated ITI (inter-trial interval): {ITI:.0f} seconds")
+        print(f"  (from minimum difference in vstim_cue: {min_diff:.3f}s)")
+    else:
+        ITI = 0
+        print(f"\nWarning: Only 1 trial found, ITI set to 0")
 
-    # Match trials chronologically (by index) since trial_number column may not be reliable
-    # Assumes end_of_trial events are in chronological order matching vstim_cue trials
     for i in range(n_trials):
         trial_num = i + 1
 
@@ -224,15 +232,27 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
         start_frame = target_df.iloc[i]['frame']
         start_time = target_df.iloc[i]['timestamp']
 
-        # Match end_of_trial event chronologically by index
-        if i < len(eot_df):
-            # Use actual end time from end_of_trial.csv (when cursor reached target)
-            end_frame = int(eot_df.iloc[i]['frame'])
-            end_time = eot_df.iloc[i]['timestamp']
+        # Calculate trial end time
+        if i < n_trials - 1:
+            # trial_end(i) = trial_start(i+1) - ITI
+            next_start_time = target_df.iloc[i+1]['timestamp']
+            next_start_frame = target_df.iloc[i+1]['frame']
+            end_time = next_start_time - ITI
+            # Estimate end frame based on time difference (assuming constant frame rate)
+            if start_time != end_time:
+                frame_rate = (next_start_frame - start_frame) / (next_start_time - start_time)
+                end_frame = int(start_frame + (end_time - start_time) * frame_rate)
+            else:
+                end_frame = start_frame
         else:
-            # If no matching end_of_trial event, skip this trial
-            print(f"Warning: No end_of_trial event found for trial {trial_num}, skipping")
-            continue
+            # Last trial: use end_of_trial data if available
+            if len(eot_df) > 0 and i < len(eot_df):
+                end_frame = int(eot_df.iloc[i]['frame'])
+                end_time = eot_df.iloc[i]['timestamp']
+            else:
+                # If no eot data, estimate from ITI
+                end_time = start_time + ITI
+                end_frame = start_frame + 1000  # Rough estimate
 
         # Extract eye position trajectory for this trial
         # FIXED: Now starts from target onset, excluding inter-trial interval
