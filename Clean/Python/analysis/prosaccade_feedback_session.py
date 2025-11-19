@@ -1408,7 +1408,7 @@ def analyze_ending_position_bias(trials: list[dict], min_duration: float = 0.1, 
     filtered_trials = [t for t in trials if min_duration <= t['duration'] <= max_duration]
     n_excluded = len(trials) - len(filtered_trials)
 
-    print(f"\nFinal Position Bias Analysis:")
+    print(f"\nFinal Position Bias Analysis (avg last 0.1s):")
     print(f"  Total trials: {len(trials)}")
     print(f"  Excluded trials (duration < {min_duration}s or > {max_duration}s): {n_excluded}")
     print(f"  Trials included in analysis: {len(filtered_trials)}")
@@ -1428,20 +1428,42 @@ def analyze_ending_position_bias(trials: list[dict], min_duration: float = 0.1, 
         print("  Warning: Need both left and right trials for comparison!")
         return None, None
 
-    # Extract final positions (same as shown in interactive plot)
-    # Use the last position in each trial's eye trajectory
-    left_final_x = np.array([t['eye_x'][-1] for t in left_trials])
-    left_final_y = np.array([t['eye_y'][-1] for t in left_trials])
+    # Calculate average position during last 0.1 seconds for each trial
+    def get_avg_position_last_0_1s(trial):
+        """Calculate average eye position during last 0.1 seconds of trial."""
+        # Use eye trajectory's own timestamps for consistency
+        trial_times = trial['eye_times'] - trial['eye_start_time']  # Relative to eye trajectory start
+        trial_duration = trial['duration']
 
-    # Remove trials with NaN (not enough data)
+        # Time window: last 0.1 seconds
+        window_start = trial_duration - 0.1
+        window_end = trial_duration
+
+        mask = (trial_times >= window_start) & (trial_times <= window_end)
+
+        if np.sum(mask) == 0:
+            # No data in window, return NaN
+            return np.nan, np.nan
+
+        avg_x = np.mean(trial['eye_x'][mask])
+        avg_y = np.mean(trial['eye_y'][mask])
+        return avg_x, avg_y
+
+    # Extract average positions for left trials
+    left_positions = [get_avg_position_last_0_1s(t) for t in left_trials]
+    left_final_x = np.array([pos[0] for pos in left_positions])
+    left_final_y = np.array([pos[1] for pos in left_positions])
+
+    # Remove trials with NaN (not enough data in window)
     valid_left = ~(np.isnan(left_final_x) | np.isnan(left_final_y))
     left_final_x = left_final_x[valid_left]
     left_final_y = left_final_y[valid_left]
     n_valid_left = len(left_final_x)
 
-    # Extract final positions for right trials
-    right_final_x = np.array([t['eye_x'][-1] for t in right_trials])
-    right_final_y = np.array([t['eye_y'][-1] for t in right_trials])
+    # Extract average positions for right trials
+    right_positions = [get_avg_position_last_0_1s(t) for t in right_trials]
+    right_final_x = np.array([pos[0] for pos in right_positions])
+    right_final_y = np.array([pos[1] for pos in right_positions])
 
     # Remove trials with NaN
     valid_right = ~(np.isnan(right_final_x) | np.isnan(right_final_y))
@@ -1449,8 +1471,8 @@ def analyze_ending_position_bias(trials: list[dict], min_duration: float = 0.1, 
     right_final_y = right_final_y[valid_right]
     n_valid_right = len(right_final_x)
 
-    print(f"  Left target trials with valid final position: {n_valid_left}/{len(left_trials)}")
-    print(f"  Right target trials with valid final position: {n_valid_right}/{len(right_trials)}")
+    print(f"  Left target trials with valid data in last 0.1s: {n_valid_left}/{len(left_trials)}")
+    print(f"  Right target trials with valid data in last 0.1s: {n_valid_right}/{len(right_trials)}")
 
     if n_valid_left == 0 or n_valid_right == 0:
         print("  Warning: Not enough trials with valid final positions!")
@@ -1566,7 +1588,7 @@ def analyze_ending_position_bias(trials: list[dict], min_duration: float = 0.1, 
     ax.set_title('Summary Statistics\n(Mann-Whitney U Test)', fontsize=12, fontweight='bold', pad=20)
 
     # Overall title
-    title = f'Final Position Bias Analysis: Left vs Right Targets'
+    title = f'Final Position Bias Analysis (avg last 0.1s): Left vs Right Targets'
     if animal_id:
         title += f' - {animal_id}'
     if session_date:
