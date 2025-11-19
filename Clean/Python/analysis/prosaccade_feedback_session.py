@@ -1266,11 +1266,165 @@ def plot_path_length(trials: list[dict], results_dir: Optional[Path] = None,
     return fig
 
 
-def analyze_starting_position_bias(trials: list[dict], min_duration: float = 0.1, max_duration: float = 10.0,
+def plot_final_positions_by_target(trials: list[dict], min_duration: float = 0.1, max_duration: float = 10.0,
+                                   results_dir: Optional[Path] = None, animal_id: Optional[str] = None,
+                                   session_date: str = "") -> plt.Figure:
+    """Plot final cursor positions grouped by target type (position + visibility).
+
+    Shows the last sample position for each trial, grouped by target location and visibility.
+
+    Parameters
+    ----------
+    trials : list of dict
+        List of trial data dictionaries
+    min_duration : float
+        Minimum trial duration in seconds (default: 0.1)
+    max_duration : float
+        Maximum trial duration in seconds (default: 10.0)
+    results_dir : Path, optional
+        Directory to save the figure
+    animal_id : str, optional
+        Animal identifier for filename
+    session_date : str, optional
+        Session date for title
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+        The generated figure
+    """
+    from matplotlib.patches import Circle
+    from collections import defaultdict
+
+    # Filter trials by duration
+    filtered_trials = [t for t in trials if min_duration <= t['duration'] <= max_duration]
+    n_excluded = len(trials) - len(filtered_trials)
+
+    print(f"\nFinal Position Analysis:")
+    print(f"  Total trials: {len(trials)}")
+    print(f"  Excluded trials (duration < {min_duration}s or > {max_duration}s): {n_excluded}")
+    print(f"  Trials included in analysis: {len(filtered_trials)}")
+
+    if len(filtered_trials) == 0:
+        print("  Warning: No trials left after filtering!")
+        return None
+
+    # Group trials by target type (position + visibility)
+    target_groups = defaultdict(list)
+    for t in filtered_trials:
+        # Get final position (last sample)
+        final_x = t['eye_x'][-1]
+        final_y = t['eye_y'][-1]
+
+        # Key: (target_x, target_y, visibility)
+        target_key = (round(t['target_x'], 2), round(t['target_y'], 2), t.get('target_visible', 1))
+        target_groups[target_key].append({
+            'final_x': final_x,
+            'final_y': final_y,
+            'target_x': t['target_x'],
+            'target_y': t['target_y'],
+            'target_diameter': t['target_diameter'],
+            'target_visible': t.get('target_visible', 1)
+        })
+
+    # Sort groups by position
+    sorted_groups = sorted(target_groups.keys(), key=lambda k: (k[0], k[1], k[2]))
+
+    print(f"  Detected {len(sorted_groups)} unique target types:")
+    for target_key in sorted_groups:
+        tx, ty, vis = target_key
+        n_trials = len(target_groups[target_key])
+        vis_str = "visible" if vis else "invisible"
+        print(f"    Target ({tx:+.2f}, {ty:+.2f}) [{vis_str}]: {n_trials} trials")
+
+    # Create figure
+    fig, ax = plt.subplots(figsize=(10, 10))
+
+    # Use different colors for each unique target type
+    colors = plt.cm.tab10(np.linspace(0, 1, len(sorted_groups)))
+
+    # Plot each target type
+    for idx, target_key in enumerate(sorted_groups):
+        tx, ty, vis = target_key
+        trials_data = target_groups[target_key]
+
+        # Extract final positions
+        final_xs = [d['final_x'] for d in trials_data]
+        final_ys = [d['final_y'] for d in trials_data]
+
+        # Calculate mean
+        mean_x = np.mean(final_xs)
+        mean_y = np.mean(final_ys)
+
+        color = colors[idx]
+        vis_str = "vis" if vis else "invis"
+        label = f"Target ({tx:+.1f}, {ty:+.1f}) [{vis_str}] (n={len(trials_data)})"
+
+        # Plot individual trial endpoints
+        ax.scatter(final_xs, final_ys, alpha=0.4, color=color, s=30, label=label)
+
+        # Plot mean as larger marker
+        ax.scatter([mean_x], [mean_y], color=color, s=300, marker='*',
+                  edgecolors='black', linewidths=2, zorder=10)
+
+        # Draw target circle at actual position
+        target_radius = trials_data[0]['target_diameter'] / 2.0
+        linestyle = '-' if vis else '--'
+        alpha_val = 0.7 if vis else 0.4
+
+        circle = Circle((tx, ty), radius=target_radius, fill=False,
+                       edgecolor=color, linewidth=2.5, linestyle=linestyle,
+                       alpha=alpha_val)
+        ax.add_patch(circle)
+
+        # Add small marker at target center
+        if vis:
+            ax.plot(tx, ty, 'o', color=color, markersize=5, markeredgecolor='black',
+                   markeredgewidth=0.5)
+        else:
+            ax.plot(tx, ty, 'o', color=color, markersize=5, markerfacecolor='none',
+                   markeredgecolor=color, markeredgewidth=1.5)
+
+        print(f"    Mean final position for ({tx:+.2f}, {ty:+.2f}) [{vis_str}]: "
+              f"({mean_x:.3f}, {mean_y:.3f})")
+
+    ax.set_xlabel('Horizontal Position (stimulus units)', fontsize=14)
+    ax.set_ylabel('Vertical Position (stimulus units)', fontsize=14)
+
+    title = 'Final Cursor Positions by Target Type'
+    if animal_id:
+        title += f' - {animal_id}'
+    if session_date:
+        title += f' ({session_date})'
+    title += f'\n(Last sample position, filtered: {min_duration}s ≤ duration ≤ {max_duration}s, N={len(filtered_trials)})'
+    ax.set_title(title, fontsize=14, fontweight='bold')
+
+    ax.set_xlim(-1, 1)
+    ax.set_ylim(-1, 1)
+    ax.set_aspect('equal', adjustable='box')
+    ax.grid(True, alpha=0.3)
+    ax.legend(fontsize=9, loc='best')
+
+    plt.tight_layout()
+
+    # Save figure if results directory provided
+    if results_dir:
+        results_dir.mkdir(parents=True, exist_ok=True)
+        prefix = f"{animal_id}_" if animal_id else ""
+        filename = f"{prefix}final_positions_by_target.png"
+        fig.savefig(results_dir / filename, dpi=150, bbox_inches='tight')
+        print(f"\nSaved final positions plot to {results_dir / filename}")
+
+    return fig
+
+
+def analyze_starting_position_bias_DEPRECATED(trials: list[dict], min_duration: float = 0.1, max_duration: float = 10.0,
                                    time_window: tuple = (0.0, 0.1),
                                    results_dir: Optional[Path] = None, animal_id: Optional[str] = None,
                                    session_date: str = "") -> tuple:
-    """Analyze if average eye position during early trial period differs between left and right targets.
+    """DEPRECATED: Use plot_final_positions_by_target() instead.
+
+    Analyze if average eye position during early trial period differs between left and right targets.
 
     Filters trials by duration (exclude < 0.1s) and compares average eye position
     during the specified time window.
@@ -1563,11 +1717,13 @@ def analyze_starting_position_bias(trials: list[dict], min_duration: float = 0.1
     return fig, stats_dict
 
 
-def analyze_ending_position_bias(trials: list[dict], min_duration: float = 0.1, max_duration: float = 10.0,
+def analyze_ending_position_bias_DEPRECATED(trials: list[dict], min_duration: float = 0.1, max_duration: float = 10.0,
                                   time_window_before_end: tuple = (0.2, 0.0),
                                   results_dir: Optional[Path] = None, animal_id: Optional[str] = None,
                                   session_date: str = "") -> tuple:
-    """Analyze if final eye position differs between left and right targets.
+    """DEPRECATED: Use plot_final_positions_by_target() instead.
+
+    Analyze if final eye position differs between left and right targets.
 
     Filters trials by duration (0.1s to 10s) and compares final eye position
     (last sample in trajectory) between left and right target trials.
@@ -2850,25 +3006,15 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
             plt.show()
         plt.close(fig_lr)
 
-    print("\nAnalyzing starting position bias (left vs right targets)...")
-    fig_bias, bias_stats = analyze_starting_position_bias(trials, min_duration=trial_min_duration, max_duration=trial_max_duration,
-                                                          results_dir=results_dir,
-                                                          animal_id=animal_id,
-                                                          session_date=date_str)
-    if fig_bias is not None:
+    print("\nPlotting final positions by target type...")
+    fig_final_pos = plot_final_positions_by_target(trials, min_duration=trial_min_duration, max_duration=trial_max_duration,
+                                                    results_dir=results_dir,
+                                                    animal_id=animal_id,
+                                                    session_date=date_str)
+    if fig_final_pos is not None:
         if show_plots:
             plt.show()
-        plt.close(fig_bias)
-
-    print("\nAnalyzing ending position bias (left vs right targets)...")
-    fig_end_bias, end_bias_stats = analyze_ending_position_bias(trials, min_duration=trial_min_duration, max_duration=trial_max_duration,
-                                                                results_dir=results_dir,
-                                                                animal_id=animal_id,
-                                                                session_date=date_str)
-    if fig_end_bias is not None:
-        if show_plots:
-            plt.show()
-        plt.close(fig_end_bias)
+        plt.close(fig_final_pos)
 
     # Create summary DataFrame
     durations = [t['duration'] for t in trials]
@@ -3002,23 +3148,14 @@ def main(session_id: str, trial_min_duration: float = 0.1, trial_max_duration: f
         plt.show()
         plt.close(fig_lr)
 
-    print("\nAnalyzing starting position bias (left vs right targets)...")
-    fig_bias, bias_stats = analyze_starting_position_bias(trials, min_duration=trial_min_duration, max_duration=trial_max_duration,
-                                                          results_dir=results_dir,
-                                                          animal_id=animal_id,
-                                                          session_date=date_str)
-    if fig_bias is not None:
+    print("\nPlotting final positions by target type...")
+    fig_final_pos = plot_final_positions_by_target(trials, min_duration=trial_min_duration, max_duration=trial_max_duration,
+                                                    results_dir=results_dir,
+                                                    animal_id=animal_id,
+                                                    session_date=date_str)
+    if fig_final_pos is not None:
         plt.show()
-        plt.close(fig_bias)
-
-    print("\nAnalyzing ending position bias (left vs right targets)...")
-    fig_end_bias, end_bias_stats = analyze_ending_position_bias(trials, min_duration=trial_min_duration, max_duration=trial_max_duration,
-                                                                results_dir=results_dir,
-                                                                animal_id=animal_id,
-                                                                session_date=date_str)
-    if fig_end_bias is not None:
-        plt.show()
-        plt.close(fig_end_bias)
+        plt.close(fig_final_pos)
 
     # Create summary DataFrame
     durations = [t['duration'] for t in trials]
