@@ -207,17 +207,15 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
     trials = []
     n_trials = len(target_df)
 
-    # Debug: print trial number info
+    # Debug: print trial info
     print(f"\nTrial matching info:")
     print(f"  Number of target trials (vstim_cue): {n_trials}")
     print(f"  Number of end_of_trial events: {len(eot_df)}")
-    if len(eot_df) > 0:
-        print(f"  Trial numbers in end_of_trial: {sorted(eot_df['trial_number'].unique())}")
 
+    # Match trials chronologically (by index) since trial_number column may not be reliable
+    # Assumes end_of_trial events are in chronological order matching vstim_cue trials
     for i in range(n_trials):
-        # Try both 0-indexed and 1-indexed trial numbers
-        trial_num_1indexed = i + 1
-        trial_num_0indexed = i
+        trial_num = i + 1
 
         # Trial starts at target onset (vstim_cue)
         target_x = target_df.iloc[i]['target_x']
@@ -226,19 +224,14 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
         start_frame = target_df.iloc[i]['frame']
         start_time = target_df.iloc[i]['timestamp']
 
-        # Find corresponding end_of_trial event for this trial
-        # Try 1-indexed first, then 0-indexed
-        eot_match = eot_df[eot_df['trial_number'] == trial_num_1indexed]
-        if len(eot_match) == 0:
-            eot_match = eot_df[eot_df['trial_number'] == trial_num_0indexed]
-
-        if len(eot_match) > 0:
+        # Match end_of_trial event chronologically by index
+        if i < len(eot_df):
             # Use actual end time from end_of_trial.csv (when cursor reached target)
-            end_frame = int(eot_match.iloc[0]['frame'])
-            end_time = eot_match.iloc[0]['timestamp']
+            end_frame = int(eot_df.iloc[i]['frame'])
+            end_time = eot_df.iloc[i]['timestamp']
         else:
             # If no matching end_of_trial event, skip this trial
-            print(f"Warning: No end_of_trial event found for trial index {i}, skipping")
+            print(f"Warning: No end_of_trial event found for trial {trial_num}, skipping")
             continue
 
         # Extract eye position trajectory for this trial
