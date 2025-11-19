@@ -31,6 +31,7 @@ class SessionConfig:
     ttl_freq: Optional[float] = None
     calibration_factor: Optional[Any] = None
     folder_path: Optional[Path] = None
+    exclude_failed_trials: bool = True
     params: Dict[str, Any] = field(default_factory=dict)
 
     def __getattr__(self, item: str) -> Any:  # pragma: no cover - simple delegation
@@ -97,6 +98,7 @@ def load_session(session_id: str) -> SessionConfig:
         "calibration_factor",
         "folder_path",
         "session_path",
+        "exclude_failed_trials",
         "params",
     }
 
@@ -138,6 +140,7 @@ def load_session(session_id: str) -> SessionConfig:
         ttl_freq=data.get("ttl_freq"),
         calibration_factor=data.get("calibration_factor"),
         folder_path=Path(folder) if folder else None,
+        exclude_failed_trials=data.get("exclude_failed_trials", True),
         params=params,
     )
 
