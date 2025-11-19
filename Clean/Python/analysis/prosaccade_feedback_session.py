@@ -73,7 +73,7 @@ def load_feedback_data(folder_path: Path, animal_id: str = "Tsh001") -> Tuple[pd
     try:
         print(f"\nLoading {endoftrial_file.name}...")
         cleaned = clean_csv(str(endoftrial_file))
-        eot_arr = np.genfromtxt(cleaned, delimiter=",", skip_header=1)
+        eot_arr = np.genfromtxt(cleaned, delimiter=",", skip_header=1, dtype=float)
 
         # Check number of columns
         if eot_arr.ndim == 1:
@@ -105,7 +105,7 @@ def load_feedback_data(folder_path: Path, animal_id: str = "Tsh001") -> Tuple[pd
     try:
         print(f"\nLoading {vstim_go_file.name}...")
         cleaned = clean_csv(str(vstim_go_file))
-        eye_arr = np.genfromtxt(cleaned, delimiter=",", skip_header=1)
+        eye_arr = np.genfromtxt(cleaned, delimiter=",", skip_header=1, dtype=float)
 
         # Check number of columns
         if eye_arr.ndim == 1:
@@ -145,7 +145,7 @@ def load_feedback_data(folder_path: Path, animal_id: str = "Tsh001") -> Tuple[pd
     try:
         print(f"\nLoading {vstim_cue_file.name}...")
         cleaned = clean_csv(str(vstim_cue_file))
-        target_arr = np.genfromtxt(cleaned, delimiter=",", skip_header=1)
+        target_arr = np.genfromtxt(cleaned, delimiter=",", skip_header=1, dtype=float)
 
         # Check number of columns
         if target_arr.ndim == 1:
