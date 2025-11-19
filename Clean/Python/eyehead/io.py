@@ -107,6 +107,42 @@ class SessionData:
     cue_time: Optional[np.ndarray] = None
     cue_direction: Optional[np.ndarray] = None
 
+    # Trial success tracking
+    successful_trial_indices: Optional[np.ndarray] = None
+    failed_trial_indices: Optional[np.ndarray] = None
+    total_trials_detected: Optional[int] = None
+
+
+def get_failed_trial_info(data: SessionData) -> Optional[dict]:
+    """Get detailed information about failed trials.
+
+    Parameters
+    ----------
+    data : SessionData
+        Session data returned from load_session_data.
+
+    Returns
+    -------
+    dict or None
+        Dictionary containing failed trial information, or None if no tracking
+        data is available. The dictionary contains:
+        - 'total_trials': Total number of trials detected
+        - 'n_failed': Number of failed trials
+        - 'failed_indices': Array of failed trial indices
+        - 'failed_cue_times': Array of cue times for failed trials
+        - 'failed_cue_frames': Array of cue frames for failed trials
+    """
+    if data.failed_trial_indices is None or data.total_trials_detected is None:
+        return None
+
+    return {
+        'total_trials': data.total_trials_detected,
+        'n_successful': len(data.successful_trial_indices) if data.successful_trial_indices is not None else 0,
+        'n_failed': len(data.failed_trial_indices),
+        'failed_indices': data.failed_trial_indices,
+        'successful_indices': data.successful_trial_indices,
+    }
+
 
 def load_session_data(config: SessionConfig) -> SessionData:
     """Load all Bonsai-generated CSV files for a session."""
@@ -222,6 +258,7 @@ def load_session_data(config: SessionConfig) -> SessionData:
 
         # For each cue, find if there's a matching end_of_trial
         successful_trial_indices = []
+        failed_trial_indices = []
         eot_idx = 0
 
         for cue_idx in range(len(cue_times)):
@@ -255,7 +292,30 @@ def load_session_data(config: SessionConfig) -> SessionData:
 
             if not found_match:
                 # No matching end_of_trial found for this cue (failed trial)
-                pass
+                failed_trial_indices.append(cue_idx)
+
+        # Store trial tracking information
+        data.total_trials_detected = len(cue_times)
+        data.successful_trial_indices = np.array(successful_trial_indices, dtype=int)
+        data.failed_trial_indices = np.array(failed_trial_indices, dtype=int)
+
+        # Report trial statistics
+        n_total = len(cue_times)
+        n_success = len(successful_trial_indices)
+        n_failed = len(failed_trial_indices)
+        print(f"\n{'='*60}")
+        print(f"Trial Summary:")
+        print(f"  Total trials: {n_total}")
+        print(f"  Successful trials: {n_success} ({100*n_success/n_total:.1f}%)")
+        print(f"  Failed trials: {n_failed} ({100*n_failed/n_total:.1f}%)")
+        if n_failed > 0:
+            print(f"  Failed trial indices: {failed_trial_indices}")
+        print(f"  exclude_failed_trials: {config.exclude_failed_trials}")
+        if config.exclude_failed_trials:
+            print(f"  → Only successful trials will be included in analysis")
+        else:
+            print(f"  → All trials (including failed) will be included in analysis")
+        print(f"{'='*60}\n")
 
         # Filter arrays based on successful trials if exclude_failed_trials is True
         if config.exclude_failed_trials and len(successful_trial_indices) > 0:
@@ -356,6 +416,7 @@ def load_session_data(config: SessionConfig) -> SessionData:
 __all__ = [
     "SessionData",
     "load_session_data",
+    "get_failed_trial_info",
     "get_session_date_from_path",
     "determine_camera_side",
     "remove_parentheses_chars",
