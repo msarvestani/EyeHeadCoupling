@@ -154,15 +154,21 @@ def load_feedback_data(folder_path: Path, animal_id: str = "Tsh001") -> Tuple[pd
         n_cols = target_arr.shape[1]
         print(f"  Detected {n_cols} columns in vstim_cue file")
 
-        if n_cols == 5:
+        if n_cols == 6:
+            # New format with transparency/alpha column
+            target_df = pd.DataFrame(target_arr, columns=['frame', 'timestamp', 'target_x', 'target_y', 'diameter', 'alpha'])
+        elif n_cols == 5:
             target_df = pd.DataFrame(target_arr, columns=['frame', 'timestamp', 'target_x', 'target_y', 'diameter'])
+            target_df['alpha'] = 1.0  # Default: visible
+            print(f"  Warning: 'alpha' column not found, assuming all targets visible (alpha=1.0)")
         elif n_cols == 4:
             # Older format without diameter column
             target_df = pd.DataFrame(target_arr, columns=['frame', 'timestamp', 'target_x', 'target_y'])
             target_df['diameter'] = 0.5  # Default target diameter if not present
-            print(f"  Warning: 'diameter' column not found, using default value of 0.5")
+            target_df['alpha'] = 1.0  # Default: visible
+            print(f"  Warning: 'diameter' and 'alpha' columns not found, using defaults (diameter=0.5, alpha=1.0)")
         else:
-            raise ValueError(f"Unexpected number of columns: {n_cols}. Expected 4 or 5.")
+            raise ValueError(f"Unexpected number of columns: {n_cols}. Expected 4, 5, or 6.")
 
         target_df['frame'] = target_df['frame'].astype(int)
 
@@ -229,6 +235,7 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
         target_x = target_df.iloc[i]['target_x']
         target_y = target_df.iloc[i]['target_y']
         target_diameter = target_df.iloc[i]['diameter']
+        target_alpha = target_df.iloc[i]['alpha']
         start_frame = target_df.iloc[i]['frame']
         start_time = target_df.iloc[i]['timestamp']
 
@@ -334,6 +341,7 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
             'target_x': target_x,
             'target_y': target_y,
             'target_diameter': target_diameter,
+            'target_alpha': target_alpha,  # Target transparency (0=invisible, 1=visible)
             'start_eye_x': start_eye_x,
             'start_eye_y': start_eye_y,
             'eye_x': eye_trajectory['green_x'].values,
@@ -1882,6 +1890,333 @@ def compare_left_right_performance(trials: list[dict], left_x: float = -0.7, rig
     return fig, stats_dict
 
 
+def compare_visible_invisible_performance(trials: list[dict], results_dir: Optional[Path] = None,
+                                          animal_id: Optional[str] = None, session_date: str = "") -> tuple:
+    """Compare performance metrics for visible vs invisible target trials.
+
+    Parameters
+    ----------
+    trials : list of dict
+        List of trial data dictionaries
+    results_dir : Path, optional
+        Directory to save the figure
+    animal_id : str, optional
+        Animal identifier for filename
+    session_date : str, optional
+        Session date for title
+
+    Returns
+    -------
+    tuple of (fig, stats_dict)
+        Figure and dictionary containing statistics and test results
+    """
+    from scipy import stats as scipy_stats
+
+    # Classify trials as visible or invisible based on target_alpha
+    visible_trials = [t for t in trials if t['target_alpha'] >= 0.5]
+    invisible_trials = [t for t in trials if t['target_alpha'] < 0.5]
+
+    n_visible = len(visible_trials)
+    n_invisible = len(invisible_trials)
+
+    print(f"\nVisible/Invisible Target Analysis:")
+    print(f"  Visible trials (alpha ≥ 0.5): {n_visible}")
+    print(f"  Invisible trials (alpha < 0.5): {n_invisible}")
+
+    if n_visible == 0 or n_invisible == 0:
+        print("Warning: Not enough trials for visible/invisible comparison (need both types)")
+        return None, None
+
+    # Extract metrics for each condition
+    def extract_metrics(trial_list):
+        durations = [t['duration'] for t in trial_list]
+        path_lengths = [t['path_length'] for t in trial_list]
+        efficiencies = [t['path_efficiency'] for t in trial_list]
+        dir_errors = [t['initial_direction_error'] for t in trial_list if not np.isnan(t['initial_direction_error'])]
+        return {
+            'durations': durations,
+            'path_lengths': path_lengths,
+            'efficiencies': efficiencies,
+            'dir_errors': dir_errors
+        }
+
+    visible_metrics = extract_metrics(visible_trials)
+    invisible_metrics = extract_metrics(invisible_trials)
+
+    # Statistical tests (Mann-Whitney U test - non-parametric)
+    duration_stat, duration_p = scipy_stats.mannwhitneyu(
+        visible_metrics['durations'], invisible_metrics['durations'], alternative='two-sided'
+    )
+    length_stat, length_p = scipy_stats.mannwhitneyu(
+        visible_metrics['path_lengths'], invisible_metrics['path_lengths'], alternative='two-sided'
+    )
+    eff_stat, eff_p = scipy_stats.mannwhitneyu(
+        visible_metrics['efficiencies'], invisible_metrics['efficiencies'], alternative='two-sided'
+    )
+
+    # Create comparison plot
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+
+    # Plot 1: Time to Target
+    ax = axes[0, 0]
+    positions = [1, 2]
+    box_data = [visible_metrics['durations'], invisible_metrics['durations']]
+    bp = ax.boxplot(box_data, positions=positions, widths=0.6, patch_artist=True,
+                    boxprops=dict(facecolor='lightblue', edgecolor='black'),
+                    medianprops=dict(color='red', linewidth=2))
+    ax.set_xticks(positions)
+    ax.set_xticklabels(['Visible', 'Invisible'])
+    ax.set_ylabel('Time to Target (s)', fontsize=12)
+    ax.set_title(f'Time to Target\np = {duration_p:.4f}', fontsize=12, fontweight='bold')
+    ax.grid(True, alpha=0.3, axis='y')
+
+    # Add means as points
+    ax.plot(1, np.mean(visible_metrics['durations']), 'ro', markersize=10, label='Mean')
+    ax.plot(2, np.mean(invisible_metrics['durations']), 'ro', markersize=10)
+
+    # Add sample sizes
+    ax.text(1, ax.get_ylim()[0], f'n={n_visible}', ha='center', va='top', fontsize=9)
+    ax.text(2, ax.get_ylim()[0], f'n={n_invisible}', ha='center', va='top', fontsize=9)
+
+    # Plot 2: Path Length
+    ax = axes[0, 1]
+    box_data = [visible_metrics['path_lengths'], invisible_metrics['path_lengths']]
+    bp = ax.boxplot(box_data, positions=positions, widths=0.6, patch_artist=True,
+                    boxprops=dict(facecolor='lightgreen', edgecolor='black'),
+                    medianprops=dict(color='red', linewidth=2))
+    ax.set_xticks(positions)
+    ax.set_xticklabels(['Visible', 'Invisible'])
+    ax.set_ylabel('Path Length', fontsize=12)
+    ax.set_title(f'Path Length\np = {length_p:.4f}', fontsize=12, fontweight='bold')
+    ax.grid(True, alpha=0.3, axis='y')
+
+    ax.plot(1, np.mean(visible_metrics['path_lengths']), 'ro', markersize=10, label='Mean')
+    ax.plot(2, np.mean(invisible_metrics['path_lengths']), 'ro', markersize=10)
+
+    # Plot 3: Path Efficiency
+    ax = axes[1, 0]
+    box_data = [visible_metrics['efficiencies'], invisible_metrics['efficiencies']]
+    bp = ax.boxplot(box_data, positions=positions, widths=0.6, patch_artist=True,
+                    boxprops=dict(facecolor='lightyellow', edgecolor='black'),
+                    medianprops=dict(color='red', linewidth=2))
+    ax.set_xticks(positions)
+    ax.set_xticklabels(['Visible', 'Invisible'])
+    ax.set_ylabel('Path Efficiency', fontsize=12)
+    ax.set_title(f'Path Efficiency\np = {eff_p:.4f}', fontsize=12, fontweight='bold')
+    ax.grid(True, alpha=0.3, axis='y')
+
+    ax.plot(1, np.mean(visible_metrics['efficiencies']), 'ro', markersize=10, label='Mean')
+    ax.plot(2, np.mean(invisible_metrics['efficiencies']), 'ro', markersize=10)
+
+    # Plot 4: Summary statistics table
+    ax = axes[1, 1]
+    ax.axis('off')
+
+    # Create table data
+    table_data = [
+        ['Metric', 'Visible', 'Invisible', 'p-value'],
+        ['', f'(n={n_visible})', f'(n={n_invisible})', ''],
+        ['Duration (s)',
+         f'{np.mean(visible_metrics["durations"]):.2f}±{np.std(visible_metrics["durations"]):.2f}',
+         f'{np.mean(invisible_metrics["durations"]):.2f}±{np.std(invisible_metrics["durations"]):.2f}',
+         f'{duration_p:.4f}'],
+        ['Path Length',
+         f'{np.mean(visible_metrics["path_lengths"]):.3f}±{np.std(visible_metrics["path_lengths"]):.3f}',
+         f'{np.mean(invisible_metrics["path_lengths"]):.3f}±{np.std(invisible_metrics["path_lengths"]):.3f}',
+         f'{length_p:.4f}'],
+        ['Efficiency',
+         f'{np.mean(visible_metrics["efficiencies"]):.3f}±{np.std(visible_metrics["efficiencies"]):.3f}',
+         f'{np.mean(invisible_metrics["efficiencies"]):.3f}±{np.std(invisible_metrics["efficiencies"]):.3f}',
+         f'{eff_p:.4f}'],
+    ]
+
+    table = ax.table(cellText=table_data, cellLoc='center', loc='center',
+                     colWidths=[0.25, 0.25, 0.25, 0.25])
+    table.auto_set_font_size(False)
+    table.set_fontsize(10)
+    table.scale(1, 2.5)
+
+    # Style header row
+    for i in range(4):
+        table[(0, i)].set_facecolor('#40466e')
+        table[(0, i)].set_text_props(weight='bold', color='white')
+
+    # Add title
+    title = 'Performance Comparison: Visible vs Invisible Targets'
+    if animal_id:
+        title += f' - {animal_id}'
+    if session_date:
+        title += f' ({session_date})'
+    fig.suptitle(title, fontsize=14, fontweight='bold')
+
+    plt.tight_layout()
+
+    # Save figure if results directory provided
+    if results_dir:
+        results_dir.mkdir(parents=True, exist_ok=True)
+        prefix = f"{animal_id}_" if animal_id else ""
+        filename = f"{prefix}saccade_feedback_visible_vs_invisible.png"
+        fig.savefig(results_dir / filename, dpi=150, bbox_inches='tight')
+        print(f"Saved visible vs invisible comparison to {results_dir / filename}")
+
+    # Compile statistics dictionary
+    stats_dict = {
+        'n_visible': n_visible,
+        'n_invisible': n_invisible,
+        'visible_metrics': visible_metrics,
+        'invisible_metrics': invisible_metrics,
+        'p_values': {
+            'duration': duration_p,
+            'path_length': length_p,
+            'path_efficiency': eff_p
+        }
+    }
+
+    # Print summary
+    print(f"\n  Duration: Visible={np.mean(visible_metrics['durations']):.2f}s, Invisible={np.mean(invisible_metrics['durations']):.2f}s, p={duration_p:.4f}")
+    print(f"  Path Length: Visible={np.mean(visible_metrics['path_lengths']):.3f}, Invisible={np.mean(invisible_metrics['path_lengths']):.3f}, p={length_p:.4f}")
+    print(f"  Path Efficiency: Visible={np.mean(visible_metrics['efficiencies']):.3f}, Invisible={np.mean(invisible_metrics['efficiencies']):.3f}, p={eff_p:.4f}")
+
+    if duration_p < 0.05:
+        print(f"  *** Significant difference in duration (p < 0.05)")
+    if length_p < 0.05:
+        print(f"  *** Significant difference in path length (p < 0.05)")
+    if eff_p < 0.05:
+        print(f"  *** Significant difference in efficiency (p < 0.05)")
+
+    return fig, stats_dict
+
+
+def plot_density_heatmap_by_visibility(trials: list[dict], results_dir: Optional[Path] = None,
+                                        animal_id: Optional[str] = None, session_date: str = "") -> plt.Figure:
+    """Plot side-by-side 2D histogram heatmaps for visible vs invisible target trials.
+
+    Parameters
+    ----------
+    trials : list of dict
+        List of trial data dictionaries
+    results_dir : Path, optional
+        Directory to save the figure
+    animal_id : str, optional
+        Animal identifier for filename
+    session_date : str, optional
+        Session date for title
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+        The generated figure
+    """
+    # Classify trials as visible or invisible based on target_alpha
+    visible_trials = [t for t in trials if t['target_alpha'] >= 0.5]
+    invisible_trials = [t for t in trials if t['target_alpha'] < 0.5]
+
+    n_visible = len(visible_trials)
+    n_invisible = len(invisible_trials)
+
+    if n_visible == 0 or n_invisible == 0:
+        print("Warning: Not enough trials for visible/invisible heatmap comparison (need both types)")
+        return None
+
+    # Create figure with two subplots
+    fig, axes = plt.subplots(1, 2, figsize=(20, 9))
+
+    # Process visible trials
+    ax = axes[0]
+    all_x = []
+    all_y = []
+    for trial in visible_trials:
+        all_x.extend(trial['eye_x'])
+        all_y.extend(trial['eye_y'])
+
+    all_x = np.array(all_x)
+    all_y = np.array(all_y)
+
+    # Create 2D histogram
+    bins = 50
+    h, xedges, yedges = np.histogram2d(all_x, all_y, bins=bins, range=[[-1, 1], [-1, 1]])
+
+    # Plot heatmap
+    extent = [xedges[0], xedges[-1], yedges[0], yedges[-1]]
+    im = ax.imshow(h.T, extent=extent, origin='lower', cmap='hot', aspect='auto', interpolation='bilinear')
+
+    # Add colorbar
+    cbar = plt.colorbar(im, ax=ax, label='Number of Samples')
+
+    # Overlay target positions
+    for trial in visible_trials:
+        target_x = trial['target_x']
+        target_y = trial['target_y']
+        target_radius = trial['target_diameter'] / 2.0
+        target_circle = Circle((target_x, target_y), radius=target_radius, fill=False,
+                              edgecolor='cyan', linewidth=2, linestyle='-', alpha=0.7)
+        ax.add_patch(target_circle)
+
+    ax.set_xlabel('Horizontal Position (stimulus units)', fontsize=12)
+    ax.set_ylabel('Vertical Position (stimulus units)', fontsize=12)
+    ax.set_title(f'Visible Targets (n={n_visible})', fontsize=12, fontweight='bold')
+    ax.set_xlim(-1, 1)
+    ax.set_ylim(-1, 1)
+    ax.set_aspect('equal', adjustable='box')
+
+    # Process invisible trials
+    ax = axes[1]
+    all_x = []
+    all_y = []
+    for trial in invisible_trials:
+        all_x.extend(trial['eye_x'])
+        all_y.extend(trial['eye_y'])
+
+    all_x = np.array(all_x)
+    all_y = np.array(all_y)
+
+    # Create 2D histogram
+    h, xedges, yedges = np.histogram2d(all_x, all_y, bins=bins, range=[[-1, 1], [-1, 1]])
+
+    # Plot heatmap
+    extent = [xedges[0], xedges[-1], yedges[0], yedges[-1]]
+    im = ax.imshow(h.T, extent=extent, origin='lower', cmap='hot', aspect='auto', interpolation='bilinear')
+
+    # Add colorbar
+    cbar = plt.colorbar(im, ax=ax, label='Number of Samples')
+
+    # Overlay target positions
+    for trial in invisible_trials:
+        target_x = trial['target_x']
+        target_y = trial['target_y']
+        target_radius = trial['target_diameter'] / 2.0
+        target_circle = Circle((target_x, target_y), radius=target_radius, fill=False,
+                              edgecolor='cyan', linewidth=2, linestyle='-', alpha=0.7)
+        ax.add_patch(target_circle)
+
+    ax.set_xlabel('Horizontal Position (stimulus units)', fontsize=12)
+    ax.set_ylabel('Vertical Position (stimulus units)', fontsize=12)
+    ax.set_title(f'Invisible Targets (n={n_invisible})', fontsize=12, fontweight='bold')
+    ax.set_xlim(-1, 1)
+    ax.set_ylim(-1, 1)
+    ax.set_aspect('equal', adjustable='box')
+
+    # Add overall title
+    title = 'Eye Position Density Heatmaps: Visible vs Invisible Targets'
+    if animal_id:
+        title += f' - {animal_id}'
+    if session_date:
+        title += f' ({session_date})'
+    fig.suptitle(title, fontsize=14, fontweight='bold')
+
+    plt.tight_layout()
+
+    # Save figure if results directory provided
+    if results_dir:
+        results_dir.mkdir(parents=True, exist_ok=True)
+        prefix = f"{animal_id}_" if animal_id else ""
+        filename = f"{prefix}saccade_feedback_heatmap_visible_vs_invisible.png"
+        fig.savefig(results_dir / filename, dpi=150, bbox_inches='tight')
+        print(f"Saved visible vs invisible heatmap to {results_dir / filename}")
+
+    return fig
+
+
 def test_initial_direction_correlation(trials: list[dict], results_dir: Optional[Path] = None,
                                         animal_id: Optional[str] = None, session_date: str = "") -> tuple:
     """Test #2: Initial Direction Correlation - do initial movements point toward targets?
@@ -2661,6 +2996,26 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
             plt.show()
         plt.close(fig_end_bias)
 
+    print("\nComparing performance for visible vs invisible targets...")
+    fig_vis, vis_stats = compare_visible_invisible_performance(trials,
+                                                                results_dir=results_dir,
+                                                                animal_id=animal_id,
+                                                                session_date=date_str)
+    if fig_vis is not None:
+        if show_plots:
+            plt.show()
+        plt.close(fig_vis)
+
+    print("\nGenerating density heatmaps for visible vs invisible targets...")
+    fig_vis_heat = plot_density_heatmap_by_visibility(trials,
+                                                       results_dir=results_dir,
+                                                       animal_id=animal_id,
+                                                       session_date=date_str)
+    if fig_vis_heat is not None:
+        if show_plots:
+            plt.show()
+        plt.close(fig_vis_heat)
+
     # Create summary DataFrame
     durations = [t['duration'] for t in trials]
     path_lengths = [t['path_length'] for t in trials]
@@ -2810,6 +3165,24 @@ def main(session_id: str, trial_min_duration: float = 0.1, trial_max_duration: f
     if fig_end_bias is not None:
         plt.show()
         plt.close(fig_end_bias)
+
+    print("\nComparing performance for visible vs invisible targets...")
+    fig_vis, vis_stats = compare_visible_invisible_performance(trials,
+                                                                results_dir=results_dir,
+                                                                animal_id=animal_id,
+                                                                session_date=date_str)
+    if fig_vis is not None:
+        plt.show()
+        plt.close(fig_vis)
+
+    print("\nGenerating density heatmaps for visible vs invisible targets...")
+    fig_vis_heat = plot_density_heatmap_by_visibility(trials,
+                                                       results_dir=results_dir,
+                                                       animal_id=animal_id,
+                                                       session_date=date_str)
+    if fig_vis_heat is not None:
+        plt.show()
+        plt.close(fig_vis_heat)
 
     # Create summary DataFrame
     durations = [t['duration'] for t in trials]
