@@ -297,13 +297,20 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
             straight_line_distance = 0.0
             initial_direction_error = np.nan
 
+        # Use eye trajectory timestamps for relative time calculations
+        # to avoid mixing timestamps from different CSV files
+        eye_times_raw = eye_trajectory['timestamp'].values
+        eye_start_time = eye_times_raw[0]
+        eye_end_time = eye_times_raw[-1]
+        eye_duration = eye_end_time - eye_start_time
+
         trial_data = {
             'trial_number': trial_num,
             'start_frame': start_frame,
             'end_frame': end_frame,
             'start_time': start_time,
             'end_time': end_time,
-            'duration': end_time - start_time,
+            'duration': eye_duration,  # Use eye trajectory duration for consistency
             'target_x': target_x,
             'target_y': target_y,
             'target_diameter': target_diameter,
@@ -311,7 +318,8 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
             'start_eye_y': start_eye_y,
             'eye_x': eye_trajectory['green_x'].values,
             'eye_y': eye_trajectory['green_y'].values,
-            'eye_times': eye_trajectory['timestamp'].values,
+            'eye_times': eye_times_raw,
+            'eye_start_time': eye_start_time,  # For relative time calculations
             'path_length': path_length,
             'straight_line_distance': straight_line_distance,
             'path_efficiency': path_efficiency,
@@ -1190,7 +1198,8 @@ def analyze_starting_position_bias(trials: list[dict], min_duration: float = 0.1
     # Calculate average position during time window for each trial
     def get_avg_position_in_window(trial, window_start, window_end):
         """Calculate average eye position during specified time window."""
-        trial_times = trial['eye_times'] - trial['start_time']  # Relative to trial start
+        # Use eye trajectory's own timestamps for consistency
+        trial_times = trial['eye_times'] - trial['eye_start_time']  # Relative to eye trajectory start
         mask = (trial_times >= window_start) & (trial_times <= window_end)
 
         if np.sum(mask) == 0:
@@ -1425,7 +1434,8 @@ def analyze_ending_position_bias(trials: list[dict], min_duration: float = 0.1, 
     # Calculate average position during time window before end for each trial
     def get_avg_position_before_end(trial, max_before_end, min_before_end):
         """Calculate average eye position during specified time window before trial end."""
-        trial_times = trial['eye_times'] - trial['start_time']  # Relative to trial start
+        # Use eye trajectory's own timestamps for consistency
+        trial_times = trial['eye_times'] - trial['eye_start_time']  # Relative to eye trajectory start
         trial_duration = trial['duration']
 
         # Time window: [duration - max_before_end, duration - min_before_end]
