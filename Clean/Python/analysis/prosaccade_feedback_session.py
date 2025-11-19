@@ -394,8 +394,10 @@ def plot_trajectories(trials: list[dict], results_dir: Optional[Path] = None,
         # Mark start and end points with different markers
         ax.plot(eye_x[0], eye_y[0], 'o', color=color, markersize=8, alpha=0.9,
                 markeredgecolor='white', markeredgewidth=1)
-        ax.plot(eye_x[-1], eye_y[-1], 's', color=color, markersize=8, alpha=0.9,
-                markeredgecolor='white', markeredgewidth=1)
+        # Draw end position as circle with diameter 0.2 (radius 0.1)
+        end_circle = Circle((eye_x[-1], eye_y[-1]), radius=0.1, fill=True,
+                           facecolor=color, edgecolor='white', linewidth=1, alpha=0.9)
+        ax.add_patch(end_circle)
 
         # Draw target position as black circle at actual position with actual diameter
         target_x = trial['target_x']
@@ -488,8 +490,10 @@ def plot_trajectories_by_direction(trials: list[dict], results_dir: Optional[Pat
         # Mark start and end points
         ax.plot(eye_x[0], eye_y[0], 'o', color=left_color, markersize=6, alpha=0.7,
                 markeredgecolor='white', markeredgewidth=1)
-        ax.plot(eye_x[-1], eye_y[-1], 's', color=left_color, markersize=6, alpha=0.7,
-                markeredgecolor='white', markeredgewidth=1)
+        # Draw end position as circle with diameter 0.2 (radius 0.1)
+        end_circle = Circle((eye_x[-1], eye_y[-1]), radius=0.1, fill=True,
+                           facecolor=left_color, edgecolor='white', linewidth=1, alpha=0.7)
+        ax.add_patch(end_circle)
 
     # Plot right trials
     for trial in right_trials:
@@ -501,8 +505,10 @@ def plot_trajectories_by_direction(trials: list[dict], results_dir: Optional[Pat
         # Mark start and end points
         ax.plot(eye_x[0], eye_y[0], 'o', color=right_color, markersize=6, alpha=0.7,
                 markeredgecolor='white', markeredgewidth=1)
-        ax.plot(eye_x[-1], eye_y[-1], 's', color=right_color, markersize=6, alpha=0.7,
-                markeredgecolor='white', markeredgewidth=1)
+        # Draw end position as circle with diameter 0.2 (radius 0.1)
+        end_circle = Circle((eye_x[-1], eye_y[-1]), radius=0.1, fill=True,
+                           facecolor=right_color, edgecolor='white', linewidth=1, alpha=0.7)
+        ax.add_patch(end_circle)
 
     # Draw targets
     targets_drawn = set()
@@ -539,10 +545,10 @@ def plot_trajectories_by_direction(trials: list[dict], results_dir: Optional[Pat
     legend_elements = [
         Line2D([0], [0], color=left_color, linewidth=2, label=f'Left targets (n={len(left_trials)})'),
         Line2D([0], [0], color=right_color, linewidth=2, label=f'Right targets (n={len(right_trials)})'),
-        Line2D([0], [0], marker='o', color='gray', linewidth=0, markersize=8,
+        Line2D([0], [0], marker='o', color='gray', linewidth=0, markersize=6,
                markeredgecolor='white', markeredgewidth=1, label='Start'),
-        Line2D([0], [0], marker='s', color='gray', linewidth=0, markersize=8,
-               markeredgecolor='white', markeredgewidth=1, label='End'),
+        Line2D([0], [0], marker='o', color='gray', linewidth=0, markersize=12,
+               markeredgecolor='white', markeredgewidth=1, label='End (0.2 diam)'),
     ]
     ax.legend(handles=legend_elements, loc='upper right', fontsize=10, framealpha=0.9)
 
@@ -663,11 +669,13 @@ def interactive_trajectories(trials: list[dict], animal_id: Optional[str] = None
         start, = ax.plot(eye_x[0], eye_y[0], 'o', color=color,
                         markersize=10, markeredgecolor='white',
                         markeredgewidth=2, alpha=0.9, label='Start')
-        end, = ax.plot(eye_x[-1], eye_y[-1], 's', color=color,
-                      markersize=10, markeredgecolor='white',
-                      markeredgewidth=2, alpha=0.9, label='End')
+        # Draw end position as circle with diameter 0.2 (radius 0.1)
+        end_circle = Circle((eye_x[-1], eye_y[-1]), radius=0.1, fill=True,
+                           facecolor=color, edgecolor='white', linewidth=2, alpha=0.9,
+                           label='End' if trial_idx == 0 else None)
+        ax.add_patch(end_circle)
 
-        trial_lines.extend([line, start, end])
+        trial_lines.extend([line, start, end_circle])
 
         # Update progress text
         target_dir = 'Left' if trial['target_x'] < 0 else 'Right'
@@ -768,8 +776,10 @@ def animate_trajectories(trials: list[dict], results_dir: Optional[Path] = None,
     current_line, = ax.plot([], [], '-', linewidth=1.5, alpha=0.8)
     current_start, = ax.plot([], [], 'o', markersize=8, markeredgecolor='white',
                              markeredgewidth=1, alpha=0.9)
-    current_end, = ax.plot([], [], 's', markersize=8, markeredgecolor='white',
-                           markeredgewidth=1, alpha=0.9)
+    # Create end marker as circle with diameter 0.2 (radius 0.1)
+    current_end = Circle((0, 0), radius=0.1, fill=True, edgecolor='white',
+                        linewidth=1, alpha=0.9, visible=False)
+    ax.add_patch(current_end)
 
     # Text showing progress
     progress_text = ax.text(0.02, 0.98, '', transform=ax.transAxes,
@@ -818,10 +828,11 @@ def animate_trajectories(trials: list[dict], results_dir: Optional[Path] = None,
 
         # Update end marker if we're at the end of this trial
         if end_idx == len(eye_x):
-            current_end.set_data([eye_x[-1]], [eye_y[-1]])
-            current_end.set_color(color)
+            current_end.set_center((eye_x[-1], eye_y[-1]))
+            current_end.set_facecolor(color)
+            current_end.set_visible(True)
         else:
-            current_end.set_data([], [])
+            current_end.set_visible(False)
 
         # Update progress text
         progress_text.set_text(f'Trial {current_trial_idx + 1}/{n_trials}\n' +
@@ -835,9 +846,11 @@ def animate_trajectories(trials: list[dict], results_dir: Optional[Path] = None,
             completed_start, = ax.plot(eye_x[0], eye_y[0], 'o', color=color,
                                       markersize=8, markeredgecolor='white',
                                       markeredgewidth=1, alpha=0.9)
-            completed_end, = ax.plot(eye_x[-1], eye_y[-1], 's', color=color,
-                                    markersize=8, markeredgecolor='white',
-                                    markeredgewidth=1, alpha=0.9)
+            # Draw end position as circle with diameter 0.2 (radius 0.1)
+            completed_end = Circle((eye_x[-1], eye_y[-1]), radius=0.1, fill=True,
+                                  facecolor=color, edgecolor='white',
+                                  linewidth=1, alpha=0.9)
+            ax.add_patch(completed_end)
 
             completed_lines.extend([completed_line, completed_start, completed_end])
 
