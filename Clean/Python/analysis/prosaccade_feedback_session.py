@@ -1372,7 +1372,7 @@ def analyze_starting_position_bias(trials: list[dict], min_duration: float = 0.1
 
 
 def analyze_ending_position_bias(trials: list[dict], min_duration: float = 0.1, max_duration: float = 10.0,
-                                  time_window_before_end: tuple = (0.5, 0.1),
+                                  time_window_before_end: tuple = (0.2, 0.0),
                                   results_dir: Optional[Path] = None, animal_id: Optional[str] = None,
                                   session_date: str = "") -> tuple:
     """Analyze if average eye position during late trial period differs between left and right targets.
@@ -1390,7 +1390,7 @@ def analyze_ending_position_bias(trials: list[dict], min_duration: float = 0.1, 
         Maximum trial duration in seconds (default: 10.0)
     time_window_before_end : tuple
         Time window (max_before_end, min_before_end) in seconds before trial end
-        for averaging position (default: 0.5-0.1s before end)
+        for averaging position (default: last 0.2s)
     results_dir : Path, optional
         Directory to save the figure
     animal_id : str, optional
