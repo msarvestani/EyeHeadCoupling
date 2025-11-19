@@ -207,8 +207,17 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
     trials = []
     n_trials = len(target_df)
 
+    # Debug: print trial number info
+    print(f"\nTrial matching info:")
+    print(f"  Number of target trials (vstim_cue): {n_trials}")
+    print(f"  Number of end_of_trial events: {len(eot_df)}")
+    if len(eot_df) > 0:
+        print(f"  Trial numbers in end_of_trial: {sorted(eot_df['trial_number'].unique())}")
+
     for i in range(n_trials):
-        trial_num = i + 1
+        # Try both 0-indexed and 1-indexed trial numbers
+        trial_num_1indexed = i + 1
+        trial_num_0indexed = i
 
         # Trial starts at target onset (vstim_cue)
         target_x = target_df.iloc[i]['target_x']
@@ -218,7 +227,10 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
         start_time = target_df.iloc[i]['timestamp']
 
         # Find corresponding end_of_trial event for this trial
-        eot_match = eot_df[eot_df['trial_number'] == trial_num]
+        # Try 1-indexed first, then 0-indexed
+        eot_match = eot_df[eot_df['trial_number'] == trial_num_1indexed]
+        if len(eot_match) == 0:
+            eot_match = eot_df[eot_df['trial_number'] == trial_num_0indexed]
 
         if len(eot_match) > 0:
             # Use actual end time from end_of_trial.csv (when cursor reached target)
@@ -226,7 +238,7 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
             end_time = eot_match.iloc[0]['timestamp']
         else:
             # If no matching end_of_trial event, skip this trial
-            print(f"Warning: No end_of_trial event found for trial {trial_num}, skipping")
+            print(f"Warning: No end_of_trial event found for trial index {i}, skipping")
             continue
 
         # Extract eye position trajectory for this trial
