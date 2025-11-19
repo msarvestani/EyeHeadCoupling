@@ -2506,7 +2506,8 @@ def _clean_path(path_str: str | Path) -> str:
 
 
 def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = None,
-                   animal_id: str = "Tsh001", show_plots: bool = True) -> pd.DataFrame:
+                   animal_id: str = "Tsh001", show_plots: bool = True,
+                   trial_min_duration: float = 0.1, trial_max_duration: float = 10.0) -> pd.DataFrame:
     """Run saccade feedback analysis directly on a folder (without session manifest).
 
     Parameters
@@ -2519,6 +2520,10 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
         Animal identifier (default: "Tsh001")
     show_plots : bool
         Whether to display plots (default: True)
+    trial_min_duration : float
+        Minimum trial duration for position bias analyses (default: 0.1 seconds)
+    trial_max_duration : float
+        Maximum trial duration for position bias analyses (default: 10.0 seconds)
 
     Returns
     -------
@@ -2609,7 +2614,7 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
         plt.close(fig_lr)
 
     print("\nAnalyzing starting position bias (left vs right targets)...")
-    fig_bias, bias_stats = analyze_starting_position_bias(trials, min_duration=0.1, max_duration=10.0,
+    fig_bias, bias_stats = analyze_starting_position_bias(trials, min_duration=trial_min_duration, max_duration=trial_max_duration,
                                                           results_dir=results_dir,
                                                           animal_id=animal_id,
                                                           session_date=date_str)
@@ -2619,7 +2624,7 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
         plt.close(fig_bias)
 
     print("\nAnalyzing ending position bias (left vs right targets)...")
-    fig_end_bias, end_bias_stats = analyze_ending_position_bias(trials, min_duration=0.1, max_duration=10.0,
+    fig_end_bias, end_bias_stats = analyze_ending_position_bias(trials, min_duration=trial_min_duration, max_duration=trial_max_duration,
                                                                 results_dir=results_dir,
                                                                 animal_id=animal_id,
                                                                 session_date=date_str)
@@ -2680,13 +2685,17 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
     return df
 
 
-def main(session_id: str) -> pd.DataFrame:
+def main(session_id: str, trial_min_duration: float = 0.1, trial_max_duration: float = 10.0) -> pd.DataFrame:
     """Run the saccade feedback analysis pipeline for ``session_id``.
 
     Parameters
     ----------
     session_id : str
         Identifier of the session to analyse.
+    trial_min_duration : float
+        Minimum trial duration for position bias analyses (default: 0.1 seconds)
+    trial_max_duration : float
+        Maximum trial duration for position bias analyses (default: 10.0 seconds)
 
     Returns
     -------
@@ -2757,7 +2766,7 @@ def main(session_id: str) -> pd.DataFrame:
         plt.close(fig_lr)
 
     print("\nAnalyzing starting position bias (left vs right targets)...")
-    fig_bias, bias_stats = analyze_starting_position_bias(trials, min_duration=0.1, max_duration=10.0,
+    fig_bias, bias_stats = analyze_starting_position_bias(trials, min_duration=trial_min_duration, max_duration=trial_max_duration,
                                                           results_dir=results_dir,
                                                           animal_id=animal_id,
                                                           session_date=date_str)
@@ -2766,7 +2775,7 @@ def main(session_id: str) -> pd.DataFrame:
         plt.close(fig_bias)
 
     print("\nAnalyzing ending position bias (left vs right targets)...")
-    fig_end_bias, end_bias_stats = analyze_ending_position_bias(trials, min_duration=0.1, max_duration=10.0,
+    fig_end_bias, end_bias_stats = analyze_ending_position_bias(trials, min_duration=trial_min_duration, max_duration=trial_max_duration,
                                                                 results_dir=results_dir,
                                                                 animal_id=animal_id,
                                                                 session_date=date_str)
