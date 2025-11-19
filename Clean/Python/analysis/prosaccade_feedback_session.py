@@ -1067,8 +1067,6 @@ def plot_time_to_target(trials: list[dict], results_dir: Optional[Path] = None,
                         animal_id: Optional[str] = None, session_date: str = "") -> plt.Figure:
     """Plot time from trial onset to trial end (time to reach target).
 
-    Compares visible vs invisible target trials if both are present.
-
     Parameters
     ----------
     trials : list of dict
@@ -1085,48 +1083,15 @@ def plot_time_to_target(trials: list[dict], results_dir: Optional[Path] = None,
     matplotlib.figure.Figure
         The generated figure
     """
-    # Separate trials by target visibility
-    visible_trials = [t for t in trials if t.get('target_visible', 1) == 1]
-    invisible_trials = [t for t in trials if t.get('target_visible', 1) == 0]
-
-    has_both = len(visible_trials) > 0 and len(invisible_trials) > 0
-
     trial_numbers = [t['trial_number'] for t in trials]
     durations = [t['duration'] for t in trials]
 
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8))
 
     # Plot 1: Duration vs trial number
-    if has_both:
-        # Plot visible and invisible separately
-        vis_trial_nums = [t['trial_number'] for t in visible_trials]
-        vis_durations = [t['duration'] for t in visible_trials]
-        invis_trial_nums = [t['trial_number'] for t in invisible_trials]
-        invis_durations = [t['duration'] for t in invisible_trials]
-
-        ax1.plot(vis_trial_nums, vis_durations, 'o-', linewidth=2, markersize=8,
-                color='steelblue', markerfacecolor='lightblue', markeredgecolor='steelblue',
-                markeredgewidth=1.5, label=f'Visible targets (n={len(visible_trials)})')
-        ax1.plot(invis_trial_nums, invis_durations, 's--', linewidth=2, markersize=8,
-                color='coral', markerfacecolor='lightsalmon', markeredgecolor='coral',
-                markeredgewidth=1.5, label=f'Invisible targets (n={len(invisible_trials)})')
-
-        # Add mean lines
-        mean_vis = np.mean(vis_durations)
-        mean_invis = np.mean(invis_durations)
-        ax1.axhline(mean_vis, color='steelblue', linestyle=':', linewidth=2, alpha=0.7,
-                   label=f'Visible mean: {mean_vis:.2f}s')
-        ax1.axhline(mean_invis, color='coral', linestyle=':', linewidth=2, alpha=0.7,
-                   label=f'Invisible mean: {mean_invis:.2f}s')
-    else:
-        # All trials same visibility
-        ax1.plot(trial_numbers, durations, 'o-', linewidth=2, markersize=8,
-                color='steelblue', markerfacecolor='lightblue', markeredgecolor='steelblue',
-                markeredgewidth=1.5)
-        mean_duration = np.mean(durations)
-        ax1.axhline(mean_duration, color='red', linestyle='--', linewidth=2,
-                   label=f'Mean: {mean_duration:.2f}s')
-
+    ax1.plot(trial_numbers, durations, 'o-', linewidth=2, markersize=8,
+            color='steelblue', markerfacecolor='lightblue', markeredgecolor='steelblue',
+            markeredgewidth=1.5)
     ax1.set_xlabel('Trial Number', fontsize=12)
     ax1.set_ylabel('Time to Target (seconds)', fontsize=12)
 
@@ -1137,40 +1102,24 @@ def plot_time_to_target(trials: list[dict], results_dir: Optional[Path] = None,
         title += f' ({session_date})'
     ax1.set_title(title, fontsize=14, fontweight='bold')
     ax1.grid(True, alpha=0.3)
+
+    # Add mean line
+    mean_duration = np.mean(durations)
+    ax1.axhline(mean_duration, color='red', linestyle='--', linewidth=2,
+               label=f'Mean: {mean_duration:.2f}s')
     ax1.legend(fontsize=10)
 
     # Plot 2: Histogram of durations
-    if has_both:
-        # Overlapping histograms for visible vs invisible
-        vis_durations = [t['duration'] for t in visible_trials]
-        invis_durations = [t['duration'] for t in invisible_trials]
-
-        ax2.hist(vis_durations, bins=20, color='steelblue', alpha=0.6, edgecolor='black',
-                label=f'Visible (n={len(visible_trials)})')
-        ax2.hist(invis_durations, bins=20, color='coral', alpha=0.6, edgecolor='black',
-                label=f'Invisible (n={len(invisible_trials)})')
-        ax2.legend(fontsize=10)
-
-        # Statistics comparison
-        from scipy import stats as scipy_stats
-        stat, p_value = scipy_stats.mannwhitneyu(vis_durations, invis_durations, alternative='two-sided')
-
-        stats_text = (f'Visible: {np.mean(vis_durations):.2f}±{np.std(vis_durations):.2f}s (n={len(vis_durations)})\n'
-                     f'Invisible: {np.mean(invis_durations):.2f}±{np.std(invis_durations):.2f}s (n={len(invis_durations)})\n'
-                     f'Mann-Whitney U: p={p_value:.4f}')
-    else:
-        ax2.hist(durations, bins=20, color='steelblue', alpha=0.7, edgecolor='black')
-
-        std_duration = np.std(durations)
-        median_duration = np.median(durations)
-        mean_duration = np.mean(durations)
-        stats_text = f'Mean: {mean_duration:.2f}s\nMedian: {median_duration:.2f}s\nStd: {std_duration:.2f}s\nN: {len(durations)}'
-
+    ax2.hist(durations, bins=20, color='steelblue', alpha=0.7, edgecolor='black')
     ax2.set_xlabel('Time to Target (seconds)', fontsize=12)
     ax2.set_ylabel('Number of Trials', fontsize=12)
     ax2.set_title('Distribution of Trial Durations', fontsize=12, fontweight='bold')
     ax2.grid(True, alpha=0.3, axis='y')
 
+    # Add statistics text
+    std_duration = np.std(durations)
+    median_duration = np.median(durations)
+    stats_text = f'Mean: {mean_duration:.2f}s\nMedian: {median_duration:.2f}s\nStd: {std_duration:.2f}s\nN: {len(durations)}'
     ax2.text(0.95, 0.95, stats_text, transform=ax2.transAxes,
             fontsize=10, verticalalignment='top', horizontalalignment='right',
             bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
@@ -2234,6 +2183,216 @@ def compare_left_right_performance(trials: list[dict], left_x: float = -0.7, rig
     return fig, stats_dict
 
 
+def compare_visible_invisible_performance(trials: list[dict], results_dir: Optional[Path] = None,
+                                          animal_id: Optional[str] = None, session_date: str = "") -> tuple:
+    """Compare performance metrics for visible vs invisible target trials.
+
+    Parameters
+    ----------
+    trials : list of dict
+        List of trial data dictionaries
+    results_dir : Path, optional
+        Directory to save the figure
+    animal_id : str, optional
+        Animal identifier for filename
+    session_date : str, optional
+        Session date for title
+
+    Returns
+    -------
+    tuple of (fig, stats_dict)
+        Figure and dictionary containing statistics and test results
+    """
+    from scipy import stats as scipy_stats
+
+    # Classify trials by target visibility
+    visible_trials = [t for t in trials if t.get('target_visible', 1) == 1]
+    invisible_trials = [t for t in trials if t.get('target_visible', 1) == 0]
+
+    n_visible = len(visible_trials)
+    n_invisible = len(invisible_trials)
+
+    print(f"\nVisible/Invisible Target Analysis:")
+    print(f"  Visible trials: {n_visible}")
+    print(f"  Invisible trials: {n_invisible}")
+
+    if n_visible == 0 or n_invisible == 0:
+        print("Warning: Not enough trials for visible/invisible comparison")
+        return None, None
+
+    # Extract metrics for each group
+    def extract_metrics(trial_list):
+        durations = [t['duration'] for t in trial_list]
+        path_lengths = [t['path_length'] for t in trial_list]
+        efficiencies = [t['path_efficiency'] for t in trial_list]
+        dir_errors = [t['initial_direction_error'] for t in trial_list if not np.isnan(t['initial_direction_error'])]
+        return {
+            'durations': durations,
+            'path_lengths': path_lengths,
+            'efficiencies': efficiencies,
+            'dir_errors': dir_errors
+        }
+
+    visible_metrics = extract_metrics(visible_trials)
+    invisible_metrics = extract_metrics(invisible_trials)
+
+    # Statistical tests (Mann-Whitney U test - non-parametric)
+    duration_stat, duration_p = scipy_stats.mannwhitneyu(
+        visible_metrics['durations'], invisible_metrics['durations'], alternative='two-sided'
+    )
+    length_stat, length_p = scipy_stats.mannwhitneyu(
+        visible_metrics['path_lengths'], invisible_metrics['path_lengths'], alternative='two-sided'
+    )
+    eff_stat, eff_p = scipy_stats.mannwhitneyu(
+        visible_metrics['efficiencies'], invisible_metrics['efficiencies'], alternative='two-sided'
+    )
+
+    # Create comparison plot
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+
+    # Plot 1: Time to Target
+    ax = axes[0, 0]
+    positions = [1, 2]
+    box_data = [visible_metrics['durations'], invisible_metrics['durations']]
+    bp = ax.boxplot(box_data, positions=positions, widths=0.6, patch_artist=True,
+                    boxprops=dict(facecolor='lightblue', edgecolor='black'),
+                    medianprops=dict(color='red', linewidth=2))
+    ax.set_xticks(positions)
+    ax.set_xticklabels(['Visible', 'Invisible'])
+    ax.set_ylabel('Time to Target (s)', fontsize=12)
+    ax.set_title(f'Time to Target\np = {duration_p:.4f}', fontsize=12, fontweight='bold')
+    ax.grid(True, alpha=0.3, axis='y')
+
+    # Add means as points
+    ax.plot(1, np.mean(visible_metrics['durations']), 'ro', markersize=10, label='Mean')
+    ax.plot(2, np.mean(invisible_metrics['durations']), 'ro', markersize=10)
+
+    # Add sample sizes
+    ax.text(1, ax.get_ylim()[0], f'n={n_visible}', ha='center', va='top', fontsize=9)
+    ax.text(2, ax.get_ylim()[0], f'n={n_invisible}', ha='center', va='top', fontsize=9)
+
+    # Plot 2: Path Length
+    ax = axes[0, 1]
+    box_data = [visible_metrics['path_lengths'], invisible_metrics['path_lengths']]
+    bp = ax.boxplot(box_data, positions=positions, widths=0.6, patch_artist=True,
+                    boxprops=dict(facecolor='lightgreen', edgecolor='black'),
+                    medianprops=dict(color='red', linewidth=2))
+    ax.set_xticks(positions)
+    ax.set_xticklabels(['Visible', 'Invisible'])
+    ax.set_ylabel('Path Length', fontsize=12)
+    ax.set_title(f'Path Length\np = {length_p:.4f}', fontsize=12, fontweight='bold')
+    ax.grid(True, alpha=0.3, axis='y')
+
+    ax.plot(1, np.mean(visible_metrics['path_lengths']), 'ro', markersize=10, label='Mean')
+    ax.plot(2, np.mean(invisible_metrics['path_lengths']), 'ro', markersize=10)
+
+    # Plot 3: Path Efficiency
+    ax = axes[1, 0]
+    box_data = [visible_metrics['efficiencies'], invisible_metrics['efficiencies']]
+    bp = ax.boxplot(box_data, positions=positions, widths=0.6, patch_artist=True,
+                    boxprops=dict(facecolor='lightyellow', edgecolor='black'),
+                    medianprops=dict(color='red', linewidth=2))
+    ax.set_xticks(positions)
+    ax.set_xticklabels(['Visible', 'Invisible'])
+    ax.set_ylabel('Path Efficiency', fontsize=12)
+    ax.set_title(f'Path Efficiency\np = {eff_p:.4f}', fontsize=12, fontweight='bold')
+    ax.grid(True, alpha=0.3, axis='y')
+
+    ax.plot(1, np.mean(visible_metrics['efficiencies']), 'ro', markersize=10, label='Mean')
+    ax.plot(2, np.mean(invisible_metrics['efficiencies']), 'ro', markersize=10)
+
+    # Plot 4: Summary statistics table
+    ax = axes[1, 1]
+    ax.axis('off')
+
+    # Create table data
+    table_data = [
+        ['Metric', 'Visible', 'Invisible', 'p-value'],
+        ['', f'(n={n_visible})', f'(n={n_invisible})', ''],
+        ['Duration (s)',
+         f'{np.mean(visible_metrics["durations"]):.2f}±{np.std(visible_metrics["durations"]):.2f}',
+         f'{np.mean(invisible_metrics["durations"]):.2f}±{np.std(invisible_metrics["durations"]):.2f}',
+         f'{duration_p:.4f}'],
+        ['Path Length',
+         f'{np.mean(visible_metrics["path_lengths"]):.3f}±{np.std(visible_metrics["path_lengths"]):.3f}',
+         f'{np.mean(invisible_metrics["path_lengths"]):.3f}±{np.std(invisible_metrics["path_lengths"]):.3f}',
+         f'{length_p:.4f}'],
+        ['Path Efficiency',
+         f'{np.mean(visible_metrics["efficiencies"]):.3f}±{np.std(visible_metrics["efficiencies"]):.3f}',
+         f'{np.mean(invisible_metrics["efficiencies"]):.3f}±{np.std(invisible_metrics["efficiencies"]):.3f}',
+         f'{eff_p:.4f}'],
+    ]
+
+    table = ax.table(cellText=table_data, cellLoc='center', loc='center',
+                    colWidths=[0.3, 0.25, 0.25, 0.2])
+    table.auto_set_font_size(False)
+    table.set_fontsize(10)
+    table.scale(1, 2)
+
+    # Style header row
+    for i in range(4):
+        table[(0, i)].set_facecolor('#2196F3')
+        table[(0, i)].set_text_props(weight='bold', color='white')
+
+    # Highlight significant p-values
+    for i, p_val in enumerate([duration_p, length_p, eff_p], start=2):
+        if p_val < 0.05:
+            table[(i, 3)].set_facecolor('#ffcccc')
+            table[(i, 3)].set_text_props(weight='bold')
+
+    ax.set_title('Summary Statistics\n(Mann-Whitney U Test)', fontsize=12, fontweight='bold')
+
+    # Overall title
+    title = 'Visible vs Invisible Target Performance'
+    if animal_id:
+        title += f' - {animal_id}'
+    if session_date:
+        title += f' ({session_date})'
+    fig.suptitle(title, fontsize=14, fontweight='bold')
+
+    plt.tight_layout()
+
+    # Save figure if results directory provided
+    if results_dir:
+        results_dir.mkdir(parents=True, exist_ok=True)
+        prefix = f"{animal_id}_" if animal_id else ""
+        filename = f"{prefix}saccade_feedback_visible_vs_invisible.png"
+        fig.savefig(results_dir / filename, dpi=150, bbox_inches='tight')
+        print(f"Saved visible vs invisible comparison to {results_dir / filename}")
+
+    # Compile statistics dictionary
+    stats_dict = {
+        'n_visible': n_visible,
+        'n_invisible': n_invisible,
+        'visible_metrics': visible_metrics,
+        'invisible_metrics': invisible_metrics,
+        'p_values': {
+            'duration': duration_p,
+            'path_length': length_p,
+            'path_efficiency': eff_p,
+        },
+        'statistics': {
+            'duration': duration_stat,
+            'path_length': length_stat,
+            'path_efficiency': eff_stat,
+        }
+    }
+
+    # Print summary
+    print(f"\n  Duration: Visible={np.mean(visible_metrics['durations']):.2f}s, Invisible={np.mean(invisible_metrics['durations']):.2f}s, p={duration_p:.4f}")
+    print(f"  Path Length: Visible={np.mean(visible_metrics['path_lengths']):.3f}, Invisible={np.mean(invisible_metrics['path_lengths']):.3f}, p={length_p:.4f}")
+    print(f"  Path Efficiency: Visible={np.mean(visible_metrics['efficiencies']):.3f}, Invisible={np.mean(invisible_metrics['efficiencies']):.3f}, p={eff_p:.4f}")
+
+    if duration_p < 0.05:
+        print(f"  *** Significant difference in duration (p < 0.05)")
+    if length_p < 0.05:
+        print(f"  *** Significant difference in path length (p < 0.05)")
+    if eff_p < 0.05:
+        print(f"  *** Significant difference in efficiency (p < 0.05)")
+
+    return fig, stats_dict
+
+
 def test_initial_direction_correlation(trials: list[dict], results_dir: Optional[Path] = None,
                                         animal_id: Optional[str] = None, session_date: str = "") -> tuple:
     """Test #2: Initial Direction Correlation - do initial movements point toward targets?
@@ -2993,6 +3152,15 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
             plt.show()
         plt.close(fig_lr)
 
+    print("\nRunning visible vs invisible target comparison...")
+    fig_vis, vis_stats = compare_visible_invisible_performance(trials, results_dir=results_dir,
+                                                                animal_id=animal_id,
+                                                                session_date=date_str)
+    if fig_vis is not None:
+        if show_plots:
+            plt.show()
+        plt.close(fig_vis)
+
     print("\nPlotting final positions by target type...")
     fig_final_pos = plot_final_positions_by_target(trials, min_duration=trial_min_duration, max_duration=trial_max_duration,
                                                     results_dir=results_dir,
@@ -3134,6 +3302,14 @@ def main(session_id: str, trial_min_duration: float = 0.1, trial_max_duration: f
     if fig_lr is not None:
         plt.show()
         plt.close(fig_lr)
+
+    print("\nRunning visible vs invisible target comparison...")
+    fig_vis, vis_stats = compare_visible_invisible_performance(trials, results_dir=results_dir,
+                                                                animal_id=animal_id,
+                                                                session_date=date_str)
+    if fig_vis is not None:
+        plt.show()
+        plt.close(fig_vis)
 
     print("\nPlotting final positions by target type...")
     fig_final_pos = plot_final_positions_by_target(trials, min_duration=trial_min_duration, max_duration=trial_max_duration,
