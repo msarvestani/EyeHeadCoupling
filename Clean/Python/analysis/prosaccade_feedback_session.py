@@ -659,31 +659,22 @@ def interactive_trajectories(trials: list[dict], animal_id: Optional[str] = None
         title += f' ({session_date})'
     ax.set_title(title, fontsize=14, fontweight='bold')
 
-    # Pre-draw all targets (static) in black
+    # Pre-draw all targets (static) in gray - neutral visibility
+    # We'll show correct visibility when highlighting the active trial's target
     target_circles = {}  # Store target circles by position
     for trial in trials:
         target_x = trial['target_x']
         target_y = trial['target_y']
         target_radius = trial['target_diameter'] / 2.0
-        target_visible = trial.get('target_visible', 1)  # Default to visible if not present
         key = (round(target_x, 2), round(target_y, 2))
 
         if key not in target_circles:
-            # Use dashed line for invisible targets
-            linestyle = '-' if target_visible else '--'
-            alpha_val = 0.5 if target_visible else 0.3
-
+            # Draw all targets as gray circles (no visibility indication yet)
             target_circle = Circle((target_x, target_y), radius=target_radius,
-                                  fill=False, edgecolor='black', linewidth=2,
-                                  linestyle=linestyle, alpha=alpha_val)
+                                  fill=False, edgecolor='gray', linewidth=1.5,
+                                  linestyle='-', alpha=0.3)
             ax.add_patch(target_circle)
-
-            # Use hollow marker for invisible targets
-            if target_visible:
-                ax.plot(target_x, target_y, 'ko', markersize=3, alpha=0.5)
-            else:
-                ax.plot(target_x, target_y, 'ko', markersize=3, markerfacecolor='none',
-                       markeredgewidth=1, alpha=0.4)
+            ax.plot(target_x, target_y, 'o', color='gray', markersize=3, alpha=0.3)
             target_circles[key] = (target_circle, target_x, target_y)
 
     # Storage for current trial elements (will be cleared each time)
@@ -721,15 +712,25 @@ def interactive_trajectories(trials: list[dict], animal_id: Optional[str] = None
         target_x = trial['target_x']
         target_y = trial['target_y']
         target_radius = trial['target_diameter'] / 2.0
+        target_visible = trial.get('target_visible', 1)
         color = cmap(trial_idx / max(1, n_trials - 1))
 
-        # Highlight current target in green
+        # Highlight current target in green with CORRECT visibility for this trial
+        # Use solid line for visible, dashed for invisible
+        linestyle = '-' if target_visible else '--'
         target_circle_green = Circle((target_x, target_y), radius=target_radius,
                                      fill=True, facecolor='green', edgecolor='darkgreen',
-                                     linewidth=3, alpha=0.3)
+                                     linewidth=3, linestyle=linestyle, alpha=0.3)
         ax.add_patch(target_circle_green)
-        target_dot_green, = ax.plot(target_x, target_y, 'go', markersize=8,
-                                    markeredgecolor='darkgreen', markeredgewidth=2)
+
+        # Draw center marker - filled for visible, hollow for invisible
+        if target_visible:
+            target_dot_green, = ax.plot(target_x, target_y, 'go', markersize=8,
+                                        markeredgecolor='darkgreen', markeredgewidth=2)
+        else:
+            target_dot_green, = ax.plot(target_x, target_y, 'o', color='green', markersize=8,
+                                        markerfacecolor='none', markeredgecolor='darkgreen',
+                                        markeredgewidth=2)
         current_target_highlight = [target_circle_green, target_dot_green]
 
         # Plot trajectory
@@ -826,28 +827,23 @@ def animate_trajectories(trials: list[dict], results_dir: Optional[Path] = None,
         title += f' ({session_date})'
     ax.set_title(title, fontsize=14, fontweight='bold')
 
-    # Pre-draw all targets (they don't animate)
+    # Pre-draw all unique target positions (they don't animate)
+    # Draw as neutral gray since same position may have different visibility across trials
+    drawn_targets = set()
     for trial in trials:
         target_x = trial['target_x']
         target_y = trial['target_y']
         target_radius = trial['target_diameter'] / 2.0
-        target_visible = trial.get('target_visible', 1)  # Default to visible if not present
+        key = (round(target_x, 2), round(target_y, 2))
 
-        # Use dashed line for invisible targets
-        linestyle = '-' if target_visible else '--'
-        alpha_val = 0.5 if target_visible else 0.3
-
-        target_circle = Circle((target_x, target_y), radius=target_radius,
-                              fill=False, edgecolor='black', linewidth=2,
-                              linestyle=linestyle, alpha=alpha_val)
-        ax.add_patch(target_circle)
-
-        # Use hollow marker for invisible targets
-        if target_visible:
-            ax.plot(target_x, target_y, 'ko', markersize=3, alpha=0.5)
-        else:
-            ax.plot(target_x, target_y, 'ko', markersize=3, markerfacecolor='none',
-                   markeredgewidth=1, alpha=0.4)
+        if key not in drawn_targets:
+            # Draw all targets as gray circles (neutral - no visibility indication)
+            target_circle = Circle((target_x, target_y), radius=target_radius,
+                                  fill=False, edgecolor='gray', linewidth=2,
+                                  linestyle='-', alpha=0.4)
+            ax.add_patch(target_circle)
+            ax.plot(target_x, target_y, 'o', color='gray', markersize=3, alpha=0.4)
+            drawn_targets.add(key)
 
     # Storage for completed trials (will persist across frames)
     completed_lines = []
