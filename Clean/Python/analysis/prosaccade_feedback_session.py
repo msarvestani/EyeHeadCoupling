@@ -1071,6 +1071,8 @@ def plot_time_to_target(trials: list[dict], results_dir: Optional[Path] = None,
                         animal_id: Optional[str] = None, session_date: str = "") -> plt.Figure:
     """Plot time from trial onset to trial end (time to reach target).
 
+    Compares visible vs invisible target trials if both are present.
+
     Parameters
     ----------
     trials : list of dict
@@ -1087,15 +1089,48 @@ def plot_time_to_target(trials: list[dict], results_dir: Optional[Path] = None,
     matplotlib.figure.Figure
         The generated figure
     """
+    # Separate trials by target visibility
+    visible_trials = [t for t in trials if t.get('target_visible', 1) == 1]
+    invisible_trials = [t for t in trials if t.get('target_visible', 1) == 0]
+
+    has_both = len(visible_trials) > 0 and len(invisible_trials) > 0
+
     trial_numbers = [t['trial_number'] for t in trials]
     durations = [t['duration'] for t in trials]
 
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8))
 
     # Plot 1: Duration vs trial number
-    ax1.plot(trial_numbers, durations, 'o-', linewidth=2, markersize=8,
-            color='steelblue', markerfacecolor='lightblue', markeredgecolor='steelblue',
-            markeredgewidth=1.5)
+    if has_both:
+        # Plot visible and invisible separately
+        vis_trial_nums = [t['trial_number'] for t in visible_trials]
+        vis_durations = [t['duration'] for t in visible_trials]
+        invis_trial_nums = [t['trial_number'] for t in invisible_trials]
+        invis_durations = [t['duration'] for t in invisible_trials]
+
+        ax1.plot(vis_trial_nums, vis_durations, 'o-', linewidth=2, markersize=8,
+                color='steelblue', markerfacecolor='lightblue', markeredgecolor='steelblue',
+                markeredgewidth=1.5, label=f'Visible targets (n={len(visible_trials)})')
+        ax1.plot(invis_trial_nums, invis_durations, 's--', linewidth=2, markersize=8,
+                color='coral', markerfacecolor='lightsalmon', markeredgecolor='coral',
+                markeredgewidth=1.5, label=f'Invisible targets (n={len(invisible_trials)})')
+
+        # Add mean lines
+        mean_vis = np.mean(vis_durations)
+        mean_invis = np.mean(invis_durations)
+        ax1.axhline(mean_vis, color='steelblue', linestyle=':', linewidth=2, alpha=0.7,
+                   label=f'Visible mean: {mean_vis:.2f}s')
+        ax1.axhline(mean_invis, color='coral', linestyle=':', linewidth=2, alpha=0.7,
+                   label=f'Invisible mean: {mean_invis:.2f}s')
+    else:
+        # All trials same visibility
+        ax1.plot(trial_numbers, durations, 'o-', linewidth=2, markersize=8,
+                color='steelblue', markerfacecolor='lightblue', markeredgecolor='steelblue',
+                markeredgewidth=1.5)
+        mean_duration = np.mean(durations)
+        ax1.axhline(mean_duration, color='red', linestyle='--', linewidth=2,
+                   label=f'Mean: {mean_duration:.2f}s')
+
     ax1.set_xlabel('Trial Number', fontsize=12)
     ax1.set_ylabel('Time to Target (seconds)', fontsize=12)
 
@@ -1106,24 +1141,40 @@ def plot_time_to_target(trials: list[dict], results_dir: Optional[Path] = None,
         title += f' ({session_date})'
     ax1.set_title(title, fontsize=14, fontweight='bold')
     ax1.grid(True, alpha=0.3)
-
-    # Add mean line
-    mean_duration = np.mean(durations)
-    ax1.axhline(mean_duration, color='red', linestyle='--', linewidth=2,
-               label=f'Mean: {mean_duration:.2f}s')
     ax1.legend(fontsize=10)
 
     # Plot 2: Histogram of durations
-    ax2.hist(durations, bins=20, color='steelblue', alpha=0.7, edgecolor='black')
+    if has_both:
+        # Overlapping histograms for visible vs invisible
+        vis_durations = [t['duration'] for t in visible_trials]
+        invis_durations = [t['duration'] for t in invisible_trials]
+
+        ax2.hist(vis_durations, bins=20, color='steelblue', alpha=0.6, edgecolor='black',
+                label=f'Visible (n={len(visible_trials)})')
+        ax2.hist(invis_durations, bins=20, color='coral', alpha=0.6, edgecolor='black',
+                label=f'Invisible (n={len(invisible_trials)})')
+        ax2.legend(fontsize=10)
+
+        # Statistics comparison
+        from scipy import stats as scipy_stats
+        stat, p_value = scipy_stats.mannwhitneyu(vis_durations, invis_durations, alternative='two-sided')
+
+        stats_text = (f'Visible: {np.mean(vis_durations):.2f}±{np.std(vis_durations):.2f}s (n={len(vis_durations)})\n'
+                     f'Invisible: {np.mean(invis_durations):.2f}±{np.std(invis_durations):.2f}s (n={len(invis_durations)})\n'
+                     f'Mann-Whitney U: p={p_value:.4f}')
+    else:
+        ax2.hist(durations, bins=20, color='steelblue', alpha=0.7, edgecolor='black')
+
+        std_duration = np.std(durations)
+        median_duration = np.median(durations)
+        mean_duration = np.mean(durations)
+        stats_text = f'Mean: {mean_duration:.2f}s\nMedian: {median_duration:.2f}s\nStd: {std_duration:.2f}s\nN: {len(durations)}'
+
     ax2.set_xlabel('Time to Target (seconds)', fontsize=12)
     ax2.set_ylabel('Number of Trials', fontsize=12)
     ax2.set_title('Distribution of Trial Durations', fontsize=12, fontweight='bold')
     ax2.grid(True, alpha=0.3, axis='y')
 
-    # Add statistics text
-    std_duration = np.std(durations)
-    median_duration = np.median(durations)
-    stats_text = f'Mean: {mean_duration:.2f}s\nMedian: {median_duration:.2f}s\nStd: {std_duration:.2f}s\nN: {len(durations)}'
     ax2.text(0.95, 0.95, stats_text, transform=ax2.transAxes,
             fontsize=10, verticalalignment='top', horizontalalignment='right',
             bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
@@ -1389,49 +1440,63 @@ def analyze_starting_position_bias(trials: list[dict], min_duration: float = 0.1
     # Create visualization
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
 
+    # Get labels for positions
+    pos1_label = f"Pos ({sorted_positions[0][0]:+.1f}, {sorted_positions[0][1]:+.1f})"
+    if len(sorted_positions) == 2:
+        pos2_label = f"Pos ({sorted_positions[1][0]:+.1f}, {sorted_positions[1][1]:+.1f})"
+    else:
+        pos2_label = f"Other {len(sorted_positions)-1} positions"
+
+    # Use consistent colors
+    color1 = 'steelblue'
+    color2 = 'coral'
+
     # Plot 1: X-position distributions
     ax = axes[0, 0]
-    ax.hist(left_avg_x, bins=20, alpha=0.6, color='blue', label=f'Left (n={n_valid_left})')
-    ax.hist(right_avg_x, bins=20, alpha=0.6, color='red', label=f'Right (n={n_valid_right})')
-    ax.axvline(np.mean(left_avg_x), color='blue', linestyle='--', linewidth=2, label=f'Left mean: {np.mean(left_avg_x):.3f}')
-    ax.axvline(np.mean(right_avg_x), color='red', linestyle='--', linewidth=2, label=f'Right mean: {np.mean(right_avg_x):.3f}')
+    ax.hist(left_avg_x, bins=20, alpha=0.6, color=color1, label=f'{pos1_label} (n={n_valid_left})')
+    ax.hist(right_avg_x, bins=20, alpha=0.6, color=color2, label=f'{pos2_label} (n={n_valid_right})')
+    ax.axvline(np.mean(left_avg_x), color=color1, linestyle='--', linewidth=2, label=f'Pos1 mean: {np.mean(left_avg_x):.3f}')
+    ax.axvline(np.mean(right_avg_x), color=color2, linestyle='--', linewidth=2, label=f'Pos2+ mean: {np.mean(right_avg_x):.3f}')
     ax.set_xlabel(f'Avg X Position ({window_start}-{window_end}s)', fontsize=12)
     ax.set_ylabel('Count', fontsize=12)
     ax.set_title(f'X-Position Distribution\np = {p_x:.4f}', fontsize=12, fontweight='bold')
     ax.set_xlim(-1, 1)
-    ax.legend(fontsize=9)
+    ax.legend(fontsize=8)
     ax.grid(True, alpha=0.3, axis='y')
 
     # Plot 2: Y-position distributions
     ax = axes[0, 1]
-    ax.hist(left_avg_y, bins=20, alpha=0.6, color='blue', label=f'Left (n={n_valid_left})')
-    ax.hist(right_avg_y, bins=20, alpha=0.6, color='red', label=f'Right (n={n_valid_right})')
-    ax.axvline(np.mean(left_avg_y), color='blue', linestyle='--', linewidth=2, label=f'Left mean: {np.mean(left_avg_y):.3f}')
-    ax.axvline(np.mean(right_avg_y), color='red', linestyle='--', linewidth=2, label=f'Right mean: {np.mean(right_avg_y):.3f}')
+    ax.hist(left_avg_y, bins=20, alpha=0.6, color=color1, label=f'{pos1_label} (n={n_valid_left})')
+    ax.hist(right_avg_y, bins=20, alpha=0.6, color=color2, label=f'{pos2_label} (n={n_valid_right})')
+    ax.axvline(np.mean(left_avg_y), color=color1, linestyle='--', linewidth=2, label=f'Pos1 mean: {np.mean(left_avg_y):.3f}')
+    ax.axvline(np.mean(right_avg_y), color=color2, linestyle='--', linewidth=2, label=f'Pos2+ mean: {np.mean(right_avg_y):.3f}')
     ax.set_xlabel(f'Avg Y Position ({window_start}-{window_end}s)', fontsize=12)
     ax.set_ylabel('Count', fontsize=12)
     ax.set_title(f'Y-Position Distribution\np = {p_y:.4f}', fontsize=12, fontweight='bold')
     ax.set_xlim(-1, 1)
-    ax.legend(fontsize=9)
+    ax.legend(fontsize=8)
     ax.grid(True, alpha=0.3, axis='y')
 
     # Plot 3: 2D scatter of average positions
     ax = axes[1, 0]
-    # Draw target positions
+    # Draw actual target positions for all unique positions
     from matplotlib.patches import Circle
-    left_target_circle = Circle((-0.7, 0), radius=0.1, fill=False, edgecolor='blue',
-                                linewidth=2, linestyle='--', alpha=0.5, label='Left target')
-    right_target_circle = Circle((0.7, 0), radius=0.1, fill=False, edgecolor='red',
-                                 linewidth=2, linestyle='--', alpha=0.5, label='Right target')
-    ax.add_patch(left_target_circle)
-    ax.add_patch(right_target_circle)
-    ax.scatter(left_avg_x, left_avg_y, alpha=0.5, color='blue', s=30, label='Left trials')
-    ax.scatter(right_avg_x, right_avg_y, alpha=0.5, color='red', s=30, label='Right trials')
+    colors_for_targets = plt.cm.tab10(np.linspace(0, 1, len(sorted_positions)))
+    for idx, pos in enumerate(sorted_positions):
+        target_x, target_y = pos
+        color = colors_for_targets[idx]
+        circle = Circle((target_x, target_y), radius=0.05, fill=False, edgecolor=color,
+                       linewidth=2, linestyle='--', alpha=0.6,
+                       label=f'Target ({target_x:+.1f}, {target_y:+.1f})')
+        ax.add_patch(circle)
+
+    ax.scatter(left_avg_x, left_avg_y, alpha=0.5, color=color1, s=30, label=f'{pos1_label} trials')
+    ax.scatter(right_avg_x, right_avg_y, alpha=0.5, color=color2, s=30, label=f'{pos2_label} trials')
     # Plot means as larger markers
-    ax.scatter([np.mean(left_avg_x)], [np.mean(left_avg_y)], color='blue', s=200,
-               marker='*', edgecolors='black', linewidths=2, label='Left mean', zorder=10)
-    ax.scatter([np.mean(right_avg_x)], [np.mean(right_avg_y)], color='red', s=200,
-               marker='*', edgecolors='black', linewidths=2, label='Right mean', zorder=10)
+    ax.scatter([np.mean(left_avg_x)], [np.mean(left_avg_y)], color=color1, s=200,
+               marker='*', edgecolors='black', linewidths=2, label=f'{pos1_label} mean', zorder=10)
+    ax.scatter([np.mean(right_avg_x)], [np.mean(right_avg_y)], color=color2, s=200,
+               marker='*', edgecolors='black', linewidths=2, label=f'{pos2_label} mean', zorder=10)
     ax.set_xlabel(f'Avg X Position ({window_start}-{window_end}s)', fontsize=12)
     ax.set_ylabel(f'Avg Y Position ({window_start}-{window_end}s)', fontsize=12)
     ax.set_title('Average Positions (2D)', fontsize=12, fontweight='bold')
@@ -1445,15 +1510,19 @@ def analyze_starting_position_bias(trials: list[dict], min_duration: float = 0.1
     ax = axes[1, 1]
     ax.axis('off')
 
+    # Shorten labels for table if needed
+    table_pos1 = pos1_label if len(pos1_label) < 15 else f"Pos1"
+    table_pos2 = pos2_label if len(pos2_label) < 15 else f"Pos2+"
+
     table_data = [
-        ['Metric', 'Left Targets', 'Right Targets', 'p-value'],
+        ['Metric', table_pos1, table_pos2, 'p-value'],
         ['N trials', f"{n_valid_left}", f"{n_valid_right}", ''],
         ['X position', f"{stats_dict['left']['avg_x_mean']:.3f} ± {stats_dict['left']['avg_x_std']:.3f}",
          f"{stats_dict['right']['avg_x_mean']:.3f} ± {stats_dict['right']['avg_x_std']:.3f}",
          f"{p_x:.4f} {'***' if p_x < 0.001 else '**' if p_x < 0.01 else '*' if p_x < 0.05 else 'ns'}"],
         ['Y position', f"{stats_dict['left']['avg_y_mean']:.3f} ± {stats_dict['left']['avg_y_std']:.3f}",
          f"{stats_dict['right']['avg_y_mean']:.3f} ± {stats_dict['right']['avg_y_std']:.3f}",
-         f"{p_y:.4f} {'***' if p_y < 0.001 else '**' if p_y < 0.01 else '*' if p_y < 0.05 else 'ns'}"],
+         f"{p_y:.4f} {'***' if p_y < 0.001 else '**' if p_y < 0.01 else '*' if p_x < 0.05 else 'ns'}"],
     ]
 
     table = ax.table(cellText=table_data, cellLoc='center', loc='center',
@@ -1674,49 +1743,63 @@ def analyze_ending_position_bias(trials: list[dict], min_duration: float = 0.1, 
     # Create visualization
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
 
+    # Get labels for positions
+    pos1_label = f"Pos ({sorted_positions[0][0]:+.1f}, {sorted_positions[0][1]:+.1f})"
+    if len(sorted_positions) == 2:
+        pos2_label = f"Pos ({sorted_positions[1][0]:+.1f}, {sorted_positions[1][1]:+.1f})"
+    else:
+        pos2_label = f"Other {len(sorted_positions)-1} positions"
+
+    # Use consistent colors
+    color1 = 'steelblue'
+    color2 = 'coral'
+
     # Plot 1: X-position distributions
     ax = axes[0, 0]
-    ax.hist(left_final_x, bins=20, alpha=0.6, color='blue', label=f'Left (n={n_valid_left})')
-    ax.hist(right_final_x, bins=20, alpha=0.6, color='red', label=f'Right (n={n_valid_right})')
-    ax.axvline(np.mean(left_final_x), color='blue', linestyle='--', linewidth=2, label=f'Left mean: {np.mean(left_final_x):.3f}')
-    ax.axvline(np.mean(right_final_x), color='red', linestyle='--', linewidth=2, label=f'Right mean: {np.mean(right_final_x):.3f}')
+    ax.hist(left_final_x, bins=20, alpha=0.6, color=color1, label=f'{pos1_label} (n={n_valid_left})')
+    ax.hist(right_final_x, bins=20, alpha=0.6, color=color2, label=f'{pos2_label} (n={n_valid_right})')
+    ax.axvline(np.mean(left_final_x), color=color1, linestyle='--', linewidth=2, label=f'Pos1 mean: {np.mean(left_final_x):.3f}')
+    ax.axvline(np.mean(right_final_x), color=color2, linestyle='--', linewidth=2, label=f'Pos2+ mean: {np.mean(right_final_x):.3f}')
     ax.set_xlabel(f'Avg X Position (last {window_duration}s)', fontsize=12)
     ax.set_ylabel('Count', fontsize=12)
     ax.set_title(f'X-Position Distribution\np = {p_x:.4f}', fontsize=12, fontweight='bold')
     ax.set_xlim(-1, 1)
-    ax.legend(fontsize=9)
+    ax.legend(fontsize=8)
     ax.grid(True, alpha=0.3, axis='y')
 
     # Plot 2: Y-position distributions
     ax = axes[0, 1]
-    ax.hist(left_final_y, bins=20, alpha=0.6, color='blue', label=f'Left (n={n_valid_left})')
-    ax.hist(right_final_y, bins=20, alpha=0.6, color='red', label=f'Right (n={n_valid_right})')
-    ax.axvline(np.mean(left_final_y), color='blue', linestyle='--', linewidth=2, label=f'Left mean: {np.mean(left_final_y):.3f}')
-    ax.axvline(np.mean(right_final_y), color='red', linestyle='--', linewidth=2, label=f'Right mean: {np.mean(right_final_y):.3f}')
+    ax.hist(left_final_y, bins=20, alpha=0.6, color=color1, label=f'{pos1_label} (n={n_valid_left})')
+    ax.hist(right_final_y, bins=20, alpha=0.6, color=color2, label=f'{pos2_label} (n={n_valid_right})')
+    ax.axvline(np.mean(left_final_y), color=color1, linestyle='--', linewidth=2, label=f'Pos1 mean: {np.mean(left_final_y):.3f}')
+    ax.axvline(np.mean(right_final_y), color=color2, linestyle='--', linewidth=2, label=f'Pos2+ mean: {np.mean(right_final_y):.3f}')
     ax.set_xlabel(f'Avg Y Position (last {window_duration}s)', fontsize=12)
     ax.set_ylabel('Count', fontsize=12)
     ax.set_title(f'Y-Position Distribution\np = {p_y:.4f}', fontsize=12, fontweight='bold')
     ax.set_xlim(-1, 1)
-    ax.legend(fontsize=9)
+    ax.legend(fontsize=8)
     ax.grid(True, alpha=0.3, axis='y')
 
     # Plot 3: 2D scatter of final positions
     ax = axes[1, 0]
-    # Draw target positions
+    # Draw actual target positions for all unique positions
     from matplotlib.patches import Circle
-    left_target_circle = Circle((-0.7, 0), radius=0.1, fill=False, edgecolor='blue',
-                                linewidth=2, linestyle='--', alpha=0.5, label='Left target')
-    right_target_circle = Circle((0.7, 0), radius=0.1, fill=False, edgecolor='red',
-                                 linewidth=2, linestyle='--', alpha=0.5, label='Right target')
-    ax.add_patch(left_target_circle)
-    ax.add_patch(right_target_circle)
-    ax.scatter(left_final_x, left_final_y, alpha=0.5, color='blue', s=30, label='Left trials')
-    ax.scatter(right_final_x, right_final_y, alpha=0.5, color='red', s=30, label='Right trials')
+    colors_for_targets = plt.cm.tab10(np.linspace(0, 1, len(sorted_positions)))
+    for idx, pos in enumerate(sorted_positions):
+        target_x, target_y = pos
+        color = colors_for_targets[idx]
+        circle = Circle((target_x, target_y), radius=0.05, fill=False, edgecolor=color,
+                       linewidth=2, linestyle='--', alpha=0.6,
+                       label=f'Target ({target_x:+.1f}, {target_y:+.1f})')
+        ax.add_patch(circle)
+
+    ax.scatter(left_final_x, left_final_y, alpha=0.5, color=color1, s=30, label=f'{pos1_label} trials')
+    ax.scatter(right_final_x, right_final_y, alpha=0.5, color=color2, s=30, label=f'{pos2_label} trials')
     # Plot means as larger markers
-    ax.scatter([np.mean(left_final_x)], [np.mean(left_final_y)], color='blue', s=200,
-               marker='*', edgecolors='black', linewidths=2, label='Left mean', zorder=10)
-    ax.scatter([np.mean(right_final_x)], [np.mean(right_final_y)], color='red', s=200,
-               marker='*', edgecolors='black', linewidths=2, label='Right mean', zorder=10)
+    ax.scatter([np.mean(left_final_x)], [np.mean(left_final_y)], color=color1, s=200,
+               marker='*', edgecolors='black', linewidths=2, label=f'{pos1_label} mean', zorder=10)
+    ax.scatter([np.mean(right_final_x)], [np.mean(right_final_y)], color=color2, s=200,
+               marker='*', edgecolors='black', linewidths=2, label=f'{pos2_label} mean', zorder=10)
     ax.set_xlabel(f'Avg X Position (last {window_duration}s)', fontsize=12)
     ax.set_ylabel(f'Avg Y Position (last {window_duration}s)', fontsize=12)
     ax.set_title('Average Positions (2D)', fontsize=12, fontweight='bold')
@@ -1730,8 +1813,12 @@ def analyze_ending_position_bias(trials: list[dict], min_duration: float = 0.1, 
     ax = axes[1, 1]
     ax.axis('off')
 
+    # Shorten labels for table if needed
+    table_pos1 = pos1_label if len(pos1_label) < 15 else f"Pos1"
+    table_pos2 = pos2_label if len(pos2_label) < 15 else f"Pos2+"
+
     table_data = [
-        ['Metric', 'Left Targets', 'Right Targets', 'p-value'],
+        ['Metric', table_pos1, table_pos2, 'p-value'],
         ['N trials', f"{n_valid_left}", f"{n_valid_right}", ''],
         ['X position', f"{stats_dict['left']['final_x_mean']:.3f} ± {stats_dict['left']['final_x_std']:.3f}",
          f"{stats_dict['right']['final_x_mean']:.3f} ± {stats_dict['right']['final_x_std']:.3f}",
