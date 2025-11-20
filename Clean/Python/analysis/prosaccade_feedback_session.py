@@ -335,7 +335,11 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
         print(f"\nWarning: Only 1 trial found, ITI set to 0")
 
     for i in range(n_trials):
-        trial_num = i + 1
+        # Use original trial number if available, otherwise sequential numbering
+        if 'original_trial_number' in target_df.columns:
+            trial_num = int(target_df.iloc[i]['original_trial_number'])
+        else:
+            trial_num = i + 1
 
         # Trial starts at target onset (vstim_cue)
         target_x = target_df.iloc[i]['target_x']
@@ -3227,6 +3231,9 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
     # Load the three CSV files
     eot_df, eye_df, target_df_all = load_feedback_data(folder_path, animal_id)
 
+    # Add original trial numbers (1-indexed) to preserve through filtering
+    target_df_all['original_trial_number'] = range(1, len(target_df_all) + 1)
+
     # Always identify and filter failed trials for clean analysis
     target_df_successful, failed_indices, successful_indices = identify_and_filter_failed_trials(
         target_df_all, eot_df, exclude_failed=True
@@ -3433,6 +3440,9 @@ def main(session_id: str, trial_min_duration: float = 0.1, trial_max_duration: f
 
     # Load the three CSV files
     eot_df, eye_df, target_df_all = load_feedback_data(folder_path, animal_id or "Tsh001")
+
+    # Add original trial numbers (1-indexed) to preserve through filtering
+    target_df_all['original_trial_number'] = range(1, len(target_df_all) + 1)
 
     # Always identify and filter failed trials for clean analysis
     target_df_successful, failed_indices, successful_indices = identify_and_filter_failed_trials(
