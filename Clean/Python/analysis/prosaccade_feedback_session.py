@@ -342,27 +342,27 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
         start_frame = target_df.iloc[i]['frame']
         start_time = target_df.iloc[i]['timestamp']
 
-        # Calculate trial end time
-        if i < n_trials - 1:
-            # trial_end(i) = trial_start(i+1) - ITI
-            next_start_time = target_df.iloc[i+1]['timestamp']
-            next_start_frame = target_df.iloc[i+1]['frame']
-            end_time = next_start_time - ITI
-            # Estimate end frame based on time difference (assuming constant frame rate)
-            if start_time != end_time:
-                frame_rate = (next_start_frame - start_frame) / (next_start_time - start_time)
-                end_frame = int(start_frame + (end_time - start_time) * frame_rate)
-            else:
-                end_frame = start_frame
+        # Calculate trial end time using end_of_trial data
+        # Since target_df has been filtered to only successful trials,
+        # it should align 1:1 with eot_df
+        if i < len(eot_df):
+            end_frame = int(eot_df.iloc[i]['frame'])
+            end_time = eot_df.iloc[i]['timestamp']
         else:
-            # Last trial: use end_of_trial data if available
-            if len(eot_df) > 0 and i < len(eot_df):
-                end_frame = int(eot_df.iloc[i]['frame'])
-                end_time = eot_df.iloc[i]['timestamp']
+            # Fallback if eot_df doesn't have this trial (shouldn't happen after filtering)
+            print(f"Warning: No end_of_trial data for trial {trial_num}, using next trial start - ITI")
+            if i < n_trials - 1:
+                next_start_time = target_df.iloc[i+1]['timestamp']
+                next_start_frame = target_df.iloc[i+1]['frame']
+                end_time = next_start_time - ITI
+                if start_time != end_time:
+                    frame_rate = (next_start_frame - start_frame) / (next_start_time - start_time)
+                    end_frame = int(start_frame + (end_time - start_time) * frame_rate)
+                else:
+                    end_frame = start_frame
             else:
-                # If no eot data, estimate from ITI
                 end_time = start_time + ITI
-                end_frame = start_frame + 1000  # Rough estimate
+                end_frame = start_frame + 1000
 
         # Extract eye position trajectory for this trial
         # FIXED: Now starts from target onset, excluding inter-trial interval
@@ -433,6 +433,12 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
         eye_start_time = eye_times_raw[0]
         eye_end_time = eye_times_raw[-1]
         eye_duration = eye_end_time - eye_start_time
+
+        # Sanity check: trial duration should not exceed 10 seconds (timeout)
+        if eye_duration > 10.0:
+            print(f"WARNING: Trial {trial_num} has duration {eye_duration:.2f}s (> 10s timeout)")
+            print(f"  start_time={start_time:.2f}, end_time={end_time:.2f}, duration={end_time-start_time:.2f}s")
+            print(f"  eye_start_time={eye_start_time:.2f}, eye_end_time={eye_end_time:.2f}, eye_duration={eye_duration:.2f}s")
 
         trial_data = {
             'trial_number': trial_num,
