@@ -107,42 +107,6 @@ class SessionData:
     cue_time: Optional[np.ndarray] = None
     cue_direction: Optional[np.ndarray] = None
 
-    # Trial success tracking
-    successful_trial_indices: Optional[np.ndarray] = None
-    failed_trial_indices: Optional[np.ndarray] = None
-    total_trials_detected: Optional[int] = None
-
-
-def get_failed_trial_info(data: SessionData) -> Optional[dict]:
-    """Get detailed information about failed trials.
-
-    Parameters
-    ----------
-    data : SessionData
-        Session data returned from load_session_data.
-
-    Returns
-    -------
-    dict or None
-        Dictionary containing failed trial information, or None if no tracking
-        data is available. The dictionary contains:
-        - 'total_trials': Total number of trials detected
-        - 'n_failed': Number of failed trials
-        - 'failed_indices': Array of failed trial indices
-        - 'failed_cue_times': Array of cue times for failed trials
-        - 'failed_cue_frames': Array of cue frames for failed trials
-    """
-    if data.failed_trial_indices is None or data.total_trials_detected is None:
-        return None
-
-    return {
-        'total_trials': data.total_trials_detected,
-        'n_successful': len(data.successful_trial_indices) if data.successful_trial_indices is not None else 0,
-        'n_failed': len(data.failed_trial_indices),
-        'failed_indices': data.failed_trial_indices,
-        'successful_indices': data.successful_trial_indices,
-    }
-
 
 def load_session_data(config: SessionConfig) -> SessionData:
     """Load all Bonsai-generated CSV files for a session."""
@@ -250,165 +214,35 @@ def load_session_data(config: SessionConfig) -> SessionData:
         if cue_direction_raw is not None:
             data.cue_direction = cue_direction_raw[onset_idx]
 
-    # Match trials and optionally filter out failed trials
-    if data.cue_time is not None and data.end_of_trial_ts is not None:
-        # Match each cue with its corresponding end_of_trial
-        cue_times = data.cue_time
-        eot_times = data.end_of_trial_ts
+    trial_len_candidates = [
+        arr
+        for arr in (data.cue_frame, data.go_frame, data.end_of_trial_frame)
+        if arr is not None
+    ]
+    if trial_len_candidates:
+        n = min(len(a) for a in trial_len_candidates)
 
-        # For each cue, find if there's a matching end_of_trial
-        successful_trial_indices = []
-        failed_trial_indices = []
-        eot_idx = 0
+        def _trim(a: Optional[np.ndarray]) -> Optional[np.ndarray]:
+            return a[:n] if a is not None else None
 
-        for cue_idx in range(len(cue_times)):
-            cue_t = cue_times[cue_idx]
+        data.cue_frame = _trim(data.cue_frame)
+        data.cue_time = _trim(data.cue_time)
+        data.cue_direction = _trim(data.cue_direction)
 
-            # Look for the next end_of_trial that occurs after this cue
-            # The end_of_trial should occur within a reasonable window after the cue
-            # (typically 1-3 seconds for successful trials, vs ~10 seconds for failed trials)
-            found_match = False
-            while eot_idx < len(eot_times):
-                eot_t = eot_times[eot_idx]
+        data.go_frame = _trim(data.go_frame)
+        data.go_time = _trim(data.go_time)
+        data.go_direction_x = _trim(data.go_direction_x)
+        data.go_direction_y = _trim(data.go_direction_y)
+        data.go_direction = _trim(data.go_direction)
 
-                # Check if this end_of_trial comes after the cue
-                if eot_t > cue_t:
-                    # Found a potential match
-                    # Check if there's another cue before this end_of_trial
-                    next_cue_t = cue_times[cue_idx + 1] if cue_idx + 1 < len(cue_times) else np.inf
-
-                    if eot_t < next_cue_t:
-                        # This end_of_trial belongs to the current cue
-                        successful_trial_indices.append(cue_idx)
-                        eot_idx += 1
-                        found_match = True
-                        break
-                    else:
-                        # This end_of_trial comes after the next cue, so current cue failed
-                        break
-                else:
-                    # This end_of_trial is before the current cue, skip it
-                    eot_idx += 1
-
-            if not found_match:
-                # No matching end_of_trial found for this cue (failed trial)
-                failed_trial_indices.append(cue_idx)
-
-        # Store trial tracking information
-        data.total_trials_detected = len(cue_times)
-        data.successful_trial_indices = np.array(successful_trial_indices, dtype=int)
-        data.failed_trial_indices = np.array(failed_trial_indices, dtype=int)
-
-        # Report trial statistics
-        n_total = len(cue_times)
-        n_success = len(successful_trial_indices)
-        n_failed = len(failed_trial_indices)
-        print(f"\n{'='*60}")
-        print(f"Trial Summary:")
-        print(f"  Total trials: {n_total}")
-        print(f"  Successful trials: {n_success} ({100*n_success/n_total:.1f}%)")
-        print(f"  Failed trials: {n_failed} ({100*n_failed/n_total:.1f}%)")
-        if n_failed > 0:
-            print(f"  Failed trial indices: {failed_trial_indices}")
-        print(f"  exclude_failed_trials: {config.exclude_failed_trials}")
-        if config.exclude_failed_trials:
-            print(f"  → Only successful trials will be included in analysis")
-        else:
-            print(f"  → All trials (including failed) will be included in analysis")
-        print(f"{'='*60}\n")
-
-        # Filter arrays based on successful trials if exclude_failed_trials is True
-        if config.exclude_failed_trials and len(successful_trial_indices) > 0:
-            mask = np.array(successful_trial_indices, dtype=int)
-
-            def _filter(a: Optional[np.ndarray]) -> Optional[np.ndarray]:
-                return a[mask] if a is not None and len(a) > 0 else None
-
-            data.cue_frame = _filter(data.cue_frame)
-            data.cue_time = _filter(data.cue_time)
-            data.cue_direction = _filter(data.cue_direction)
-
-            data.go_frame = _filter(data.go_frame)
-            data.go_time = _filter(data.go_time)
-            data.go_direction_x = _filter(data.go_direction_x)
-            data.go_direction_y = _filter(data.go_direction_y)
-            data.go_direction = _filter(data.go_direction)
-
-            # end_of_trial arrays should already be aligned with successful trials
-            # Just ensure they match the length
-            if data.end_of_trial_frame is not None:
-                data.end_of_trial_frame = data.end_of_trial_frame[:len(mask)]
-                data.end_of_trial_ts = data.end_of_trial_ts[:len(mask)]
-                if data.trial_stim_direction is not None:
-                    data.trial_stim_direction = data.trial_stim_direction[:len(mask)]
-                if data.trial_eye_movement_direction is not None:
-                    data.trial_eye_movement_direction = data.trial_eye_movement_direction[:len(mask)]
-                if data.trial_torsion_angle is not None:
-                    data.trial_torsion_angle = data.trial_torsion_angle[:len(mask)]
-                if data.trial_success is not None:
-                    data.trial_success = data.trial_success[:len(mask)]
-        else:
-            # If not excluding failed trials, use the old trimming logic
-            trial_len_candidates = [
-                arr
-                for arr in (data.cue_frame, data.go_frame, data.end_of_trial_frame)
-                if arr is not None
-            ]
-            if trial_len_candidates:
-                n = min(len(a) for a in trial_len_candidates)
-
-                def _trim(a: Optional[np.ndarray]) -> Optional[np.ndarray]:
-                    return a[:n] if a is not None else None
-
-                data.cue_frame = _trim(data.cue_frame)
-                data.cue_time = _trim(data.cue_time)
-                data.cue_direction = _trim(data.cue_direction)
-
-                data.go_frame = _trim(data.go_frame)
-                data.go_time = _trim(data.go_time)
-                data.go_direction_x = _trim(data.go_direction_x)
-                data.go_direction_y = _trim(data.go_direction_y)
-                data.go_direction = _trim(data.go_direction)
-
-                data.end_of_trial_frame = _trim(data.end_of_trial_frame)
-                data.end_of_trial_ts = _trim(data.end_of_trial_ts)
-                data.trial_stim_direction = _trim(data.trial_stim_direction)
-                data.trial_eye_movement_direction = _trim(
-                    data.trial_eye_movement_direction
-                )
-                data.trial_torsion_angle = _trim(data.trial_torsion_angle)
-                data.trial_success = _trim(data.trial_success)
-    else:
-        # Fallback to old behavior if cue_time or end_of_trial_ts not available
-        trial_len_candidates = [
-            arr
-            for arr in (data.cue_frame, data.go_frame, data.end_of_trial_frame)
-            if arr is not None
-        ]
-        if trial_len_candidates:
-            n = min(len(a) for a in trial_len_candidates)
-
-            def _trim(a: Optional[np.ndarray]) -> Optional[np.ndarray]:
-                return a[:n] if a is not None else None
-
-            data.cue_frame = _trim(data.cue_frame)
-            data.cue_time = _trim(data.cue_time)
-            data.cue_direction = _trim(data.cue_direction)
-
-            data.go_frame = _trim(data.go_frame)
-            data.go_time = _trim(data.go_time)
-            data.go_direction_x = _trim(data.go_direction_x)
-            data.go_direction_y = _trim(data.go_direction_y)
-            data.go_direction = _trim(data.go_direction)
-
-            data.end_of_trial_frame = _trim(data.end_of_trial_frame)
-            data.end_of_trial_ts = _trim(data.end_of_trial_ts)
-            data.trial_stim_direction = _trim(data.trial_stim_direction)
-            data.trial_eye_movement_direction = _trim(
-                data.trial_eye_movement_direction
-            )
-            data.trial_torsion_angle = _trim(data.trial_torsion_angle)
-            data.trial_success = _trim(data.trial_success)
+        data.end_of_trial_frame = _trim(data.end_of_trial_frame)
+        data.end_of_trial_ts = _trim(data.end_of_trial_ts)
+        data.trial_stim_direction = _trim(data.trial_stim_direction)
+        data.trial_eye_movement_direction = _trim(
+            data.trial_eye_movement_direction
+        )
+        data.trial_torsion_angle = _trim(data.trial_torsion_angle)
+        data.trial_success = _trim(data.trial_success)
 
     return data
 
@@ -416,7 +250,6 @@ def load_session_data(config: SessionConfig) -> SessionData:
 __all__ = [
     "SessionData",
     "load_session_data",
-    "get_failed_trial_info",
     "get_session_date_from_path",
     "determine_camera_side",
     "remove_parentheses_chars",
