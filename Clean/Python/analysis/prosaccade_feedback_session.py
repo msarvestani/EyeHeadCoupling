@@ -3255,10 +3255,15 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
     # Interactive viewer: optionally include failed trials
     print("\nShowing interactive trajectory viewer...")
     if show_failed_in_viewer and len(failed_indices) > 0:
-        print(f"  Including {len(failed_indices)} failed trials (shown in RED)")
+        print(f"\n=== DEBUG: Processing failed trials for viewer ===")
+        print(f"  Number of failed indices: {len(failed_indices)}")
+        print(f"  Failed indices: {failed_indices}")
+
         # Extract failed trial trajectories
         # For failed trials, we need to estimate end time since they don't have eot entries
         target_df_failed = target_df_all.iloc[failed_indices].reset_index(drop=True)
+        print(f"  target_df_failed shape: {target_df_failed.shape}")
+        print(f"  target_df_failed:\n{target_df_failed}")
 
         # Create a dummy eot_df for failed trials using timeout duration
         failed_eot_data = []
@@ -3269,13 +3274,27 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
                 'timestamp': row['timestamp'] + 10.0,  # 10 second timeout
             })
         eot_df_failed = pd.DataFrame(failed_eot_data)
+        print(f"  eot_df_failed shape: {eot_df_failed.shape}")
 
+        print(f"  Calling extract_trial_trajectories for failed trials...")
         trials_failed = extract_trial_trajectories(eot_df_failed, eye_df, target_df_failed,
                                                    successful_indices=[])  # All are failed
+        print(f"  Number of failed trials extracted: {len(trials_failed)}")
+
+        # Check if trials are marked as failed
+        for i, trial in enumerate(trials_failed):
+            print(f"    Trial {i}: trial_number={trial['trial_number']}, trial_failed={trial.get('trial_failed', 'NOT SET')}")
+
         # Combine successful and failed for viewer
         trials_for_viewer = trials_successful + trials_failed
+        print(f"  Total trials for viewer: {len(trials_for_viewer)} (successful={len(trials_successful)}, failed={len(trials_failed)})")
+        print(f"=== END DEBUG ===\n")
     else:
         trials_for_viewer = trials_successful
+        if show_failed_in_viewer:
+            print(f"  DEBUG: show_failed_in_viewer=True but no failed trials found")
+        else:
+            print(f"  DEBUG: show_failed_in_viewer=False, not including failed trials")
 
     print("(Press SPACE to advance to next trial)")
     if show_plots:
@@ -3441,10 +3460,15 @@ def main(session_id: str, trial_min_duration: float = 0.1, trial_max_duration: f
     # Interactive viewer: optionally include failed trials
     print("\nShowing interactive trajectory viewer...")
     if show_failed_in_viewer and len(failed_indices) > 0:
-        print(f"  Including {len(failed_indices)} failed trials (shown in RED)")
+        print(f"\n=== DEBUG: Processing failed trials for viewer (main) ===")
+        print(f"  Number of failed indices: {len(failed_indices)}")
+        print(f"  Failed indices: {failed_indices}")
+
         # Extract failed trial trajectories
         # For failed trials, we need to estimate end time since they don't have eot entries
         target_df_failed = target_df_all.iloc[failed_indices].reset_index(drop=True)
+        print(f"  target_df_failed shape: {target_df_failed.shape}")
+        print(f"  target_df_failed:\n{target_df_failed}")
 
         # Create a dummy eot_df for failed trials using timeout duration
         failed_eot_data = []
@@ -3455,13 +3479,27 @@ def main(session_id: str, trial_min_duration: float = 0.1, trial_max_duration: f
                 'timestamp': row['timestamp'] + 10.0,  # 10 second timeout
             })
         eot_df_failed = pd.DataFrame(failed_eot_data)
+        print(f"  eot_df_failed shape: {eot_df_failed.shape}")
 
+        print(f"  Calling extract_trial_trajectories for failed trials...")
         trials_failed = extract_trial_trajectories(eot_df_failed, eye_df, target_df_failed,
                                                    successful_indices=[])  # All are failed
+        print(f"  Number of failed trials extracted: {len(trials_failed)}")
+
+        # Check if trials are marked as failed
+        for i, trial in enumerate(trials_failed):
+            print(f"    Trial {i}: trial_number={trial['trial_number']}, trial_failed={trial.get('trial_failed', 'NOT SET')}")
+
         # Combine successful and failed for viewer
         trials_for_viewer = trials_successful + trials_failed
+        print(f"  Total trials for viewer: {len(trials_for_viewer)} (successful={len(trials_successful)}, failed={len(trials_failed)})")
+        print(f"=== END DEBUG ===\n")
     else:
         trials_for_viewer = trials_successful
+        if show_failed_in_viewer:
+            print(f"  DEBUG: show_failed_in_viewer=True but no failed trials found")
+        else:
+            print(f"  DEBUG: show_failed_in_viewer=False, not including failed trials")
 
     print("(Press SPACE to advance to next trial)")
     interactive_trajectories(trials_for_viewer, animal_id=animal_id, session_date=date_str)
