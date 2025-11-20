@@ -376,22 +376,35 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
         eye_mask = (eye_df['frame'] >= start_frame) & (eye_df['frame'] <= end_frame)
         eye_trajectory = eye_df[eye_mask]
 
-        if len(eye_trajectory) == 0:
-            print(f"Warning: No eye data for trial {trial_num}, skipping")
-            continue
-
         # Drop any rows with NA values in position data
         eye_trajectory = eye_trajectory.dropna(subset=['green_x', 'green_y', 'timestamp'])
 
-        if len(eye_trajectory) == 0:
-            print(f"Warning: No valid eye position data for trial {trial_num}, skipping")
-            continue
+        # Handle trials with no eye data - create placeholder instead of skipping
+        has_eye_data = len(eye_trajectory) > 0
 
-        # Calculate path length (cumulative distance along trajectory)
-        start_eye_x = eye_trajectory['green_x'].values[0]
-        start_eye_y = eye_trajectory['green_y'].values[0]
+        if not has_eye_data:
+            print(f"Warning: No eye data for trial {trial_num}, creating placeholder")
+            # Create placeholder values for trials with no eye data
+            start_eye_x = np.nan
+            start_eye_y = np.nan
+            eye_duration = 0.0
+            path_length = 0.0
+            path_efficiency = 0.0
+            straight_line_distance = 0.0
+            initial_direction_error = np.nan
+            eye_times_raw = np.array([])
+            eye_start_time = start_time
+            eye_end_time = end_time
+        else:
+            # Calculate path length (cumulative distance along trajectory)
+            start_eye_x = eye_trajectory['green_x'].values[0]
+            start_eye_y = eye_trajectory['green_y'].values[0]
+            eye_times_raw = eye_trajectory['timestamp'].values
+            eye_start_time = eye_times_raw[0]
+            eye_end_time = eye_times_raw[-1]
+            eye_duration = eye_end_time - eye_start_time
 
-        if len(eye_trajectory) > 1:
+        if has_eye_data and len(eye_trajectory) > 1:
             dx = np.diff(eye_trajectory['green_x'].values)
             dy = np.diff(eye_trajectory['green_y'].values)
             segment_lengths = np.sqrt(dx**2 + dy**2)
@@ -422,27 +435,21 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
             ideal_mag = np.sqrt(ideal_dx**2 + ideal_dy**2)
 
             if initial_mag > 0 and ideal_mag > 0:
-                cos_angle = (initial_dx * ideal_dx + initial_dy * ideal_dy) / (initial_mag * ideal_mag)
+                cos_angle = (initial_dx * ideal_dx + initial_dy * initial_dy) / (initial_mag * ideal_mag)
                 # Clamp to [-1, 1] to avoid numerical errors
                 cos_angle = np.clip(cos_angle, -1.0, 1.0)
                 initial_direction_error = np.degrees(np.arccos(cos_angle))
             else:
                 initial_direction_error = np.nan
-        else:
+        elif has_eye_data:
+            # Single point trajectory
             path_length = 0.0
             path_efficiency = 0.0
             straight_line_distance = 0.0
             initial_direction_error = np.nan
 
-        # Use eye trajectory timestamps for relative time calculations
-        # to avoid mixing timestamps from different CSV files
-        eye_times_raw = eye_trajectory['timestamp'].values
-        eye_start_time = eye_times_raw[0]
-        eye_end_time = eye_times_raw[-1]
-        eye_duration = eye_end_time - eye_start_time
-
         # Sanity check: trial duration should not exceed 10 seconds (timeout)
-        if eye_duration > 10.0:
+        if has_eye_data and eye_duration > 10.0:
             print(f"WARNING: Trial {trial_num} has duration {eye_duration:.2f}s (> 10s timeout)")
             print(f"  start_time={start_time:.2f}, end_time={end_time:.2f}, duration={end_time-start_time:.2f}s")
             print(f"  eye_start_time={eye_start_time:.2f}, eye_end_time={eye_end_time:.2f}, eye_duration={eye_duration:.2f}s")
@@ -466,8 +473,8 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
             'target_visible': target_visible,
             'start_eye_x': start_eye_x,
             'start_eye_y': start_eye_y,
-            'eye_x': eye_trajectory['green_x'].values,
-            'eye_y': eye_trajectory['green_y'].values,
+            'eye_x': eye_trajectory['green_x'].values if has_eye_data else np.array([]),
+            'eye_y': eye_trajectory['green_y'].values if has_eye_data else np.array([]),
             'eye_times': eye_times_raw,
             'eye_start_time': eye_start_time,  # For relative time calculations
             'path_length': path_length,
@@ -475,6 +482,7 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
             'path_efficiency': path_efficiency,
             'initial_direction_error': initial_direction_error,
             'trial_failed': trial_failed,
+            'has_eye_data': has_eye_data,
         }
 
         trials.append(trial_data)
@@ -861,25 +869,28 @@ def interactive_trajectories(trials: list[dict], animal_id: Optional[str] = None
                                         markeredgewidth=2)
         current_target_highlight = [target_circle_green, target_dot_green]
 
-        # Plot trajectory
-        line, = ax.plot(eye_x, eye_y, '-', color=color, linewidth=2, alpha=0.7)
+        # Plot trajectory (only if eye data exists)
+        has_eye_data = trial.get('has_eye_data', True)
+        if has_eye_data and len(eye_x) > 0:
+            line, = ax.plot(eye_x, eye_y, '-', color=color, linewidth=2, alpha=0.7)
 
-        start, = ax.plot(eye_x[0], eye_y[0], 'o', color=color,
-                        markersize=10, markeredgecolor='white',
-                        markeredgewidth=2, alpha=0.9, label='Start')
-        # Draw end position as circle with diameter 0.2 (radius 0.1)
-        end_circle = Circle((eye_x[-1], eye_y[-1]), radius=0.1, fill=True,
-                           facecolor=color, edgecolor='white', linewidth=2, alpha=0.9,
-                           label='End' if trial_idx == 0 else None)
-        ax.add_patch(end_circle)
+            start, = ax.plot(eye_x[0], eye_y[0], 'o', color=color,
+                            markersize=10, markeredgecolor='white',
+                            markeredgewidth=2, alpha=0.9, label='Start')
+            # Draw end position as circle with diameter 0.2 (radius 0.1)
+            end_circle = Circle((eye_x[-1], eye_y[-1]), radius=0.1, fill=True,
+                               facecolor=color, edgecolor='white', linewidth=2, alpha=0.9,
+                               label='End' if trial_idx == 0 else None)
+            ax.add_patch(end_circle)
 
-        trial_lines.extend([line, start, end_circle])
+            trial_lines.extend([line, start, end_circle])
 
         # Update progress text
         target_dir = 'Left' if trial['target_x'] < 0 else 'Right'
         trial_status = " [FAILED]" if trial_failed else ""
+        no_data_status = " [NO EYE DATA]" if not has_eye_data else ""
         progress_text.set_text(
-            f"Trial {trial['trial_number']}{trial_status} (showing {trial_idx + 1}/{n_trials})\n"
+            f"Trial {trial['trial_number']}{trial_status}{no_data_status} (showing {trial_idx + 1}/{n_trials})\n"
             f"Target: {target_dir}\n"
             f"Duration: {trial['duration']:.3f}s\n"
             f"Efficiency: {trial['path_efficiency']:.2f}\n\n"
@@ -3239,8 +3250,40 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
         target_df_all, eot_df, exclude_failed=True
     )
 
-    # Extract successful trial trajectories (used for all analyses and plots)
-    trials_successful = extract_trial_trajectories(eot_df, eye_df, target_df_successful)
+    # Extract ALL trial trajectories for the interactive viewer (includes trials with no eye data)
+    # For successful trials: use actual end_of_trial times
+    # For failed trials: estimate 10-second timeout
+    print("\nExtracting ALL trials for interactive viewer...")
+    eot_df_all = []
+    for idx in range(len(target_df_all)):
+        if idx in successful_indices:
+            # Find corresponding eot entry
+            success_position = successful_indices.index(idx)
+            if success_position < len(eot_df):
+                eot_df_all.append({
+                    'frame': eot_df.iloc[success_position]['frame'],
+                    'timestamp': eot_df.iloc[success_position]['timestamp'],
+                })
+            else:
+                # Fallback
+                eot_df_all.append({
+                    'frame': target_df_all.iloc[idx]['frame'] + 600,
+                    'timestamp': target_df_all.iloc[idx]['timestamp'] + 10.0,
+                })
+        else:
+            # Failed trial - use 10 second timeout estimate
+            eot_df_all.append({
+                'frame': target_df_all.iloc[idx]['frame'] + 600,
+                'timestamp': target_df_all.iloc[idx]['timestamp'] + 10.0,
+            })
+    eot_df_all = pd.DataFrame(eot_df_all)
+
+    # Extract all trials (will include placeholders for trials with no eye data)
+    trials_all = extract_trial_trajectories(eot_df_all, eye_df, target_df_all,
+                                            successful_indices=successful_indices)
+
+    # Separate successful trials for analysis
+    trials_successful = [t for t in trials_all if not t.get('trial_failed', False) and t.get('has_eye_data', True)]
 
     if len(trials_successful) == 0:
         print("No valid trials found, exiting")
@@ -3259,50 +3302,17 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
         plt.show()
     plt.close(fig_traj_dir)
 
-    # Interactive viewer: optionally include failed trials
+    # Interactive viewer: show all trials or just successful ones
     print("\nShowing interactive trajectory viewer...")
-    if show_failed_in_viewer and len(failed_indices) > 0:
-        print(f"\n=== DEBUG: Processing failed trials for viewer ===")
-        print(f"  Number of failed indices: {len(failed_indices)}")
-        print(f"  Failed indices: {failed_indices}")
-
-        # Extract failed trial trajectories
-        # For failed trials, we need to estimate end time since they don't have eot entries
-        target_df_failed = target_df_all.iloc[failed_indices].reset_index(drop=True)
-        print(f"  target_df_failed shape: {target_df_failed.shape}")
-        print(f"  target_df_failed:\n{target_df_failed}")
-
-        # Create a dummy eot_df for failed trials using timeout duration
-        failed_eot_data = []
-        for idx, row in target_df_failed.iterrows():
-            # Failed trials timeout at ~10 seconds
-            failed_eot_data.append({
-                'frame': row['frame'] + 600,  # Rough estimate: 60 fps * 10 sec
-                'timestamp': row['timestamp'] + 10.0,  # 10 second timeout
-            })
-        eot_df_failed = pd.DataFrame(failed_eot_data)
-        print(f"  eot_df_failed shape: {eot_df_failed.shape}")
-
-        print(f"  Calling extract_trial_trajectories for failed trials...")
-        trials_failed = extract_trial_trajectories(eot_df_failed, eye_df, target_df_failed,
-                                                   successful_indices=[])  # All are failed
-        print(f"  Number of failed trials extracted: {len(trials_failed)}")
-
-        # Check if trials are marked as failed
-        for i, trial in enumerate(trials_failed):
-            print(f"    Trial {i}: trial_number={trial['trial_number']}, trial_failed={trial.get('trial_failed', 'NOT SET')}")
-
-        # Combine successful and failed for viewer
-        trials_for_viewer = trials_successful + trials_failed
-        print(f"  Total trials for viewer: {len(trials_for_viewer)} (successful={len(trials_successful)}, failed={len(trials_failed)})")
-        print(f"=== END DEBUG ===\n")
+    if show_failed_in_viewer:
+        print(f"  Showing ALL {len(trials_all)} trials (including {len(failed_indices)} failed trials in RED)")
+        trials_for_viewer = trials_all
     else:
+        print(f"  Showing only successful trials with eye data ({len(trials_successful)} trials)")
         trials_for_viewer = trials_successful
-        if show_failed_in_viewer:
-            print(f"  DEBUG: show_failed_in_viewer=True but no failed trials found")
-        else:
-            print(f"  DEBUG: show_failed_in_viewer=False, not including failed trials")
 
+    print(f"  Total trials in viewer: {len(trials_for_viewer)}")
+    print(f"  Expected total from vstim_cue: {len(target_df_all)}")
     print("(Press SPACE to advance to next trial)")
     if show_plots:
         interactive_trajectories(trials_for_viewer, animal_id=animal_id, session_date=date_str)
@@ -3449,8 +3459,40 @@ def main(session_id: str, trial_min_duration: float = 0.1, trial_max_duration: f
         target_df_all, eot_df, exclude_failed=True
     )
 
-    # Extract successful trial trajectories (used for all analyses and plots)
-    trials_successful = extract_trial_trajectories(eot_df, eye_df, target_df_successful)
+    # Extract ALL trial trajectories for the interactive viewer (includes trials with no eye data)
+    # For successful trials: use actual end_of_trial times
+    # For failed trials: estimate 10-second timeout
+    print("\nExtracting ALL trials for interactive viewer...")
+    eot_df_all = []
+    for idx in range(len(target_df_all)):
+        if idx in successful_indices:
+            # Find corresponding eot entry
+            success_position = successful_indices.index(idx)
+            if success_position < len(eot_df):
+                eot_df_all.append({
+                    'frame': eot_df.iloc[success_position]['frame'],
+                    'timestamp': eot_df.iloc[success_position]['timestamp'],
+                })
+            else:
+                # Fallback
+                eot_df_all.append({
+                    'frame': target_df_all.iloc[idx]['frame'] + 600,
+                    'timestamp': target_df_all.iloc[idx]['timestamp'] + 10.0,
+                })
+        else:
+            # Failed trial - use 10 second timeout estimate
+            eot_df_all.append({
+                'frame': target_df_all.iloc[idx]['frame'] + 600,
+                'timestamp': target_df_all.iloc[idx]['timestamp'] + 10.0,
+            })
+    eot_df_all = pd.DataFrame(eot_df_all)
+
+    # Extract all trials (will include placeholders for trials with no eye data)
+    trials_all = extract_trial_trajectories(eot_df_all, eye_df, target_df_all,
+                                            successful_indices=successful_indices)
+
+    # Separate successful trials for analysis
+    trials_successful = [t for t in trials_all if not t.get('trial_failed', False) and t.get('has_eye_data', True)]
 
     if len(trials_successful) == 0:
         print("No valid trials found, exiting")
@@ -3467,50 +3509,17 @@ def main(session_id: str, trial_min_duration: float = 0.1, trial_max_duration: f
     plt.show()
     plt.close(fig_traj_dir)
 
-    # Interactive viewer: optionally include failed trials
+    # Interactive viewer: show all trials or just successful ones
     print("\nShowing interactive trajectory viewer...")
-    if show_failed_in_viewer and len(failed_indices) > 0:
-        print(f"\n=== DEBUG: Processing failed trials for viewer (main) ===")
-        print(f"  Number of failed indices: {len(failed_indices)}")
-        print(f"  Failed indices: {failed_indices}")
-
-        # Extract failed trial trajectories
-        # For failed trials, we need to estimate end time since they don't have eot entries
-        target_df_failed = target_df_all.iloc[failed_indices].reset_index(drop=True)
-        print(f"  target_df_failed shape: {target_df_failed.shape}")
-        print(f"  target_df_failed:\n{target_df_failed}")
-
-        # Create a dummy eot_df for failed trials using timeout duration
-        failed_eot_data = []
-        for idx, row in target_df_failed.iterrows():
-            # Failed trials timeout at ~10 seconds
-            failed_eot_data.append({
-                'frame': row['frame'] + 600,  # Rough estimate: 60 fps * 10 sec
-                'timestamp': row['timestamp'] + 10.0,  # 10 second timeout
-            })
-        eot_df_failed = pd.DataFrame(failed_eot_data)
-        print(f"  eot_df_failed shape: {eot_df_failed.shape}")
-
-        print(f"  Calling extract_trial_trajectories for failed trials...")
-        trials_failed = extract_trial_trajectories(eot_df_failed, eye_df, target_df_failed,
-                                                   successful_indices=[])  # All are failed
-        print(f"  Number of failed trials extracted: {len(trials_failed)}")
-
-        # Check if trials are marked as failed
-        for i, trial in enumerate(trials_failed):
-            print(f"    Trial {i}: trial_number={trial['trial_number']}, trial_failed={trial.get('trial_failed', 'NOT SET')}")
-
-        # Combine successful and failed for viewer
-        trials_for_viewer = trials_successful + trials_failed
-        print(f"  Total trials for viewer: {len(trials_for_viewer)} (successful={len(trials_successful)}, failed={len(trials_failed)})")
-        print(f"=== END DEBUG ===\n")
+    if show_failed_in_viewer:
+        print(f"  Showing ALL {len(trials_all)} trials (including {len(failed_indices)} failed trials in RED)")
+        trials_for_viewer = trials_all
     else:
+        print(f"  Showing only successful trials with eye data ({len(trials_successful)} trials)")
         trials_for_viewer = trials_successful
-        if show_failed_in_viewer:
-            print(f"  DEBUG: show_failed_in_viewer=True but no failed trials found")
-        else:
-            print(f"  DEBUG: show_failed_in_viewer=False, not including failed trials")
 
+    print(f"  Total trials in viewer: {len(trials_for_viewer)}")
+    print(f"  Expected total from vstim_cue: {len(target_df_all)}")
     print("(Press SPACE to advance to next trial)")
     interactive_trajectories(trials_for_viewer, animal_id=animal_id, session_date=date_str)
 
