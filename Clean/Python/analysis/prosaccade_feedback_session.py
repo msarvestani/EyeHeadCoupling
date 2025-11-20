@@ -3160,6 +3160,98 @@ def test_reaction_time_consistency(trials: list[dict], movement_threshold: float
     return fig, stats_dict
 
 
+def export_eye_positions_csv(trials: list[dict], eye_df: pd.DataFrame,
+                              results_dir: Path, animal_id: str, date_str: str,
+                              ITI: float) -> Path:
+    """Export eye positions for all trials to CSV, including ITI periods.
+
+    Parameters
+    ----------
+    trials : list of dict
+        List of trial dictionaries with start/end times
+    eye_df : pd.DataFrame
+        Complete eye tracking data
+    results_dir : Path
+        Directory to save CSV
+    animal_id : str
+        Animal identifier
+    date_str : str
+        Session date
+    ITI : float
+        Inter-trial interval duration in seconds
+
+    Returns
+    -------
+    Path
+        Path to saved CSV file
+    """
+    csv_rows = []
+
+    for trial_idx, trial in enumerate(trials):
+        trial_num = trial['trial_number']
+        start_frame = trial['start_frame']
+        end_frame = trial['end_frame']
+        start_time = trial['start_time']
+        end_time = trial['end_time']
+        trial_failed = trial.get('trial_failed', False)
+        has_eye_data = trial.get('has_eye_data', True)
+
+        # Get trial eye data
+        trial_mask = (eye_df['frame'] >= start_frame) & (eye_df['frame'] <= end_frame)
+        trial_eye_data = eye_df[trial_mask].dropna(subset=['green_x', 'green_y', 'timestamp'])
+
+        # Add trial data rows
+        for _, row in trial_eye_data.iterrows():
+            csv_rows.append({
+                'trial_number': trial_num,
+                'trial_failed': trial_failed,
+                'frame': int(row['frame']),
+                'timestamp': row['timestamp'],
+                'eye_x': row['green_x'],
+                'eye_y': row['green_y'],
+                'is_iti': False,
+                'target_x': trial['target_x'],
+                'target_y': trial['target_y']
+            })
+
+        # Add ITI data (from trial end to next trial start)
+        if trial_idx < len(trials) - 1:
+            next_trial = trials[trial_idx + 1]
+            next_start_frame = next_trial['start_frame']
+            next_start_time = next_trial['start_time']
+
+            # ITI eye data
+            iti_mask = (eye_df['frame'] > end_frame) & (eye_df['frame'] < next_start_frame)
+            iti_eye_data = eye_df[iti_mask].dropna(subset=['green_x', 'green_y', 'timestamp'])
+
+            for _, row in iti_eye_data.iterrows():
+                csv_rows.append({
+                    'trial_number': trial_num,  # Associate ITI with the trial that just ended
+                    'trial_failed': trial_failed,
+                    'frame': int(row['frame']),
+                    'timestamp': row['timestamp'],
+                    'eye_x': row['green_x'],
+                    'eye_y': row['green_y'],
+                    'is_iti': True,
+                    'target_x': np.nan,  # No target during ITI
+                    'target_y': np.nan
+                })
+
+    # Create DataFrame and save
+    df = pd.DataFrame(csv_rows)
+
+    filename = f"{animal_id}_{date_str}_eye_positions_with_iti.csv"
+    csv_path = results_dir / filename
+    df.to_csv(csv_path, index=False)
+
+    print(f"\n Saved eye positions CSV to: {csv_path}")
+    print(f"  Total rows: {len(df)}")
+    print(f"  Trial rows: {(~df['is_iti']).sum()}")
+    print(f"  ITI rows: {df['is_iti'].sum()}")
+
+    return csv_path
+
+
 def _clean_path(path_str: str | Path) -> str:
     """Clean path string by removing Python string literal syntax if present.
 
@@ -3361,6 +3453,17 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
             plt.show()
         plt.close(fig_final_pos)
 
+    # Export eye positions CSV with ITI markers
+    print("\nExporting eye positions to CSV...")
+    # Calculate ITI from target_df_all
+    if len(target_df_all) > 1:
+        time_diffs = np.diff(target_df_all['timestamp'].values)
+        min_diff = np.min(time_diffs)
+        ITI = np.floor(min_diff)
+    else:
+        ITI = 0
+    export_eye_positions_csv(trials_all, eye_df, results_dir, animal_id, date_str, ITI)
+
     # Create summary DataFrame (only from successful trials)
     durations = [t['duration'] for t in trials_successful]
     path_lengths = [t['path_length'] for t in trials_successful]
@@ -3557,6 +3660,17 @@ def main(session_id: str, trial_min_duration: float = 0.1, trial_max_duration: f
     if fig_final_pos is not None:
         plt.show()
         plt.close(fig_final_pos)
+
+    # Export eye positions CSV with ITI markers
+    print("\nExporting eye positions to CSV...")
+    # Calculate ITI from target_df_all
+    if len(target_df_all) > 1:
+        time_diffs = np.diff(target_df_all['timestamp'].values)
+        min_diff = np.min(time_diffs)
+        ITI = np.floor(min_diff)
+    else:
+        ITI = 0
+    export_eye_positions_csv(trials_all, eye_df, results_dir, animal_id, date_str, ITI)
 
     # Create summary DataFrame (only from successful trials)
     durations = [t['duration'] for t in trials_successful]
