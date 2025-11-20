@@ -194,7 +194,7 @@ def load_feedback_data(folder_path: Path, animal_id: str = "Tsh001") -> Tuple[pd
 
 
 def identify_and_filter_failed_trials(target_df: pd.DataFrame, eot_df: pd.DataFrame,
-                                      exclude_failed: bool = True) -> Tuple[pd.DataFrame, list]:
+                                      exclude_failed: bool = True) -> Tuple[pd.DataFrame, list, list]:
     """Identify failed trials by matching target (cue) events with end_of_trial events.
 
     A trial is considered failed if a target/cue event does not have a corresponding
@@ -214,11 +214,13 @@ def identify_and_filter_failed_trials(target_df: pd.DataFrame, eot_df: pd.DataFr
     filtered_target_df : pd.DataFrame
         Target dataframe with failed trials removed (if exclude_failed=True)
     failed_indices : list
-        List of indices of failed trials
+        List of indices of failed trials (in original target_df indexing)
+    successful_indices : list
+        List of indices of successful trials (in original target_df indexing)
     """
     if len(target_df) == 0 or len(eot_df) == 0:
         print("\nWarning: Empty target or end-of-trial data, cannot identify failed trials")
-        return target_df, []
+        return target_df, [], []
 
     # Sort both dataframes by timestamp to ensure correct matching
     target_df = target_df.sort_values('timestamp').reset_index(drop=True)
@@ -286,13 +288,14 @@ def identify_and_filter_failed_trials(target_df: pd.DataFrame, eot_df: pd.DataFr
     if exclude_failed and n_success > 0:
         filtered_target_df = target_df.iloc[successful_indices].reset_index(drop=True)
         print(f"Filtered target_df from {len(target_df)} to {len(filtered_target_df)} trials")
-        return filtered_target_df, failed_indices
+        return filtered_target_df, failed_indices, successful_indices
     else:
-        return target_df, failed_indices
+        return target_df, failed_indices, successful_indices
 
 
 def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
-                                target_df: pd.DataFrame) -> list[dict]:
+                                target_df: pd.DataFrame,
+                                successful_indices: Optional[list] = None) -> list[dict]:
     """Extract eye position trajectories for each trial.
 
     Trial timing is calculated from vstim_cue (target_df):
@@ -440,6 +443,12 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
             print(f"  start_time={start_time:.2f}, end_time={end_time:.2f}, duration={end_time-start_time:.2f}s")
             print(f"  eye_start_time={eye_start_time:.2f}, eye_end_time={eye_end_time:.2f}, eye_duration={eye_duration:.2f}s")
 
+        # Determine if this trial was successful or failed
+        # If successful_indices is provided, check if current index is in it
+        trial_failed = False
+        if successful_indices is not None:
+            trial_failed = i not in successful_indices
+
         trial_data = {
             'trial_number': trial_num,
             'start_frame': start_frame,
@@ -461,6 +470,7 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
             'straight_line_distance': straight_line_distance,
             'path_efficiency': path_efficiency,
             'initial_direction_error': initial_direction_error,
+            'trial_failed': trial_failed,
         }
 
         trials.append(trial_data)
@@ -817,23 +827,33 @@ def interactive_trajectories(trials: list[dict], animal_id: Optional[str] = None
         target_y = trial['target_y']
         target_radius = trial['target_diameter'] / 2.0
         target_visible = trial.get('target_visible', 1)
-        color = cmap(trial_idx / max(1, n_trials - 1))
+        trial_failed = trial.get('trial_failed', False)
 
-        # Highlight current target in green with CORRECT visibility for this trial
+        # Color scheme: RED for failed trials, regular colormap for successful trials
+        if trial_failed:
+            color = 'red'
+            target_color = 'red'
+            target_edge_color = 'darkred'
+        else:
+            color = cmap(trial_idx / max(1, n_trials - 1))
+            target_color = 'green'
+            target_edge_color = 'darkgreen'
+
+        # Highlight current target with CORRECT visibility for this trial
         # Use solid line for visible, dashed for invisible
         linestyle = '-' if target_visible else '--'
         target_circle_green = Circle((target_x, target_y), radius=target_radius,
-                                     fill=True, facecolor='green', edgecolor='darkgreen',
+                                     fill=True, facecolor=target_color, edgecolor=target_edge_color,
                                      linewidth=3, linestyle=linestyle, alpha=0.3)
         ax.add_patch(target_circle_green)
 
         # Draw center marker - filled for visible, hollow for invisible
         if target_visible:
-            target_dot_green, = ax.plot(target_x, target_y, 'go', markersize=8,
-                                        markeredgecolor='darkgreen', markeredgewidth=2)
+            target_dot_green, = ax.plot(target_x, target_y, 'o', color=target_color, markersize=8,
+                                        markeredgecolor=target_edge_color, markeredgewidth=2)
         else:
-            target_dot_green, = ax.plot(target_x, target_y, 'o', color='green', markersize=8,
-                                        markerfacecolor='none', markeredgecolor='darkgreen',
+            target_dot_green, = ax.plot(target_x, target_y, 'o', color=target_color, markersize=8,
+                                        markerfacecolor='none', markeredgecolor=target_edge_color,
                                         markeredgewidth=2)
         current_target_highlight = [target_circle_green, target_dot_green]
 
@@ -853,8 +873,9 @@ def interactive_trajectories(trials: list[dict], animal_id: Optional[str] = None
 
         # Update progress text
         target_dir = 'Left' if trial['target_x'] < 0 else 'Right'
+        trial_status = " [FAILED]" if trial_failed else ""
         progress_text.set_text(
-            f"Trial {trial['trial_number']} (showing {trial_idx + 1}/{n_trials})\n"
+            f"Trial {trial['trial_number']}{trial_status} (showing {trial_idx + 1}/{n_trials})\n"
             f"Target: {target_dir}\n"
             f"Duration: {trial['duration']:.3f}s\n"
             f"Efficiency: {trial['path_efficiency']:.2f}\n\n"
@@ -3205,10 +3226,11 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
     eot_df, eye_df, target_df = load_feedback_data(folder_path, animal_id)
 
     # Identify and filter failed trials
-    target_df, failed_indices = identify_and_filter_failed_trials(target_df, eot_df, exclude_failed=exclude_failed_trials)
+    target_df, failed_indices, successful_indices = identify_and_filter_failed_trials(target_df, eot_df, exclude_failed=exclude_failed_trials)
 
-    # Extract trial trajectories
-    trials = extract_trial_trajectories(eot_df, eye_df, target_df)
+    # Extract trial trajectories (mark trials as successful/failed)
+    trials = extract_trial_trajectories(eot_df, eye_df, target_df,
+                                       successful_indices=successful_indices if not exclude_failed_trials else None)
 
     if len(trials) == 0:
         print("No valid trials found, exiting")
@@ -3367,10 +3389,11 @@ def main(session_id: str, trial_min_duration: float = 0.1, trial_max_duration: f
     eot_df, eye_df, target_df = load_feedback_data(folder_path, animal_id or "Tsh001")
 
     # Identify and filter failed trials
-    target_df, failed_indices = identify_and_filter_failed_trials(target_df, eot_df, exclude_failed=exclude_failed_trials)
+    target_df, failed_indices, successful_indices = identify_and_filter_failed_trials(target_df, eot_df, exclude_failed=exclude_failed_trials)
 
-    # Extract trial trajectories
-    trials = extract_trial_trajectories(eot_df, eye_df, target_df)
+    # Extract trial trajectories (mark trials as successful/failed)
+    trials = extract_trial_trajectories(eot_df, eye_df, target_df,
+                                       successful_indices=successful_indices if not exclude_failed_trials else None)
 
     if len(trials) == 0:
         print("No valid trials found, exiting")
