@@ -355,8 +355,6 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
         if i < len(eot_df):
             end_frame = int(eot_df.iloc[i]['frame'])
             end_time = eot_df.iloc[i]['timestamp']
-            if trial_num <= 3:  # Debug first 3 trials
-                print(f"  Trial {trial_num}: start_frame={start_frame}, end_frame={end_frame} (from eot_df)")
         else:
             # Fallback if eot_df doesn't have this trial (shouldn't happen after filtering)
             print(f"Warning: No end_of_trial data for trial {trial_num}, using next trial start - ITI")
@@ -405,22 +403,6 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
             eye_start_time = eye_times_raw[0]
             eye_end_time = eye_times_raw[-1]
             eye_duration = eye_end_time - eye_start_time
-
-            # Debug: check if last eye frame matches end_frame
-            last_eye_frame = eye_trajectory['frame'].values[-1]
-            if trial_num <= 5:  # Debug first 5 trials
-                print(f"    Trial {trial_num}: {len(eye_trajectory)} eye samples from frame {eye_trajectory['frame'].values[0]} to {last_eye_frame}")
-                print(f"    Last eye frame captured: {last_eye_frame}, eot end_frame: {end_frame}, diff: {end_frame - last_eye_frame}")
-                print(f"    Final eye position: ({eye_trajectory['green_x'].values[-1]:.3f}, {eye_trajectory['green_y'].values[-1]:.3f})")
-                print(f"    Target position: ({target_x:.3f}, {target_y:.3f})")
-                # Show last few eye positions
-                if len(eye_trajectory) >= 5:
-                    print(f"    Last 5 eye frames:")
-                    for j in range(-5, 0):
-                        fr = eye_trajectory['frame'].values[j]
-                        ex = eye_trajectory['green_x'].values[j]
-                        ey = eye_trajectory['green_y'].values[j]
-                        print(f"      frame {fr}: ({ex:.3f}, {ey:.3f})")
 
         if has_eye_data and len(eye_trajectory) > 1:
             dx = np.diff(eye_trajectory['green_x'].values)
@@ -477,11 +459,6 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
         trial_failed = False
         if successful_indices is not None:
             trial_failed = i not in successful_indices
-            if trial_num <= 15 and trial_failed:  # Debug first 15 trials if failed
-                print(f"    *** Trial {trial_num} (index {i}) marked as FAILED (not in successful_indices)")
-        else:
-            if trial_num <= 5:
-                print(f"    Note: successful_indices is None, cannot determine if trial failed")
 
         trial_data = {
             'trial_number': trial_num,
@@ -3328,22 +3305,11 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
     # Interactive viewer: show all trials or just successful ones
     print("\nShowing interactive trajectory viewer...")
     if show_failed_in_viewer:
-        # Debug: count how many are actually marked as failed in trials_all
-        actually_failed = sum(1 for t in trials_all if t.get('trial_failed', False))
-        print(f"  Showing ALL {len(trials_all)} trials")
-        print(f"  Expected {len(failed_indices)} failed trials, actually marked failed: {actually_failed}")
-        if actually_failed > 0:
-            failed_trial_nums = [t['trial_number'] for t in trials_all if t.get('trial_failed', False)]
-            print(f"  Failed trial numbers: {failed_trial_nums[:10]}{'...' if len(failed_trial_nums) > 10 else ''}")
-        else:
-            print(f"  WARNING: No trials marked as failed in trials_all!")
+        print(f"  Showing ALL {len(trials_all)} trials (including {len(failed_indices)} failed trials in RED)")
         trials_for_viewer = trials_all
     else:
         print(f"  Showing only successful trials with eye data ({len(trials_successful)} trials)")
         trials_for_viewer = trials_successful
-
-    print(f"  Total trials in viewer: {len(trials_for_viewer)}")
-    print(f"  Expected total from vstim_cue: {len(target_df_all)}")
     print("(Press SPACE to advance to next trial)")
     if show_plots:
         interactive_trajectories(trials_for_viewer, animal_id=animal_id, session_date=date_str)
@@ -3543,22 +3509,11 @@ def main(session_id: str, trial_min_duration: float = 0.1, trial_max_duration: f
     # Interactive viewer: show all trials or just successful ones
     print("\nShowing interactive trajectory viewer...")
     if show_failed_in_viewer:
-        # Debug: count how many are actually marked as failed in trials_all
-        actually_failed = sum(1 for t in trials_all if t.get('trial_failed', False))
-        print(f"  Showing ALL {len(trials_all)} trials")
-        print(f"  Expected {len(failed_indices)} failed trials, actually marked failed: {actually_failed}")
-        if actually_failed > 0:
-            failed_trial_nums = [t['trial_number'] for t in trials_all if t.get('trial_failed', False)]
-            print(f"  Failed trial numbers: {failed_trial_nums[:10]}{'...' if len(failed_trial_nums) > 10 else ''}")
-        else:
-            print(f"  WARNING: No trials marked as failed in trials_all!")
+        print(f"  Showing ALL {len(trials_all)} trials (including {len(failed_indices)} failed trials in RED)")
         trials_for_viewer = trials_all
     else:
         print(f"  Showing only successful trials with eye data ({len(trials_successful)} trials)")
         trials_for_viewer = trials_successful
-
-    print(f"  Total trials in viewer: {len(trials_for_viewer)}")
-    print(f"  Expected total from vstim_cue: {len(target_df_all)}")
     print("(Press SPACE to advance to next trial)")
     interactive_trajectories(trials_for_viewer, animal_id=animal_id, session_date=date_str)
 
