@@ -3257,8 +3257,20 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
     if show_failed_in_viewer and len(failed_indices) > 0:
         print(f"  Including {len(failed_indices)} failed trials (shown in RED)")
         # Extract failed trial trajectories
+        # For failed trials, we need to estimate end time since they don't have eot entries
         target_df_failed = target_df_all.iloc[failed_indices].reset_index(drop=True)
-        trials_failed = extract_trial_trajectories(eot_df, eye_df, target_df_failed,
+
+        # Create a dummy eot_df for failed trials using timeout duration
+        failed_eot_data = []
+        for idx, row in target_df_failed.iterrows():
+            # Failed trials timeout at ~10 seconds
+            failed_eot_data.append({
+                'frame': row['frame'] + 600,  # Rough estimate: 60 fps * 10 sec
+                'timestamp': row['timestamp'] + 10.0,  # 10 second timeout
+            })
+        eot_df_failed = pd.DataFrame(failed_eot_data)
+
+        trials_failed = extract_trial_trajectories(eot_df_failed, eye_df, target_df_failed,
                                                    successful_indices=[])  # All are failed
         # Combine successful and failed for viewer
         trials_for_viewer = trials_successful + trials_failed
@@ -3431,8 +3443,20 @@ def main(session_id: str, trial_min_duration: float = 0.1, trial_max_duration: f
     if show_failed_in_viewer and len(failed_indices) > 0:
         print(f"  Including {len(failed_indices)} failed trials (shown in RED)")
         # Extract failed trial trajectories
+        # For failed trials, we need to estimate end time since they don't have eot entries
         target_df_failed = target_df_all.iloc[failed_indices].reset_index(drop=True)
-        trials_failed = extract_trial_trajectories(eot_df, eye_df, target_df_failed,
+
+        # Create a dummy eot_df for failed trials using timeout duration
+        failed_eot_data = []
+        for idx, row in target_df_failed.iterrows():
+            # Failed trials timeout at ~10 seconds
+            failed_eot_data.append({
+                'frame': row['frame'] + 600,  # Rough estimate: 60 fps * 10 sec
+                'timestamp': row['timestamp'] + 10.0,  # 10 second timeout
+            })
+        eot_df_failed = pd.DataFrame(failed_eot_data)
+
+        trials_failed = extract_trial_trajectories(eot_df_failed, eye_df, target_df_failed,
                                                    successful_indices=[])  # All are failed
         # Combine successful and failed for viewer
         trials_for_viewer = trials_successful + trials_failed
