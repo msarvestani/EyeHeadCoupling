@@ -408,9 +408,19 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
 
             # Debug: check if last eye frame matches end_frame
             last_eye_frame = eye_trajectory['frame'].values[-1]
-            if trial_num <= 3:
+            if trial_num <= 5:  # Debug first 5 trials
+                print(f"    Trial {trial_num}: {len(eye_trajectory)} eye samples from frame {eye_trajectory['frame'].values[0]} to {last_eye_frame}")
                 print(f"    Last eye frame captured: {last_eye_frame}, eot end_frame: {end_frame}, diff: {end_frame - last_eye_frame}")
                 print(f"    Final eye position: ({eye_trajectory['green_x'].values[-1]:.3f}, {eye_trajectory['green_y'].values[-1]:.3f})")
+                print(f"    Target position: ({target_x:.3f}, {target_y:.3f})")
+                # Show last few eye positions
+                if len(eye_trajectory) >= 5:
+                    print(f"    Last 5 eye frames:")
+                    for j in range(-5, 0):
+                        fr = eye_trajectory['frame'].values[j]
+                        ex = eye_trajectory['green_x'].values[j]
+                        ey = eye_trajectory['green_y'].values[j]
+                        print(f"      frame {fr}: ({ex:.3f}, {ey:.3f})")
 
         if has_eye_data and len(eye_trajectory) > 1:
             dx = np.diff(eye_trajectory['green_x'].values)
