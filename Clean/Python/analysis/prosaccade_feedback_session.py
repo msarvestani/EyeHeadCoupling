@@ -379,6 +379,16 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
         # Drop any rows with NA values in position data
         eye_trajectory = eye_trajectory.dropna(subset=['green_x', 'green_y', 'timestamp'])
 
+        # Add the NEXT frame after end_frame to get final eye position
+        # This ensures we use the eye position from vstim_go row N+1 instead of row N
+        if len(eye_trajectory) > 0:
+            next_frame_mask = (eye_df['frame'] > end_frame) & (eye_df['frame'].notna())
+            next_frame_data = eye_df[next_frame_mask].dropna(subset=['green_x', 'green_y', 'timestamp'])
+            if len(next_frame_data) > 0:
+                # Append the first frame after end_frame
+                next_row = next_frame_data.iloc[0:1]
+                eye_trajectory = pd.concat([eye_trajectory, next_row], ignore_index=True)
+
         # Handle trials with no eye data - create placeholder instead of skipping
         has_eye_data = len(eye_trajectory) > 0
 
