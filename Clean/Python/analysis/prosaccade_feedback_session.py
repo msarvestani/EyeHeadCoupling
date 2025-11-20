@@ -2314,7 +2314,7 @@ def compare_left_right_performance(trials: list[dict], left_x: float = -0.7, rig
     stats_dict = {
         'n_left': n_left,
         'n_right': n_right,
-        'n_other': n_other,
+        'n_center': n_center,
         'left_metrics': left_metrics,
         'right_metrics': right_metrics,
         'p_values': {
