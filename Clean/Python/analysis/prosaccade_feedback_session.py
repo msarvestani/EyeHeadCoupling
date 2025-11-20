@@ -355,6 +355,8 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
         if i < len(eot_df):
             end_frame = int(eot_df.iloc[i]['frame'])
             end_time = eot_df.iloc[i]['timestamp']
+            if trial_num <= 3:  # Debug first 3 trials
+                print(f"  Trial {trial_num}: start_frame={start_frame}, end_frame={end_frame} (from eot_df)")
         else:
             # Fallback if eot_df doesn't have this trial (shouldn't happen after filtering)
             print(f"Warning: No end_of_trial data for trial {trial_num}, using next trial start - ITI")
@@ -403,6 +405,12 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
             eye_start_time = eye_times_raw[0]
             eye_end_time = eye_times_raw[-1]
             eye_duration = eye_end_time - eye_start_time
+
+            # Debug: check if last eye frame matches end_frame
+            last_eye_frame = eye_trajectory['frame'].values[-1]
+            if trial_num <= 3:
+                print(f"    Last eye frame captured: {last_eye_frame}, eot end_frame: {end_frame}, diff: {end_frame - last_eye_frame}")
+                print(f"    Final eye position: ({eye_trajectory['green_x'].values[-1]:.3f}, {eye_trajectory['green_y'].values[-1]:.3f})")
 
         if has_eye_data and len(eye_trajectory) > 1:
             dx = np.diff(eye_trajectory['green_x'].values)
