@@ -2113,16 +2113,21 @@ def compare_left_right_performance(trials: list[dict], left_x: float = -0.7, rig
                                    animal_id: Optional[str] = None, session_date: str = "") -> tuple:
     """Compare performance metrics for left vs right target trials.
 
+    Left/right classification is based on target_x sign:
+    - Left: target_x < 0
+    - Right: target_x > 0
+    - Center: target_x = 0
+
     Parameters
     ----------
     trials : list of dict
         List of trial data dictionaries
     left_x : float
-        Expected x position for left targets (default: -0.7)
+        DEPRECATED - not used (kept for backwards compatibility)
     right_x : float
-        Expected x position for right targets (default: +0.7)
+        DEPRECATED - not used (kept for backwards compatibility)
     tolerance : float
-        Tolerance for matching target positions (default: 0.1)
+        DEPRECATED - not used (kept for backwards compatibility)
     results_dir : Path, optional
         Directory to save the figure
     animal_id : str, optional
@@ -2137,28 +2142,29 @@ def compare_left_right_performance(trials: list[dict], left_x: float = -0.7, rig
     """
     from scipy import stats as scipy_stats
 
-    # Classify trials as left or right based on target_x position
+    # Classify trials as left or right based on target_x sign
+    # Left = target_x < 0, Right = target_x > 0
     left_trials = []
     right_trials = []
-    other_trials = []
+    center_trials = []
 
     for trial in trials:
         target_x = trial['target_x']
-        if abs(target_x - left_x) < tolerance:
+        if target_x < 0:
             left_trials.append(trial)
-        elif abs(target_x - right_x) < tolerance:
+        elif target_x > 0:
             right_trials.append(trial)
         else:
-            other_trials.append(trial)
+            center_trials.append(trial)
 
     n_left = len(left_trials)
     n_right = len(right_trials)
-    n_other = len(other_trials)
+    n_center = len(center_trials)
 
     print(f"\nLeft/Right Target Analysis:")
-    print(f"  Left trials (x ≈ {left_x}): {n_left}")
-    print(f"  Right trials (x ≈ {right_x}): {n_right}")
-    print(f"  Other positions: {n_other}")
+    print(f"  Left trials (x < 0): {n_left}")
+    print(f"  Right trials (x > 0): {n_right}")
+    print(f"  Center trials (x = 0): {n_center}")
 
     if n_left == 0 or n_right == 0:
         print("Warning: Not enough trials for left/right comparison")
