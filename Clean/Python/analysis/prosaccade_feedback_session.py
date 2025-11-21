@@ -3331,6 +3331,290 @@ def interactive_initial_direction_viewer(trials: list[dict], animal_id: Optional
     plt.show()
 
 
+def test_left_right_targeted_movement(trials: list[dict], results_dir: Optional[Path] = None,
+                                       animal_id: Optional[str] = None, session_date: str = "",
+                                       n_shuffles: int = 1000) -> tuple:
+    """Test whether animals make targeted left/right movements vs random (50% chance).
+
+    For prosaccade tasks with left/right targets only. Simplifies to binary classification:
+    - Is target left or right?
+    - Is initial movement left or right?
+    - Does initial movement match target direction?
+
+    Tests against random (50%) using:
+    1. Binomial test
+    2. Shuffle control (randomly permute target positions)
+
+    This function is standalone and can be easily removed without affecting other analyses.
+
+    Parameters
+    ----------
+    trials : list of dict
+        List of trial data dictionaries
+    results_dir : Path, optional
+        Directory to save the figure
+    animal_id : str, optional
+        Animal identifier for filename
+    session_date : str, optional
+        Session date for title
+    n_shuffles : int
+        Number of shuffle iterations for null distribution (default: 1000)
+
+    Returns
+    -------
+    tuple of (fig, stats_dict)
+        Figure and dictionary containing statistics
+    """
+    from scipy import stats as scipy_stats
+
+    # Filter to trials with valid data
+    valid_trials = []
+    for t in trials:
+        eye_x = t.get('eye_x', [])
+        if len(eye_x) < 2:  # Need at least 2 points for direction
+            continue
+        valid_trials.append(t)
+
+    n_trials = len(valid_trials)
+
+    print(f"\nLeft/Right Targeted Movement Analysis:")
+    print(f"  Trials with sufficient data: {n_trials}")
+
+    if n_trials < 5:
+        print("Warning: Not enough trials for left/right analysis")
+        return None, None
+
+    # Classify each trial
+    correct_direction = []
+    target_directions = []  # -1 for left, +1 for right
+    initial_directions = []  # -1 for left, +1 for right
+
+    for trial in valid_trials:
+        eye_x = trial['eye_x']
+        start_x = eye_x[0]
+        target_x = trial['target_x']
+
+        # Determine target direction
+        target_is_right = target_x > start_x
+        target_dir = 1 if target_is_right else -1
+        target_directions.append(target_dir)
+
+        # Determine initial movement direction (using first 5 points)
+        n_samples = min(5, len(eye_x))
+        end_x = eye_x[n_samples - 1]
+        initial_is_right = end_x > start_x
+        initial_dir = 1 if initial_is_right else -1
+        initial_directions.append(initial_dir)
+
+        # Check if they match
+        is_correct = (target_dir == initial_dir)
+        correct_direction.append(is_correct)
+
+    target_directions = np.array(target_directions)
+    initial_directions = np.array(initial_directions)
+    correct_direction = np.array(correct_direction)
+
+    # Calculate observed statistics
+    n_correct = correct_direction.sum()
+    proportion_correct = n_correct / n_trials
+    chance_level = 0.5
+
+    # Count left/right targets
+    n_left_targets = (target_directions == -1).sum()
+    n_right_targets = (target_directions == 1).sum()
+
+    print(f"  Left targets: {n_left_targets}")
+    print(f"  Right targets: {n_right_targets}")
+    print(f"  Correct initial directions: {n_correct}/{n_trials} ({proportion_correct*100:.1f}%)")
+
+    # Statistical test 1: Binomial test
+    # H0: proportion = 0.5 (chance)
+    # H1: proportion > 0.5 (better than chance)
+    binom_pvalue = scipy_stats.binomtest(n_correct, n_trials, 0.5, alternative='greater').pvalue
+
+    # Statistical test 2: Shuffle control
+    print(f"  Running {n_shuffles} shuffle iterations...")
+    np.random.seed(42)
+    shuffle_proportions = []
+
+    for i in range(n_shuffles):
+        # Randomly shuffle target directions
+        shuffled_targets = np.random.permutation(target_directions)
+        # Calculate proportion correct for shuffled data
+        shuffled_correct = (shuffled_targets == initial_directions).sum()
+        shuffle_proportions.append(shuffled_correct / n_trials)
+
+    shuffle_proportions = np.array(shuffle_proportions)
+    shuffle_pvalue = (shuffle_proportions >= proportion_correct).sum() / n_shuffles
+
+    # Create figure with 2x2 subplots
+    fig, axes = plt.subplots(2, 2, figsize=(14, 11))
+    fig.suptitle(f'Left/Right Targeted Movement Analysis - {animal_id} - {session_date}',
+                fontsize=14, fontweight='bold')
+
+    # Plot 1: Bar chart - Observed vs Chance
+    ax = axes[0, 0]
+    x_pos = [0, 1]
+    heights = [proportion_correct * 100, chance_level * 100]
+    colors = ['steelblue', 'lightcoral']
+    bars = ax.bar(x_pos, heights, width=0.6, color=colors, alpha=0.7, edgecolor='black')
+
+    ax.axhline(50, color='red', linestyle='--', linewidth=2, alpha=0.5, label='Chance (50%)')
+    ax.set_xticks(x_pos)
+    ax.set_xticklabels(['Observed', 'Chance\n(Random)'])
+    ax.set_ylabel('Correct Initial Direction (%)', fontsize=12)
+    ax.set_title('Observed vs Chance Performance', fontsize=12, fontweight='bold')
+    ax.set_ylim(0, 110)
+    ax.grid(True, alpha=0.3, axis='y')
+
+    # Add percentage labels on bars
+    for i, (bar, height) in enumerate(zip(bars, heights)):
+        ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 2,
+               f'{height:.1f}%', ha='center', va='bottom', fontweight='bold', fontsize=12)
+
+    # Add sample size
+    ax.text(0, -5, f'n={n_trials}', ha='center', va='top', fontsize=10)
+
+    # Plot 2: Shuffle distribution
+    ax = axes[0, 1]
+    ax.hist(shuffle_proportions * 100, bins=30, color='lightcoral', alpha=0.7,
+           edgecolor='black', label='Shuffle null distribution')
+    ax.axvline(proportion_correct * 100, color='blue', linestyle='-', linewidth=3,
+              label=f'Observed = {proportion_correct*100:.1f}%')
+    ax.axvline(chance_level * 100, color='red', linestyle='--', linewidth=2,
+              label='Chance = 50%')
+
+    ax.set_xlabel('Correct Initial Direction (%)', fontsize=11)
+    ax.set_ylabel('Frequency', fontsize=11)
+    ax.set_title(f'Shuffle Test (n={n_shuffles} iterations)\np = {shuffle_pvalue:.4f}',
+                fontsize=12, fontweight='bold')
+    ax.legend(fontsize=9)
+    ax.grid(True, alpha=0.3, axis='y')
+
+    # Plot 3: Confusion matrix style
+    ax = axes[1, 0]
+
+    # Count each combination
+    left_target_left_initial = ((target_directions == -1) & (initial_directions == -1)).sum()
+    left_target_right_initial = ((target_directions == -1) & (initial_directions == 1)).sum()
+    right_target_left_initial = ((target_directions == 1) & (initial_directions == -1)).sum()
+    right_target_right_initial = ((target_directions == 1) & (initial_directions == 1)).sum()
+
+    confusion = np.array([[left_target_left_initial, left_target_right_initial],
+                         [right_target_left_initial, right_target_right_initial]])
+
+    im = ax.imshow(confusion, cmap='Blues', aspect='auto')
+
+    # Add text annotations
+    for i in range(2):
+        for j in range(2):
+            text = ax.text(j, i, str(confusion[i, j]),
+                         ha='center', va='center', color='black', fontsize=20, fontweight='bold')
+
+    ax.set_xticks([0, 1])
+    ax.set_yticks([0, 1])
+    ax.set_xticklabels(['Left', 'Right'], fontsize=11)
+    ax.set_yticklabels(['Left', 'Right'], fontsize=11)
+    ax.set_xlabel('Initial Movement Direction', fontsize=12)
+    ax.set_ylabel('Target Direction', fontsize=12)
+    ax.set_title('Confusion Matrix\n(diagonal = correct)', fontsize=12, fontweight='bold')
+
+    plt.colorbar(im, ax=ax, label='Count')
+
+    # Plot 4: Summary statistics table
+    ax = axes[1, 1]
+    ax.axis('off')
+
+    # Determine significance
+    is_voluntary = binom_pvalue < 0.05 and proportion_correct > 0.6
+
+    table_data = [
+        ['Metric', 'Value'],
+        ['', ''],
+        ['Sample Size', f'{n_trials} trials'],
+        ['Left Targets', f'{n_left_targets}'],
+        ['Right Targets', f'{n_right_targets}'],
+        ['', ''],
+        ['Observed Correct', f'{n_correct} ({proportion_correct*100:.1f}%)'],
+        ['Chance Level', f'{chance_level*100:.0f}%'],
+        ['Difference', f'+{(proportion_correct - chance_level)*100:.1f}%'],
+        ['', ''],
+        ['Binomial Test', f'p = {binom_pvalue:.4e}'],
+        ['Shuffle Test', f'p = {shuffle_pvalue:.4f}'],
+        ['', ''],
+        ['Interpretation', ''],
+        ['Better than 60%?', 'YES' if proportion_correct > 0.6 else 'NO'],
+        ['Significant (p<0.05)?', 'YES' if binom_pvalue < 0.05 else 'NO'],
+        ['', ''],
+        ['Conclusion', 'VOLUNTARY' if is_voluntary else 'UNCLEAR'],
+    ]
+
+    table = ax.table(cellText=table_data, cellLoc='left', loc='center',
+                    colWidths=[0.5, 0.5])
+    table.auto_set_font_size(False)
+    table.set_fontsize(10)
+    table.scale(1, 1.8)
+
+    # Style header and conclusion rows
+    table[(0, 0)].set_facecolor('#2196F3')
+    table[(0, 0)].set_text_props(weight='bold', color='white')
+    table[(0, 1)].set_facecolor('#2196F3')
+    table[(0, 1)].set_text_props(weight='bold', color='white')
+
+    # Color conclusion row
+    conclusion_row = 17
+    if is_voluntary:
+        table[(conclusion_row, 1)].set_facecolor('#4CAF50')
+        table[(conclusion_row, 1)].set_text_props(weight='bold', color='white', size=12)
+    else:
+        table[(conclusion_row, 1)].set_facecolor('#FFC107')
+        table[(conclusion_row, 1)].set_text_props(weight='bold', size=12)
+
+    plt.tight_layout()
+
+    # Save figure
+    if results_dir:
+        results_dir.mkdir(parents=True, exist_ok=True)
+        filename = f"{animal_id}_{session_date}_left_right_targeted_movement.png"
+        save_path = results_dir / filename
+        fig.savefig(save_path, dpi=150, bbox_inches='tight')
+        print(f"  Saved left/right targeted movement analysis to {save_path}")
+
+    # Compile statistics
+    stats_dict = {
+        'n_trials': n_trials,
+        'n_left_targets': int(n_left_targets),
+        'n_right_targets': int(n_right_targets),
+        'n_correct': int(n_correct),
+        'proportion_correct': proportion_correct,
+        'chance_level': chance_level,
+        'binomial_pvalue': binom_pvalue,
+        'shuffle_pvalue': shuffle_pvalue,
+        'shuffle_mean': np.mean(shuffle_proportions),
+        'shuffle_std': np.std(shuffle_proportions),
+        'is_voluntary': is_voluntary,
+    }
+
+    # Print summary
+    print(f"\n  Observed: {n_correct}/{n_trials} correct ({proportion_correct*100:.1f}%)")
+    print(f"  Chance: {chance_level*100:.0f}%")
+    print(f"  Improvement: +{(proportion_correct - chance_level)*100:.1f}%")
+    print(f"\n  Binomial test: p = {binom_pvalue:.4e}")
+    print(f"  Shuffle test: p = {shuffle_pvalue:.4f}")
+    print(f"  Shuffle mean: {np.mean(shuffle_proportions)*100:.1f}% (±{np.std(shuffle_proportions)*100:.1f}%)")
+
+    if is_voluntary:
+        print(f"\n  *** CONCLUSION: Strong evidence for VOLUNTARY LEFT/RIGHT targeting ***")
+        print(f"      - Proportion correct ({proportion_correct*100:.1f}%) >> chance (50%)")
+        print(f"      - Highly significant (p < 0.05)")
+    elif binom_pvalue < 0.05:
+        print(f"\n  *** CONCLUSION: Evidence for targeted movements (p < 0.05) ***")
+    else:
+        print(f"\n  *** CONCLUSION: Insufficient evidence for voluntary movements ***")
+
+    return fig, stats_dict
+
+
 def test_initial_direction_correlation(trials: list[dict], results_dir: Optional[Path] = None,
                                         animal_id: Optional[str] = None, session_date: str = "") -> tuple:
     """Test #2: Initial Direction Correlation - do initial movements point toward targets?
@@ -4259,6 +4543,16 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
             plt.show()
         plt.close(fig_voluntary)
 
+    # NEW: Test for left/right targeted movement (simplified binary test)
+    print("\nTesting for left/right targeted movement (binary classification)...")
+    fig_lr_test, lr_test_stats = test_left_right_targeted_movement(trials_for_analysis, results_dir=results_dir,
+                                                                    animal_id=animal_id,
+                                                                    session_date=date_str)
+    if fig_lr_test is not None:
+        if show_plots:
+            plt.show()
+        plt.close(fig_lr_test)
+
     # NEW: Interactive initial direction viewer
     print("\nShowing interactive initial direction viewer...")
     print("  (Shows initial direction vectors for each trial - press SPACE to advance)")
@@ -4490,6 +4784,15 @@ def main(session_id: str, trial_min_duration: float = 0.1, trial_max_duration: f
     if fig_voluntary is not None:
         plt.show()
         plt.close(fig_voluntary)
+
+    # NEW: Test for left/right targeted movement (simplified binary test)
+    print("\nTesting for left/right targeted movement (binary classification)...")
+    fig_lr_test, lr_test_stats = test_left_right_targeted_movement(trials_for_analysis, results_dir=results_dir,
+                                                                    animal_id=animal_id,
+                                                                    session_date=date_str)
+    if fig_lr_test is not None:
+        plt.show()
+        plt.close(fig_lr_test)
 
     # NEW: Interactive initial direction viewer
     print("\nShowing interactive initial direction viewer...")
