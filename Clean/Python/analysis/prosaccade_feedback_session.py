@@ -432,12 +432,17 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
                 if i < 3:  # Debug output
                     print(f"    next row frame in vstim_go: {final_eye_frame}")
                     print(f"    final position from vstim_go: ({final_eye_x:.3f}, {final_eye_y:.3f})")
-                    # Compare with endoftrial data
-                    eot_x = eot_df.iloc[i]['green_x']
-                    eot_y = eot_df.iloc[i]['green_y']
-                    print(f"    final position from endoftrial: ({eot_x:.3f}, {eot_y:.3f})")
-                    dist = np.sqrt((final_eye_x - eot_x)**2 + (final_eye_y - eot_y)**2)
-                    print(f"    distance between them: {dist:.4f}")
+                    # Compare with endoftrial data if columns exist
+                    if i < len(eot_df) and 'green_x' in eot_df.columns and 'green_y' in eot_df.columns:
+                        eot_x = eot_df.iloc[i]['green_x']
+                        eot_y = eot_df.iloc[i]['green_y']
+                        print(f"    final position from endoftrial: ({eot_x:.3f}, {eot_y:.3f})")
+                        dist = np.sqrt((final_eye_x - eot_x)**2 + (final_eye_y - eot_y)**2)
+                        print(f"    distance between them: {dist:.4f}")
+                    else:
+                        print(f"    Note: endoftrial does not have green_x/green_y columns")
+                        if i == 0:
+                            print(f"    Available eot_df columns: {list(eot_df.columns)}")
             else:
                 # If there's no next row, use the last position within trial
                 final_eye_x = eye_trajectory['green_x'].values[-1]
