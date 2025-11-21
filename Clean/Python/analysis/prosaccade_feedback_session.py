@@ -407,51 +407,18 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
             eye_end_time = eye_times_raw[-1]
             eye_duration = eye_end_time - eye_start_time
 
-            # NEW: Find the last eye position within trial window, then get next row
+            # OPTION 1: Use the last eye position within trial window
             # Get the last row within the trial window
-            last_within_trial_idx = eye_trajectory.index[-1]
-            last_within_trial_frame = eye_trajectory['frame'].values[-1]
-
-            # Find this index in the full eye_df and get the next row
-            eye_df_position = eye_df.index.get_loc(last_within_trial_idx)
+            final_eye_x = eye_trajectory['green_x'].values[-1]
+            final_eye_y = eye_trajectory['green_y'].values[-1]
+            final_eye_frame = int(eye_trajectory['frame'].values[-1])
 
             # Debug: Check alignment
             if i < 3:  # Only print for first 3 trials
-                print(f"\n  Trial {trial_num} final position calculation:")
+                print(f"\n  Trial {trial_num} final position calculation (OPTION 1: last within trial):")
                 print(f"    end_frame from endoftrial: {end_frame}")
-                print(f"    last vstim_go frame within trial: {last_within_trial_frame}")
-                print(f"    eye_df position: {eye_df_position}")
-
-            if eye_df_position + 1 < len(eye_df):
-                # Get the next row after the last position within trial
-                next_row = eye_df.iloc[eye_df_position + 1]
-                final_eye_x = next_row['green_x']
-                final_eye_y = next_row['green_y']
-                final_eye_frame = int(next_row['frame'])
-
-                if i < 3:  # Debug output
-                    print(f"    next row frame in vstim_go: {final_eye_frame}")
-                    print(f"    final position from vstim_go: ({final_eye_x:.3f}, {final_eye_y:.3f})")
-                    # Compare with endoftrial data if columns exist
-                    if i < len(eot_df) and 'green_x' in eot_df.columns and 'green_y' in eot_df.columns:
-                        eot_x = eot_df.iloc[i]['green_x']
-                        eot_y = eot_df.iloc[i]['green_y']
-                        print(f"    final position from endoftrial: ({eot_x:.3f}, {eot_y:.3f})")
-                        dist = np.sqrt((final_eye_x - eot_x)**2 + (final_eye_y - eot_y)**2)
-                        print(f"    distance between them: {dist:.4f}")
-                    else:
-                        print(f"    Note: endoftrial does not have green_x/green_y columns")
-                        if i == 0:
-                            print(f"    Available eot_df columns: {list(eot_df.columns)}")
-            else:
-                # If there's no next row, use the last position within trial
-                final_eye_x = eye_trajectory['green_x'].values[-1]
-                final_eye_y = eye_trajectory['green_y'].values[-1]
-                final_eye_frame = int(eye_trajectory['frame'].values[-1])
-
-                if i < 3:  # Debug output
-                    print(f"    No next row available, using last within trial")
-                    print(f"    final position: ({final_eye_x:.3f}, {final_eye_y:.3f})")
+                print(f"    final_eye_frame (last vstim_go within trial): {final_eye_frame}")
+                print(f"    final position from vstim_go: ({final_eye_x:.3f}, {final_eye_y:.3f})")
 
         if has_eye_data and len(eye_trajectory) > 1:
             dx = np.diff(eye_trajectory['green_x'].values)
