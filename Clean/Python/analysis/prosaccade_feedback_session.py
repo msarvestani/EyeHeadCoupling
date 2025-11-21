@@ -2962,6 +2962,236 @@ def plot_heatmaps_by_position_and_visibility(trials: list[dict], results_dir: Op
     return fig
 
 
+def test_voluntary_targeted_movement(trials: list[dict], results_dir: Optional[Path] = None,
+                                      animal_id: Optional[str] = None, session_date: str = "") -> tuple:
+    """Test whether animals make voluntary targeted movements vs random eye movements.
+
+    Compares initial direction errors to a random/uniform model. Voluntary movements should
+    show initial directions clustered near target (low direction error), while random movements
+    would show uniform distribution with mean ~90°.
+
+    This function is standalone and can be easily removed without affecting other analyses.
+
+    Parameters
+    ----------
+    trials : list of dict
+        List of trial data dictionaries (successful trials with valid direction errors)
+    results_dir : Path, optional
+        Directory to save the figure
+    animal_id : str, optional
+        Animal identifier for filename
+    session_date : str, optional
+        Session date for title
+
+    Returns
+    -------
+    tuple of (fig, stats_dict)
+        Figure and dictionary containing statistics
+    """
+    from scipy import stats as scipy_stats
+
+    # Extract initial direction errors from trials with valid data
+    direction_errors = [t['initial_direction_error'] for t in trials
+                       if not np.isnan(t.get('initial_direction_error', np.nan))]
+
+    n_trials = len(direction_errors)
+
+    print(f"\nVoluntary Targeted Movement Analysis:")
+    print(f"  Trials with valid initial direction error: {n_trials}")
+
+    if n_trials < 3:
+        print("Warning: Not enough trials for voluntary movement analysis")
+        return None, None
+
+    direction_errors = np.array(direction_errors)
+
+    # Calculate observed statistics
+    mean_error = np.mean(direction_errors)
+    median_error = np.median(direction_errors)
+    std_error = np.std(direction_errors)
+
+    # Random model: uniform distribution from 0 to 180 degrees
+    # Mean of uniform(0, 180) = 90 degrees
+    random_mean = 90.0
+
+    # Statistical tests
+    # 1. One-sample t-test: Is observed mean significantly < 90°?
+    t_stat, t_pvalue = scipy_stats.ttest_1samp(direction_errors, random_mean, alternative='less')
+
+    # 2. Kolmogorov-Smirnov test: Is distribution different from uniform?
+    # Under uniform distribution, errors should be uniformly distributed 0-180
+    ks_stat, ks_pvalue = scipy_stats.kstest(direction_errors,
+                                            lambda x: scipy_stats.uniform(0, 180).cdf(x))
+
+    # Create figure with 2x2 subplots
+    fig, axes = plt.subplots(2, 2, figsize=(14, 11))
+    fig.suptitle(f'Voluntary Targeted Movement Analysis - {animal_id} - {session_date}',
+                fontsize=14, fontweight='bold')
+
+    # Plot 1: Histogram of observed initial direction errors
+    ax = axes[0, 0]
+    counts, bins, patches = ax.hist(direction_errors, bins=20, range=(0, 180),
+                                     color='steelblue', alpha=0.7, edgecolor='black',
+                                     density=True, label='Observed')
+
+    # Overlay uniform distribution expectation
+    uniform_height = 1.0 / 180.0  # density for uniform(0, 180)
+    ax.axhline(uniform_height, color='red', linestyle='--', linewidth=2,
+              label=f'Random model (uniform)', alpha=0.8)
+
+    ax.axvline(mean_error, color='blue', linestyle='-', linewidth=2,
+              label=f'Observed mean = {mean_error:.1f}°')
+    ax.axvline(random_mean, color='red', linestyle=':', linewidth=2,
+              label=f'Random mean = {random_mean:.1f}°')
+
+    ax.set_xlabel('Initial Direction Error (degrees)', fontsize=11)
+    ax.set_ylabel('Probability Density', fontsize=11)
+    ax.set_title('Distribution of Initial Direction Errors', fontsize=12, fontweight='bold')
+    ax.legend(fontsize=9)
+    ax.grid(True, alpha=0.3, axis='y')
+    ax.set_xlim(0, 180)
+
+    # Plot 2: Cumulative distribution comparison
+    ax = axes[0, 1]
+    sorted_errors = np.sort(direction_errors)
+    cumulative = np.arange(1, n_trials + 1) / n_trials
+    ax.plot(sorted_errors, cumulative, 'b-', linewidth=2, label='Observed')
+
+    # Theoretical uniform CDF
+    uniform_x = np.linspace(0, 180, 100)
+    uniform_cdf = uniform_x / 180.0
+    ax.plot(uniform_x, uniform_cdf, 'r--', linewidth=2, label='Random (uniform)')
+
+    ax.set_xlabel('Initial Direction Error (degrees)', fontsize=11)
+    ax.set_ylabel('Cumulative Probability', fontsize=11)
+    ax.set_title(f'Cumulative Distribution\nKS test: p = {ks_pvalue:.4e}',
+                fontsize=12, fontweight='bold')
+    ax.legend(fontsize=10)
+    ax.grid(True, alpha=0.3)
+    ax.set_xlim(0, 180)
+    ax.set_ylim(0, 1)
+
+    # Plot 3: Box plot comparison
+    ax = axes[1, 0]
+
+    # Create random samples for visualization
+    np.random.seed(42)
+    random_samples = np.random.uniform(0, 180, size=n_trials)
+
+    bp = ax.boxplot([direction_errors, random_samples],
+                     labels=['Observed\n(Targeted)', 'Random Model\n(Uniform)'],
+                     widths=0.6, patch_artist=True)
+
+    bp['boxes'][0].set_facecolor('steelblue')
+    bp['boxes'][1].set_facecolor('lightcoral')
+
+    # Add means as points
+    ax.plot(1, mean_error, 'ro', markersize=10, label='Mean')
+    ax.plot(2, random_mean, 'ro', markersize=10)
+
+    # Add horizontal line at 45° (halfway to random)
+    ax.axhline(45, color='orange', linestyle=':', linewidth=1.5, alpha=0.7,
+              label='45° (halfway to random)')
+
+    ax.set_ylabel('Initial Direction Error (degrees)', fontsize=11)
+    ax.set_title(f'Observed vs Random Model\nt-test: p = {t_pvalue:.4e}',
+                fontsize=12, fontweight='bold')
+    ax.legend(fontsize=9)
+    ax.grid(True, alpha=0.3, axis='y')
+    ax.set_ylim(0, 180)
+
+    # Plot 4: Summary statistics table
+    ax = axes[1, 1]
+    ax.axis('off')
+
+    # Determine significance
+    is_voluntary = t_pvalue < 0.05 and mean_error < 45
+
+    table_data = [
+        ['Metric', 'Value'],
+        ['', ''],
+        ['Sample Size', f'{n_trials} trials'],
+        ['', ''],
+        ['Observed Mean', f'{mean_error:.1f}°'],
+        ['Observed Median', f'{median_error:.1f}°'],
+        ['Observed Std Dev', f'{std_error:.1f}°'],
+        ['', ''],
+        ['Random Model Mean', f'{random_mean:.1f}°'],
+        ['', ''],
+        ['t-test (mean < 90°)', f'p = {t_pvalue:.4e}'],
+        ['KS test (vs uniform)', f'p = {ks_pvalue:.4e}'],
+        ['', ''],
+        ['Interpretation', ''],
+        ['Mean < 45°?', 'YES' if mean_error < 45 else 'NO'],
+        ['Significant (p<0.05)?', 'YES' if t_pvalue < 0.05 else 'NO'],
+        ['', ''],
+        ['Conclusion', 'VOLUNTARY' if is_voluntary else 'UNCLEAR'],
+    ]
+
+    table = ax.table(cellText=table_data, cellLoc='left', loc='center',
+                    colWidths=[0.5, 0.5])
+    table.auto_set_font_size(False)
+    table.set_fontsize(10)
+    table.scale(1, 1.8)
+
+    # Style header and conclusion rows
+    table[(0, 0)].set_facecolor('#2196F3')
+    table[(0, 0)].set_text_props(weight='bold', color='white')
+    table[(0, 1)].set_facecolor('#2196F3')
+    table[(0, 1)].set_text_props(weight='bold', color='white')
+
+    # Color conclusion row
+    conclusion_row = 17
+    if is_voluntary:
+        table[(conclusion_row, 1)].set_facecolor('#4CAF50')
+        table[(conclusion_row, 1)].set_text_props(weight='bold', color='white', size=12)
+    else:
+        table[(conclusion_row, 1)].set_facecolor('#FFC107')
+        table[(conclusion_row, 1)].set_text_props(weight='bold', size=12)
+
+    plt.tight_layout()
+
+    # Save figure
+    if results_dir:
+        results_dir.mkdir(parents=True, exist_ok=True)
+        filename = f"{animal_id}_{session_date}_voluntary_movement_test.png"
+        save_path = results_dir / filename
+        fig.savefig(save_path, dpi=150, bbox_inches='tight')
+        print(f"  Saved voluntary movement analysis to {save_path}")
+
+    # Compile statistics
+    stats_dict = {
+        'n_trials': n_trials,
+        'mean_error': mean_error,
+        'median_error': median_error,
+        'std_error': std_error,
+        'random_mean': random_mean,
+        't_statistic': t_stat,
+        't_pvalue': t_pvalue,
+        'ks_statistic': ks_stat,
+        'ks_pvalue': ks_pvalue,
+        'is_voluntary': is_voluntary,
+    }
+
+    # Print summary
+    print(f"\n  Observed mean direction error: {mean_error:.1f}° (±{std_error:.1f}°)")
+    print(f"  Random model expectation: {random_mean:.1f}°")
+    print(f"  Difference: {random_mean - mean_error:.1f}° better than random")
+    print(f"\n  t-test (mean < 90°): t={t_stat:.2f}, p={t_pvalue:.4e}")
+    print(f"  KS test (vs uniform): D={ks_stat:.3f}, p={ks_pvalue:.4e}")
+
+    if is_voluntary:
+        print(f"\n  *** CONCLUSION: Strong evidence for VOLUNTARY TARGETED movements ***")
+        print(f"      - Mean direction error ({mean_error:.1f}°) << random (90°)")
+        print(f"      - Distribution significantly different from uniform (p < 0.05)")
+    elif t_pvalue < 0.05:
+        print(f"\n  *** CONCLUSION: Evidence for targeted movements (mean < 90°, p < 0.05) ***")
+    else:
+        print(f"\n  *** CONCLUSION: Insufficient evidence for voluntary movements ***")
+
+    return fig, stats_dict
+
+
 def test_initial_direction_correlation(trials: list[dict], results_dir: Optional[Path] = None,
                                         animal_id: Optional[str] = None, session_date: str = "") -> tuple:
     """Test #2: Initial Direction Correlation - do initial movements point toward targets?
@@ -3880,6 +4110,16 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
         plt.show()
     plt.close(fig_heatmaps)
 
+    # NEW: Test for voluntary targeted movement
+    print("\nTesting for voluntary targeted movement...")
+    fig_voluntary, voluntary_stats = test_voluntary_targeted_movement(trials_for_analysis, results_dir=results_dir,
+                                                                       animal_id=animal_id,
+                                                                       session_date=date_str)
+    if fig_voluntary is not None:
+        if show_plots:
+            plt.show()
+        plt.close(fig_voluntary)
+
     print("\nPlotting final positions by target type...")
     fig_final_pos = plot_final_positions_by_target(trials_for_analysis, min_duration=trial_min_duration, max_duration=trial_max_duration,
                                                     results_dir=results_dir,
@@ -4096,6 +4336,15 @@ def main(session_id: str, trial_min_duration: float = 0.1, trial_max_duration: f
                                                              session_date=date_str)
     plt.show()
     plt.close(fig_heatmaps)
+
+    # NEW: Test for voluntary targeted movement
+    print("\nTesting for voluntary targeted movement...")
+    fig_voluntary, voluntary_stats = test_voluntary_targeted_movement(trials_for_analysis, results_dir=results_dir,
+                                                                       animal_id=animal_id,
+                                                                       session_date=date_str)
+    if fig_voluntary is not None:
+        plt.show()
+        plt.close(fig_voluntary)
 
     print("\nPlotting final positions by target type...")
     fig_final_pos = plot_final_positions_by_target(trials_for_analysis, min_duration=trial_min_duration, max_duration=trial_max_duration,
