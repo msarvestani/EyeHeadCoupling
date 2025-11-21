@@ -274,8 +274,10 @@ def identify_and_filter_failed_trials(target_df: pd.DataFrame, eot_df: pd.DataFr
     print(f"\n{'='*60}")
     print(f"Trial Summary (from endoftrial trial_success column):")
     print(f"  Total trials (from cue events): {n_total}")
-    print(f"  Successful trials: {n_success} ({100*n_success/n_total:.1f}% if n_total > 0 else 0)")
-    print(f"  Failed trials: {n_failed} ({100*n_failed/n_total:.1f}% if n_total > 0 else 0)")
+    pct_success = 100*n_success/n_total if n_total > 0 else 0
+    pct_failed = 100*n_failed/n_total if n_total > 0 else 0
+    print(f"  Successful trials: {n_success} ({pct_success:.1f}%)")
+    print(f"  Failed trials: {n_failed} ({pct_failed:.1f}%)")
     if n_failed > 0:
         print(f"  Failed trial indices: {failed_indices}")
     print(f"  exclude_failed_trials: {exclude_failed}")
