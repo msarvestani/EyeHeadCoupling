@@ -69,7 +69,8 @@ def load_feedback_data(folder_path: Path, animal_id: str = "Tsh001") -> Tuple[pd
         raise FileNotFoundError(f"Could not find vstim_cue file in {folder_path}")
 
     # Load end of trial data using standard approach
-    # Columns: Frame, timestamp, trial_number, green_dot_x, green_dot_y, diameter
+    # New format includes ALL trials (successful and failed) with a success column
+    # Columns: Frame, timestamp, trial_number, green_dot_x, green_dot_y, diameter, success
     try:
         print(f"\nLoading {endoftrial_file.name}...")
         cleaned = clean_csv(str(endoftrial_file))
@@ -82,20 +83,31 @@ def load_feedback_data(folder_path: Path, animal_id: str = "Tsh001") -> Tuple[pd
         n_cols = eot_arr.shape[1]
         print(f"  Detected {n_cols} columns in endoftrial file")
 
-        if n_cols == 6:
+        if n_cols == 7:
+            # New format with success column
+            eot_df = pd.DataFrame(eot_arr, columns=['frame', 'timestamp', 'trial_number', 'green_x', 'green_y', 'diameter', 'success'])
+            print(f"  New format detected: includes success column (1=success, 0=failed)")
+        elif n_cols == 6:
+            # Legacy format without success column (all trials are successful)
             eot_df = pd.DataFrame(eot_arr, columns=['frame', 'timestamp', 'trial_number', 'green_x', 'green_y', 'diameter'])
+            eot_df['success'] = 1  # Mark all as successful in legacy format
+            print(f"  Legacy format: no success column, marking all trials as successful")
         elif n_cols == 5:
-            # Older format without diameter column
+            # Older format without diameter or success column
             eot_df = pd.DataFrame(eot_arr, columns=['frame', 'timestamp', 'trial_number', 'green_x', 'green_y'])
             eot_df['diameter'] = 0.2  # Default diameter if not present
-            print(f"  Warning: 'diameter' column not found, using default value of 0.2")
+            eot_df['success'] = 1  # Mark all as successful
+            print(f"  Legacy format: no diameter or success columns, using defaults")
         else:
-            raise ValueError(f"Unexpected number of columns: {n_cols}. Expected 5 or 6.")
+            raise ValueError(f"Unexpected number of columns: {n_cols}. Expected 5, 6, or 7.")
 
         eot_df['frame'] = eot_df['frame'].astype(int)
         eot_df['trial_number'] = eot_df['trial_number'].astype(int)
+        eot_df['success'] = eot_df['success'].astype(int)
 
-        print(f"  Loaded {len(eot_df)} end-of-trial events")
+        n_success = (eot_df['success'] == 1).sum()
+        n_failed = (eot_df['success'] == 0).sum()
+        print(f"  Loaded {len(eot_df)} end-of-trial events ({n_success} successful, {n_failed} failed)")
     except Exception as e:
         raise ValueError(f"Error loading end of trial file {endoftrial_file}: {e}")
 
@@ -195,17 +207,17 @@ def load_feedback_data(folder_path: Path, animal_id: str = "Tsh001") -> Tuple[pd
 
 def identify_and_filter_failed_trials(target_df: pd.DataFrame, eot_df: pd.DataFrame,
                                       exclude_failed: bool = True) -> Tuple[pd.DataFrame, list, list]:
-    """Identify failed trials by matching target (cue) events with end_of_trial events.
+    """Identify failed trials using the success column from end_of_trial data.
 
-    A trial is considered failed if a target/cue event does not have a corresponding
-    end_of_trial event. Failed trials typically timeout after ~10 seconds.
+    Now uses the 'success' column in eot_df to determine which trials failed.
+    Assumes eot_df contains ALL trials (both successful and failed).
 
     Parameters
     ----------
     target_df : pd.DataFrame
-        Target/cue position data (all trials including failed ones)
+        Target/cue position data (all trials)
     eot_df : pd.DataFrame
-        End of trial data (successful trials only)
+        End of trial data (now contains ALL trials with success column: 1=success, 0=failed)
     exclude_failed : bool
         If True, filter out failed trials from target_df. If False, keep all trials.
 
@@ -222,61 +234,47 @@ def identify_and_filter_failed_trials(target_df: pd.DataFrame, eot_df: pd.DataFr
         print("\nWarning: Empty target or end-of-trial data, cannot identify failed trials")
         return target_df, [], []
 
-    # Sort both dataframes by timestamp to ensure correct matching
-    target_df = target_df.sort_values('timestamp').reset_index(drop=True)
-    eot_df = eot_df.sort_values('timestamp').reset_index(drop=True)
+    # Check if success column exists
+    if 'success' not in eot_df.columns:
+        print("\nWarning: 'success' column not found in end_of_trial data, assuming all trials successful")
+        return target_df, [], list(range(len(target_df)))
 
-    cue_times = target_df['timestamp'].values
-    eot_times = eot_df['timestamp'].values
+    # Verify that eot_df and target_df have the same number of trials
+    if len(eot_df) != len(target_df):
+        print(f"\nWarning: Number of trials mismatch!")
+        print(f"  end_of_trial has {len(eot_df)} trials")
+        print(f"  vstim_cue has {len(target_df)} trials")
+        print(f"  Using the minimum of the two")
+        n_trials = min(len(eot_df), len(target_df))
+    else:
+        n_trials = len(target_df)
 
-    # Match each cue with its corresponding end_of_trial
+    # Identify successful and failed trials based on success column
     successful_indices = []
     failed_indices = []
-    eot_idx = 0
 
-    for cue_idx in range(len(cue_times)):
-        cue_t = cue_times[cue_idx]
+    for i in range(n_trials):
+        if eot_df.iloc[i]['success'] == 1:
+            successful_indices.append(i)
+        else:
+            failed_indices.append(i)
 
-        # Look for the next end_of_trial that occurs after this cue
-        found_match = False
-        while eot_idx < len(eot_times):
-            eot_t = eot_times[eot_idx]
-
-            # Check if this end_of_trial comes after the cue
-            if eot_t > cue_t:
-                # Found a potential match
-                # Check if there's another cue before this end_of_trial
-                next_cue_t = cue_times[cue_idx + 1] if cue_idx + 1 < len(cue_times) else np.inf
-
-                if eot_t < next_cue_t:
-                    # This end_of_trial belongs to the current cue
-                    successful_indices.append(cue_idx)
-                    eot_idx += 1
-                    found_match = True
-                    break
-                else:
-                    # This end_of_trial comes after the next cue, so current cue failed
-                    break
-            else:
-                # This end_of_trial is before the current cue, skip it
-                eot_idx += 1
-
-        if not found_match:
-            # No matching end_of_trial found for this cue (failed trial)
-            failed_indices.append(cue_idx)
-
-    # Report trial statistics
-    n_total = len(cue_times)
+    n_total = n_trials
     n_success = len(successful_indices)
     n_failed = len(failed_indices)
 
     print(f"\n{'='*60}")
     print(f"Trial Summary:")
-    print(f"  Total trials (from cue events): {n_total}")
+    print(f"  Total trials: {n_total}")
     print(f"  Successful trials: {n_success} ({100*n_success/n_total:.1f}%)")
     print(f"  Failed trials: {n_failed} ({100*n_failed/n_total:.1f}%)")
-    if n_failed > 0:
-        print(f"  Failed trial indices: {failed_indices}")
+    if n_failed > 0 and n_failed <= 20:
+        # Only print failed indices if there aren't too many
+        failed_trial_nums = [i+1 for i in failed_indices]  # Convert to 1-indexed
+        print(f"  Failed trial numbers: {failed_trial_nums}")
+    elif n_failed > 20:
+        failed_trial_nums = [i+1 for i in failed_indices[:20]]
+        print(f"  Failed trial numbers (first 20): {failed_trial_nums}...")
     print(f"  exclude_failed_trials: {exclude_failed}")
     if exclude_failed:
         print(f"  → Only successful trials will be included in analysis")
@@ -379,15 +377,18 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
         # Drop any rows with NA values in position data
         eye_trajectory = eye_trajectory.dropna(subset=['green_x', 'green_y', 'timestamp'])
 
-        # Add the NEXT frame after end_frame to get final eye position
-        # This ensures we use the eye position from vstim_go row N+1 instead of row N
-        if len(eye_trajectory) > 0:
-            next_frame_mask = (eye_df['frame'] > end_frame) & (eye_df['frame'].notna())
-            next_frame_data = eye_df[next_frame_mask].dropna(subset=['green_x', 'green_y', 'timestamp'])
-            if len(next_frame_data) > 0:
-                # Append the first frame after end_frame
-                next_row = next_frame_data.iloc[0:1]
-                eye_trajectory = pd.concat([eye_trajectory, next_row], ignore_index=True)
+        # Use the final eye position from end_of_trial CSV instead of vstim_go
+        # Replace the last trajectory point with the position from eot_df
+        if len(eye_trajectory) > 0 and i < len(eot_df):
+            final_eye_x = eot_df.iloc[i]['green_x']
+            final_eye_y = eot_df.iloc[i]['green_y']
+
+            # Check if eot position is valid (not NaN)
+            if not (np.isnan(final_eye_x) or np.isnan(final_eye_y)):
+                # Replace the last point with position from end_of_trial
+                eye_trajectory = eye_trajectory.copy()
+                eye_trajectory.iloc[-1, eye_trajectory.columns.get_loc('green_x')] = final_eye_x
+                eye_trajectory.iloc[-1, eye_trajectory.columns.get_loc('green_y')] = final_eye_y
 
         # Handle trials with no eye data - create placeholder instead of skipping
         has_eye_data = len(eye_trajectory) > 0
@@ -3358,36 +3359,10 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
         target_df_all, eot_df, exclude_failed=True
     )
 
-    # Extract ALL trial trajectories for the interactive viewer (includes trials with no eye data)
-    # For successful trials: use actual end_of_trial times
-    # For failed trials: estimate 10-second timeout
+    # Extract ALL trial trajectories for the interactive viewer
+    # eot_df now contains ALL trials (both successful and failed) so we can use it directly
     print("\nExtracting ALL trials for interactive viewer...")
-    eot_df_all = []
-    for idx in range(len(target_df_all)):
-        if idx in successful_indices:
-            # Find corresponding eot entry
-            success_position = successful_indices.index(idx)
-            if success_position < len(eot_df):
-                eot_df_all.append({
-                    'frame': eot_df.iloc[success_position]['frame'],
-                    'timestamp': eot_df.iloc[success_position]['timestamp'],
-                })
-            else:
-                # Fallback
-                eot_df_all.append({
-                    'frame': target_df_all.iloc[idx]['frame'] + 600,
-                    'timestamp': target_df_all.iloc[idx]['timestamp'] + 10.0,
-                })
-        else:
-            # Failed trial - use 10 second timeout estimate
-            eot_df_all.append({
-                'frame': target_df_all.iloc[idx]['frame'] + 600,
-                'timestamp': target_df_all.iloc[idx]['timestamp'] + 10.0,
-            })
-    eot_df_all = pd.DataFrame(eot_df_all)
-
-    # Extract all trials (will include placeholders for trials with no eye data)
-    trials_all = extract_trial_trajectories(eot_df_all, eye_df, target_df_all,
+    trials_all = extract_trial_trajectories(eot_df, eye_df, target_df_all,
                                             successful_indices=successful_indices)
 
     # Separate successful trials for analysis
@@ -3575,36 +3550,10 @@ def main(session_id: str, trial_min_duration: float = 0.1, trial_max_duration: f
         target_df_all, eot_df, exclude_failed=True
     )
 
-    # Extract ALL trial trajectories for the interactive viewer (includes trials with no eye data)
-    # For successful trials: use actual end_of_trial times
-    # For failed trials: estimate 10-second timeout
+    # Extract ALL trial trajectories for the interactive viewer
+    # eot_df now contains ALL trials (both successful and failed) so we can use it directly
     print("\nExtracting ALL trials for interactive viewer...")
-    eot_df_all = []
-    for idx in range(len(target_df_all)):
-        if idx in successful_indices:
-            # Find corresponding eot entry
-            success_position = successful_indices.index(idx)
-            if success_position < len(eot_df):
-                eot_df_all.append({
-                    'frame': eot_df.iloc[success_position]['frame'],
-                    'timestamp': eot_df.iloc[success_position]['timestamp'],
-                })
-            else:
-                # Fallback
-                eot_df_all.append({
-                    'frame': target_df_all.iloc[idx]['frame'] + 600,
-                    'timestamp': target_df_all.iloc[idx]['timestamp'] + 10.0,
-                })
-        else:
-            # Failed trial - use 10 second timeout estimate
-            eot_df_all.append({
-                'frame': target_df_all.iloc[idx]['frame'] + 600,
-                'timestamp': target_df_all.iloc[idx]['timestamp'] + 10.0,
-            })
-    eot_df_all = pd.DataFrame(eot_df_all)
-
-    # Extract all trials (will include placeholders for trials with no eye data)
-    trials_all = extract_trial_trajectories(eot_df_all, eye_df, target_df_all,
+    trials_all = extract_trial_trajectories(eot_df, eye_df, target_df_all,
                                             successful_indices=successful_indices)
 
     # Separate successful trials for analysis
