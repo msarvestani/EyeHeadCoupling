@@ -1263,7 +1263,7 @@ def plot_density_heatmap(trials: list[dict], results_dir: Optional[Path] = None,
         title += f' ({session_date})'
     ax.set_title(title, fontsize=14, fontweight='bold')
 
-    ax.set_xlim(-1, 1)
+    ax.set_xlim(-1.7, 1.7)
     ax.set_ylim(-1, 1)
     ax.set_aspect('equal', adjustable='box')
 
@@ -1552,7 +1552,7 @@ def plot_final_positions_by_target(trials: list[dict], min_duration: float = 0.1
     title += f'\n(Last sample position, filtered: {min_duration}s ≤ duration ≤ {max_duration}s, N={len(filtered_trials)})'
     ax.set_title(title, fontsize=14, fontweight='bold')
 
-    ax.set_xlim(-1, 1)
+    ax.set_xlim(-1.7, 1.7)
     ax.set_ylim(-1, 1)
     ax.set_aspect('equal', adjustable='box')
     ax.grid(True, alpha=0.3)
