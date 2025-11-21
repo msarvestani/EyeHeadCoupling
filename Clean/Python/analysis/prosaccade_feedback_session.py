@@ -82,20 +82,38 @@ def load_feedback_data(folder_path: Path, animal_id: str = "Tsh001") -> Tuple[pd
         n_cols = eot_arr.shape[1]
         print(f"  Detected {n_cols} columns in endoftrial file")
 
-        if n_cols == 6:
-            eot_df = pd.DataFrame(eot_arr, columns=['frame', 'timestamp', 'trial_number', 'green_x', 'green_y', 'diameter'])
-        elif n_cols == 5:
-            # Older format without diameter column
-            eot_df = pd.DataFrame(eot_arr, columns=['frame', 'timestamp', 'trial_number', 'green_x', 'green_y'])
-            eot_df['diameter'] = 0.2  # Default diameter if not present
-            print(f"  Warning: 'diameter' column not found, using default value of 0.2")
+        # Handle different column formats
+        # Last column is always trial_success (1=success, 0=failed)
+        if n_cols >= 3:
+            # Modern format: frame, timestamp, [optional trial_number, green_x, green_y, diameter], trial_success
+            if n_cols == 3:
+                eot_df = pd.DataFrame(eot_arr, columns=['frame', 'timestamp', 'trial_success'])
+            elif n_cols == 7:
+                eot_df = pd.DataFrame(eot_arr, columns=['frame', 'timestamp', 'trial_number', 'green_x', 'green_y', 'diameter', 'trial_success'])
+            elif n_cols == 6:
+                eot_df = pd.DataFrame(eot_arr, columns=['frame', 'timestamp', 'trial_number', 'green_x', 'green_y', 'trial_success'])
+                eot_df['diameter'] = 0.2  # Default diameter if not present
+            else:
+                # Flexible: just use first 2 and last column
+                eot_df = pd.DataFrame({
+                    'frame': eot_arr[:, 0],
+                    'timestamp': eot_arr[:, 1],
+                    'trial_success': eot_arr[:, -1]
+                })
+                print(f"  Using flexible column layout: frame, timestamp, ..., trial_success")
         else:
-            raise ValueError(f"Unexpected number of columns: {n_cols}. Expected 5 or 6.")
+            raise ValueError(f"Unexpected number of columns: {n_cols}. Expected at least 3.")
 
         eot_df['frame'] = eot_df['frame'].astype(int)
-        eot_df['trial_number'] = eot_df['trial_number'].astype(int)
+        eot_df['trial_success'] = eot_df['trial_success'].astype(int)
+        if 'trial_number' in eot_df.columns:
+            eot_df['trial_number'] = eot_df['trial_number'].astype(int)
 
         print(f"  Loaded {len(eot_df)} end-of-trial events")
+        if 'trial_success' in eot_df.columns:
+            n_success = (eot_df['trial_success'] == 1).sum()
+            n_failed = (eot_df['trial_success'] == 0).sum()
+            print(f"  Trial success indicators: {n_success} successful, {n_failed} failed")
     except Exception as e:
         raise ValueError(f"Error loading end of trial file {endoftrial_file}: {e}")
 
@@ -195,17 +213,17 @@ def load_feedback_data(folder_path: Path, animal_id: str = "Tsh001") -> Tuple[pd
 
 def identify_and_filter_failed_trials(target_df: pd.DataFrame, eot_df: pd.DataFrame,
                                       exclude_failed: bool = True) -> Tuple[pd.DataFrame, list, list]:
-    """Identify failed trials by matching target (cue) events with end_of_trial events.
+    """Identify failed trials using the trial_success column in end_of_trial data.
 
-    A trial is considered failed if a target/cue event does not have a corresponding
-    end_of_trial event. Failed trials typically timeout after ~10 seconds.
+    The trial_success column in eot_df indicates: 1=success, 0=failed.
+    Each eot_df row corresponds to one trial (both successful and failed).
 
     Parameters
     ----------
     target_df : pd.DataFrame
         Target/cue position data (all trials including failed ones)
     eot_df : pd.DataFrame
-        End of trial data (successful trials only)
+        End of trial data (all trials with trial_success indicator)
     exclude_failed : bool
         If True, filter out failed trials from target_df. If False, keep all trials.
 
@@ -222,59 +240,42 @@ def identify_and_filter_failed_trials(target_df: pd.DataFrame, eot_df: pd.DataFr
         print("\nWarning: Empty target or end-of-trial data, cannot identify failed trials")
         return target_df, [], []
 
-    # Sort both dataframes by timestamp to ensure correct matching
-    target_df = target_df.sort_values('timestamp').reset_index(drop=True)
-    eot_df = eot_df.sort_values('timestamp').reset_index(drop=True)
+    # Check if trial_success column exists
+    if 'trial_success' not in eot_df.columns:
+        print("\nWarning: trial_success column not found in eot_df, assuming all trials successful")
+        successful_indices = list(range(len(target_df)))
+        failed_indices = []
+    else:
+        # Match target_df (cue events) with eot_df by timestamp
+        # Assuming they are in chronological order and 1:1 correspondence
+        target_df = target_df.sort_values('timestamp').reset_index(drop=True)
+        eot_df = eot_df.sort_values('timestamp').reset_index(drop=True)
 
-    cue_times = target_df['timestamp'].values
-    eot_times = eot_df['timestamp'].values
+        # Get trial success flags from eot_df
+        # eot_df should have one entry per trial (including failed ones)
+        trial_success_flags = eot_df['trial_success'].values
 
-    # Match each cue with its corresponding end_of_trial
-    successful_indices = []
-    failed_indices = []
-    eot_idx = 0
+        # Identify successful and failed indices
+        successful_indices = []
+        failed_indices = []
 
-    for cue_idx in range(len(cue_times)):
-        cue_t = cue_times[cue_idx]
-
-        # Look for the next end_of_trial that occurs after this cue
-        found_match = False
-        while eot_idx < len(eot_times):
-            eot_t = eot_times[eot_idx]
-
-            # Check if this end_of_trial comes after the cue
-            if eot_t > cue_t:
-                # Found a potential match
-                # Check if there's another cue before this end_of_trial
-                next_cue_t = cue_times[cue_idx + 1] if cue_idx + 1 < len(cue_times) else np.inf
-
-                if eot_t < next_cue_t:
-                    # This end_of_trial belongs to the current cue
-                    successful_indices.append(cue_idx)
-                    eot_idx += 1
-                    found_match = True
-                    break
-                else:
-                    # This end_of_trial comes after the next cue, so current cue failed
-                    break
+        n_trials = min(len(target_df), len(eot_df))
+        for idx in range(n_trials):
+            if idx < len(trial_success_flags) and trial_success_flags[idx] == 1:
+                successful_indices.append(idx)
             else:
-                # This end_of_trial is before the current cue, skip it
-                eot_idx += 1
-
-        if not found_match:
-            # No matching end_of_trial found for this cue (failed trial)
-            failed_indices.append(cue_idx)
+                failed_indices.append(idx)
 
     # Report trial statistics
-    n_total = len(cue_times)
+    n_total = len(target_df)
     n_success = len(successful_indices)
     n_failed = len(failed_indices)
 
     print(f"\n{'='*60}")
-    print(f"Trial Summary:")
+    print(f"Trial Summary (from endoftrial trial_success column):")
     print(f"  Total trials (from cue events): {n_total}")
-    print(f"  Successful trials: {n_success} ({100*n_success/n_total:.1f}%)")
-    print(f"  Failed trials: {n_failed} ({100*n_failed/n_total:.1f}%)")
+    print(f"  Successful trials: {n_success} ({100*n_success/n_total:.1f}% if n_total > 0 else 0)")
+    print(f"  Failed trials: {n_failed} ({100*n_failed/n_total:.1f}% if n_total > 0 else 0)")
     if n_failed > 0:
         print(f"  Failed trial indices: {failed_indices}")
     print(f"  exclude_failed_trials: {exclude_failed}")
