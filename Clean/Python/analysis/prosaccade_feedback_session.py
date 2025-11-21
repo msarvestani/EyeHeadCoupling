@@ -2837,6 +2837,131 @@ def plot_visible_invisible_detailed_stats(trials: list[dict], results_dir: Optio
     return fig, stats_dict
 
 
+def plot_heatmaps_by_position_and_visibility(trials: list[dict], results_dir: Optional[Path] = None,
+                                              animal_id: Optional[str] = None, session_date: str = "",
+                                              left_threshold: float = 0.0, right_threshold: float = 0.0) -> plt.Figure:
+    """Plot 4 heatmaps showing eye position density for left/right × visible/invisible targets.
+
+    This function is standalone and can be easily removed without affecting other analyses.
+
+    Parameters
+    ----------
+    trials : list of dict
+        List of trial data dictionaries
+    results_dir : Path, optional
+        Directory to save the figure
+    animal_id : str, optional
+        Animal identifier for filename
+    session_date : str, optional
+        Session date for title
+    left_threshold : float
+        X-coordinate threshold - targets with x < this are considered "left" (default: 0.0)
+    right_threshold : float
+        X-coordinate threshold - targets with x > this are considered "right" (default: 0.0)
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+        The generated figure with 4 subplots
+    """
+    # Filter trials into 4 groups
+    left_visible = [t for t in trials if t.get('target_x', 0) < left_threshold and t.get('target_visible', 1) == 1]
+    right_visible = [t for t in trials if t.get('target_x', 0) > right_threshold and t.get('target_visible', 1) == 1]
+    left_invisible = [t for t in trials if t.get('target_x', 0) < left_threshold and t.get('target_visible', 1) == 0]
+    right_invisible = [t for t in trials if t.get('target_x', 0) > right_threshold and t.get('target_visible', 1) == 0]
+
+    print(f"\nHeatmap breakdown:")
+    print(f"  Left Visible: {len(left_visible)} trials")
+    print(f"  Right Visible: {len(right_visible)} trials")
+    print(f"  Left Invisible: {len(left_invisible)} trials")
+    print(f"  Right Invisible: {len(right_invisible)} trials")
+
+    # Create 2x2 subplot figure
+    fig, axes = plt.subplots(2, 2, figsize=(16, 14))
+    fig.suptitle(f'Eye Position Heatmaps by Target Position & Visibility - {animal_id} - {session_date}',
+                fontsize=14, fontweight='bold')
+
+    # Helper function to create a heatmap for a specific group
+    def create_heatmap(ax, trial_group, title, group_name):
+        if len(trial_group) == 0:
+            ax.text(0.5, 0.5, f'No {group_name} trials', ha='center', va='center',
+                   transform=ax.transAxes, fontsize=14)
+            ax.set_xticks([])
+            ax.set_yticks([])
+            ax.set_title(title, fontsize=12, fontweight='bold')
+            return
+
+        # Collect all eye positions from this group
+        all_x = []
+        all_y = []
+        for trial in trial_group:
+            if len(trial['eye_x']) > 0:  # Only include trials with eye data
+                all_x.extend(trial['eye_x'])
+                all_y.extend(trial['eye_y'])
+
+        if len(all_x) == 0:
+            ax.text(0.5, 0.5, f'No eye data for\n{group_name} trials', ha='center', va='center',
+                   transform=ax.transAxes, fontsize=12)
+            ax.set_xticks([])
+            ax.set_yticks([])
+            ax.set_title(title, fontsize=12, fontweight='bold')
+            return
+
+        all_x = np.array(all_x)
+        all_y = np.array(all_y)
+
+        # Create 2D histogram
+        bins = 40  # Number of bins in each dimension
+        h, xedges, yedges = np.histogram2d(all_x, all_y, bins=bins, range=[[-1.7, 1.7], [-1, 1]])
+
+        # Plot heatmap
+        extent = [xedges[0], xedges[-1], yedges[0], yedges[-1]]
+        im = ax.imshow(h.T, extent=extent, origin='lower', cmap='hot', aspect='auto', interpolation='bilinear')
+
+        # Add colorbar
+        cbar = plt.colorbar(im, ax=ax, label='Number of Samples')
+
+        # Overlay target positions
+        for trial in trial_group:
+            target_x = trial['target_x']
+            target_y = trial['target_y']
+            target_radius = trial['target_diameter'] / 2.0
+            # Use different colors for visible vs invisible
+            if trial.get('target_visible', 1) == 1:
+                target_circle = Circle((target_x, target_y), radius=target_radius, fill=False,
+                                      edgecolor='cyan', linewidth=2, linestyle='-', alpha=0.7)
+            else:
+                target_circle = Circle((target_x, target_y), radius=target_radius, fill=False,
+                                      edgecolor='lime', linewidth=2, linestyle='--', alpha=0.7)
+            ax.add_patch(target_circle)
+
+        ax.set_xlabel('Horizontal Position', fontsize=11)
+        ax.set_ylabel('Vertical Position', fontsize=11)
+        ax.set_title(f'{title}\n(n={len(trial_group)} trials, {len(all_x)} samples)',
+                    fontsize=12, fontweight='bold')
+        ax.set_xlim(-1.7, 1.7)
+        ax.set_ylim(-1, 1)
+        ax.set_aspect('equal', adjustable='box')
+
+    # Create each heatmap
+    create_heatmap(axes[0, 0], left_visible, 'Left Visible', 'left visible')
+    create_heatmap(axes[0, 1], right_visible, 'Right Visible', 'right visible')
+    create_heatmap(axes[1, 0], left_invisible, 'Left Invisible', 'left invisible')
+    create_heatmap(axes[1, 1], right_invisible, 'Right Invisible', 'right invisible')
+
+    plt.tight_layout()
+
+    # Save figure
+    if results_dir:
+        results_dir.mkdir(parents=True, exist_ok=True)
+        filename = f"{animal_id}_{session_date}_heatmaps_position_visibility.png"
+        save_path = results_dir / filename
+        fig.savefig(save_path, dpi=150, bbox_inches='tight')
+        print(f"  Saved position×visibility heatmaps to {save_path}")
+
+    return fig
+
+
 def test_initial_direction_correlation(trials: list[dict], results_dir: Optional[Path] = None,
                                         animal_id: Optional[str] = None, session_date: str = "") -> tuple:
     """Test #2: Initial Direction Correlation - do initial movements point toward targets?
@@ -3746,6 +3871,15 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
             plt.show()
         plt.close(fig_vis_detailed)
 
+    # NEW: Heatmaps broken down by position and visibility
+    print("\nGenerating heatmaps by position and visibility...")
+    fig_heatmaps = plot_heatmaps_by_position_and_visibility(trials_for_analysis, results_dir=results_dir,
+                                                             animal_id=animal_id,
+                                                             session_date=date_str)
+    if show_plots:
+        plt.show()
+    plt.close(fig_heatmaps)
+
     print("\nPlotting final positions by target type...")
     fig_final_pos = plot_final_positions_by_target(trials_for_analysis, min_duration=trial_min_duration, max_duration=trial_max_duration,
                                                     results_dir=results_dir,
@@ -3954,6 +4088,14 @@ def main(session_id: str, trial_min_duration: float = 0.1, trial_max_duration: f
     if fig_vis_detailed is not None:
         plt.show()
         plt.close(fig_vis_detailed)
+
+    # NEW: Heatmaps broken down by position and visibility
+    print("\nGenerating heatmaps by position and visibility...")
+    fig_heatmaps = plot_heatmaps_by_position_and_visibility(trials_for_analysis, results_dir=results_dir,
+                                                             animal_id=animal_id,
+                                                             session_date=date_str)
+    plt.show()
+    plt.close(fig_heatmaps)
 
     print("\nPlotting final positions by target type...")
     fig_final_pos = plot_final_positions_by_target(trials_for_analysis, min_duration=trial_min_duration, max_duration=trial_max_duration,
