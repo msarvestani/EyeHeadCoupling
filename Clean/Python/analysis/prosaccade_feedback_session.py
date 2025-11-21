@@ -192,7 +192,21 @@ def load_feedback_data(folder_path: Path, animal_id: str = "Tsh001") -> Tuple[pd
         target_df['frame'] = target_df['frame'].astype(int)
         target_df['visible'] = target_df['visible'].astype(int)
 
-        print(f"  Loaded {len(target_df)} target position samples")
+        # Detect and remove duplicate entries
+        original_len = len(target_df)
+        duplicates = target_df.duplicated(subset=['frame'], keep='first')
+        n_duplicates = duplicates.sum()
+
+        if n_duplicates > 0:
+            print(f"  Warning: Found {n_duplicates} duplicate entries in vstim_cue (based on frame number)")
+            # Show some examples of duplicates
+            dup_frames = target_df[duplicates]['frame'].values[:5]  # Show up to 5 examples
+            print(f"    Example duplicate frames: {dup_frames}")
+            # Remove duplicates, keeping the first occurrence
+            target_df = target_df[~duplicates].reset_index(drop=True)
+            print(f"    Removed {n_duplicates} duplicates, kept first occurrence of each")
+
+        print(f"  Loaded {len(target_df)} target position samples (after removing duplicates)")
         n_invisible = len(target_df[target_df['visible'] == 0])
         if n_invisible > 0:
             print(f"  Found {n_invisible} invisible targets")
