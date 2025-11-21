@@ -676,7 +676,7 @@ def plot_trajectories_by_direction(trials: list[dict], results_dir: Optional[Pat
         # Mark start and end points
         ax.plot(eye_x[0], eye_y[0], 'o', color=left_color, markersize=6, alpha=0.7,
                 markeredgecolor='white', markeredgewidth=1)
-        ax.plot(eye_x[-1], eye_y[-1], 's', color=left_color, markersize=6, alpha=0.7,
+        ax.plot(eye_x[-1], eye_y[-1], 's', color=left_color, markersize=18, alpha=0.7,
                 markeredgecolor='white', markeredgewidth=1)
 
     # Plot right trials
@@ -689,7 +689,7 @@ def plot_trajectories_by_direction(trials: list[dict], results_dir: Optional[Pat
         # Mark start and end points
         ax.plot(eye_x[0], eye_y[0], 'o', color=right_color, markersize=6, alpha=0.7,
                 markeredgecolor='white', markeredgewidth=1)
-        ax.plot(eye_x[-1], eye_y[-1], 's', color=right_color, markersize=6, alpha=0.7,
+        ax.plot(eye_x[-1], eye_y[-1], 's', color=right_color, markersize=18, alpha=0.7,
                 markeredgecolor='white', markeredgewidth=1)
 
     # Draw targets
