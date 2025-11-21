@@ -486,8 +486,8 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
                 path_efficiency = 0.0
 
             # Initial movement direction: angle between initial movement and ideal vector
-            # Use first 5 samples (or fewer if trial is short) to determine initial direction
-            n_samples = min(5, len(eye_trajectory))
+            # Use first 10 samples (or fewer if trial is short) to determine initial direction
+            n_samples = min(10, len(eye_trajectory))
             initial_dx = eye_trajectory['green_x'].values[n_samples-1] - start_eye_x
             initial_dy = eye_trajectory['green_y'].values[n_samples-1] - start_eye_y
 
@@ -3256,7 +3256,7 @@ def interactive_initial_direction_viewer(trials: list[dict], animal_id: Optional
         ax.plot(start_x, start_y, 'go', markersize=12, label='Start', zorder=3)
 
         # Calculate and plot initial direction vector (same logic as in extract_trial_trajectories)
-        n_samples = min(5, len(eye_x))
+        n_samples = min(10, len(eye_x))
         if n_samples > 1:
             end_x = eye_x[n_samples - 1]
             end_y = eye_y[n_samples - 1]
@@ -3399,8 +3399,8 @@ def test_left_right_targeted_movement(trials: list[dict], results_dir: Optional[
         target_dir = 1 if target_is_right else -1
         target_directions.append(target_dir)
 
-        # Determine initial movement direction (using first 5 points)
-        n_samples = min(5, len(eye_x))
+        # Determine initial movement direction (using first 10 points)
+        n_samples = min(10, len(eye_x))
         end_x = eye_x[n_samples - 1]
         initial_is_right = end_x > start_x
         initial_dir = 1 if initial_is_right else -1
