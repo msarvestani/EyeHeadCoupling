@@ -660,8 +660,8 @@ def plot_trajectories(trials: list[dict], results_dir: Optional[Path] = None,
 
     ax.grid(True, alpha=0.3)
 
-    # Set axis limits to -1 to 1 for both axes
-    ax.set_xlim(-1, 1)
+    # Set axis limits to -1.7 to 1.7 on x-axis, -1 to 1 on y-axis
+    ax.set_xlim(-1.7, 1.7)
     ax.set_ylim(-1, 1)
     # Use set_aspect instead of axis('equal') to preserve the limits
     ax.set_aspect('equal', adjustable='box')
@@ -784,7 +784,7 @@ def plot_trajectories_by_direction(trials: list[dict], results_dir: Optional[Pat
     ax.set_title(title, fontsize=14, fontweight='bold')
 
     ax.grid(True, alpha=0.3)
-    ax.set_xlim(-1, 1)
+    ax.set_xlim(-1.7, 1.7)
     ax.set_ylim(-1, 1)
     ax.set_aspect('equal', adjustable='box')
 
@@ -835,7 +835,7 @@ def interactive_trajectories(trials: list[dict], animal_id: Optional[str] = None
     n_trials = len(trials)
 
     # Set up the plot
-    ax.set_xlim(-1, 1)
+    ax.set_xlim(-1.7, 1.7)
     ax.set_ylim(-1, 1)
     ax.set_aspect('equal', adjustable='box')
     ax.grid(True, alpha=0.3)
@@ -1020,7 +1020,7 @@ def animate_trajectories(trials: list[dict], results_dir: Optional[Path] = None,
     n_trials = len(trials)
 
     # Set up the plot
-    ax.set_xlim(-1, 1)
+    ax.set_xlim(-1.7, 1.7)
     ax.set_ylim(-1, 1)
     ax.set_aspect('equal', adjustable='box')
     ax.grid(True, alpha=0.3)
