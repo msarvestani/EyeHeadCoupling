@@ -407,17 +407,32 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
             eye_end_time = eye_times_raw[-1]
             eye_duration = eye_end_time - eye_start_time
 
-            # OPTION 1: Use the last eye position within trial window
+            # OPTION 2: Use the next row after the last position within trial window
             # Get the last row within the trial window
-            final_eye_x = eye_trajectory['green_x'].values[-1]
-            final_eye_y = eye_trajectory['green_y'].values[-1]
-            final_eye_frame = int(eye_trajectory['frame'].values[-1])
+            last_within_trial_idx = eye_trajectory.index[-1]
+            last_within_trial_frame = eye_trajectory['frame'].values[-1]
+
+            # Find this index in the full eye_df and get the next row
+            eye_df_position = eye_df.index.get_loc(last_within_trial_idx)
+
+            if eye_df_position + 1 < len(eye_df):
+                # Get the next row after the last position within trial
+                next_row = eye_df.iloc[eye_df_position + 1]
+                final_eye_x = next_row['green_x']
+                final_eye_y = next_row['green_y']
+                final_eye_frame = int(next_row['frame'])
+            else:
+                # If there's no next row, use the last position within trial
+                final_eye_x = eye_trajectory['green_x'].values[-1]
+                final_eye_y = eye_trajectory['green_y'].values[-1]
+                final_eye_frame = int(eye_trajectory['frame'].values[-1])
 
             # Debug: Check alignment
             if i < 3:  # Only print for first 3 trials
-                print(f"\n  Trial {trial_num} final position calculation (OPTION 1: last within trial):")
+                print(f"\n  Trial {trial_num} final position calculation (OPTION 2: next row after trial):")
                 print(f"    end_frame from endoftrial: {end_frame}")
-                print(f"    final_eye_frame (last vstim_go within trial): {final_eye_frame}")
+                print(f"    last vstim_go frame within trial: {last_within_trial_frame}")
+                print(f"    final_eye_frame (next row in vstim_go): {final_eye_frame}")
                 print(f"    final position from vstim_go: ({final_eye_x:.3f}, {final_eye_y:.3f})")
 
         if has_eye_data and len(eye_trajectory) > 1:
