@@ -83,24 +83,24 @@ def load_feedback_data(folder_path: Path, animal_id: str = "Tsh001") -> Tuple[pd
         print(f"  Detected {n_cols} columns in endoftrial file")
 
         # Handle different column formats
-        # Last column is always trial_success (1=success, 0=failed)
+        # Third column (index 2) is always trial_success (1=success, 0=failed)
         if n_cols >= 3:
-            # Modern format: frame, timestamp, [optional trial_number, green_x, green_y, diameter], trial_success
+            # Modern format: frame, timestamp, trial_success, [optional trial_number, green_x, green_y, diameter]
             if n_cols == 3:
                 eot_df = pd.DataFrame(eot_arr, columns=['frame', 'timestamp', 'trial_success'])
             elif n_cols == 7:
-                eot_df = pd.DataFrame(eot_arr, columns=['frame', 'timestamp', 'trial_number', 'green_x', 'green_y', 'diameter', 'trial_success'])
+                eot_df = pd.DataFrame(eot_arr, columns=['frame', 'timestamp', 'trial_success', 'trial_number', 'green_x', 'green_y', 'diameter'])
             elif n_cols == 6:
-                eot_df = pd.DataFrame(eot_arr, columns=['frame', 'timestamp', 'trial_number', 'green_x', 'green_y', 'trial_success'])
+                eot_df = pd.DataFrame(eot_arr, columns=['frame', 'timestamp', 'trial_success', 'trial_number', 'green_x', 'green_y'])
                 eot_df['diameter'] = 0.2  # Default diameter if not present
             else:
-                # Flexible: just use first 2 and last column
+                # Flexible: just use first 2 and third column
                 eot_df = pd.DataFrame({
                     'frame': eot_arr[:, 0],
                     'timestamp': eot_arr[:, 1],
-                    'trial_success': eot_arr[:, -1]
+                    'trial_success': eot_arr[:, 2]
                 })
-                print(f"  Using flexible column layout: frame, timestamp, ..., trial_success")
+                print(f"  Using flexible column layout: frame, timestamp, trial_success, ...")
         else:
             raise ValueError(f"Unexpected number of columns: {n_cols}. Expected at least 3.")
 
