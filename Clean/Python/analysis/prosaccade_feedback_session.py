@@ -377,19 +377,6 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
         # Drop any rows with NA values in position data
         eye_trajectory = eye_trajectory.dropna(subset=['green_x', 'green_y', 'timestamp'])
 
-        # Use the final eye position from end_of_trial CSV instead of vstim_go
-        # Replace the last trajectory point with the position from eot_df
-        if len(eye_trajectory) > 0 and i < len(eot_df):
-            final_eye_x = eot_df.iloc[i]['green_x']
-            final_eye_y = eot_df.iloc[i]['green_y']
-
-            # Check if eot position is valid (not NaN)
-            if not (np.isnan(final_eye_x) or np.isnan(final_eye_y)):
-                # Replace the last point with position from end_of_trial
-                eye_trajectory = eye_trajectory.copy()
-                eye_trajectory.iloc[-1, eye_trajectory.columns.get_loc('green_x')] = final_eye_x
-                eye_trajectory.iloc[-1, eye_trajectory.columns.get_loc('green_y')] = final_eye_y
-
         # Handle trials with no eye data - create placeholder instead of skipping
         has_eye_data = len(eye_trajectory) > 0
 
