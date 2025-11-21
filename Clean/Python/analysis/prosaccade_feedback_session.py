@@ -255,6 +255,10 @@ def identify_and_filter_failed_trials(target_df: pd.DataFrame, eot_df: pd.DataFr
         # eot_df should have one entry per trial (including failed ones)
         trial_success_flags = eot_df['trial_success'].values
 
+        # Debug: Show first few trial_success values
+        print(f"\n  DEBUG: First 10 trial_success values: {trial_success_flags[:10]}")
+        print(f"  DEBUG: target_df length: {len(target_df)}, eot_df length: {len(eot_df)}")
+
         # Identify successful and failed indices
         successful_indices = []
         failed_indices = []
@@ -3416,35 +3420,12 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
     )
 
     # Extract ALL trial trajectories for the interactive viewer (includes trials with no eye data)
-    # For successful trials: use actual end_of_trial times
-    # For failed trials: estimate 10-second timeout
+    # eot_df now contains ALL trials (successful + failed) with trial_success column
     print("\nExtracting ALL trials for interactive viewer...")
-    eot_df_all = []
-    for idx in range(len(target_df_all)):
-        if idx in successful_indices:
-            # Find corresponding eot entry
-            success_position = successful_indices.index(idx)
-            if success_position < len(eot_df):
-                eot_df_all.append({
-                    'frame': eot_df.iloc[success_position]['frame'],
-                    'timestamp': eot_df.iloc[success_position]['timestamp'],
-                })
-            else:
-                # Fallback
-                eot_df_all.append({
-                    'frame': target_df_all.iloc[idx]['frame'] + 600,
-                    'timestamp': target_df_all.iloc[idx]['timestamp'] + 10.0,
-                })
-        else:
-            # Failed trial - use 10 second timeout estimate
-            eot_df_all.append({
-                'frame': target_df_all.iloc[idx]['frame'] + 600,
-                'timestamp': target_df_all.iloc[idx]['timestamp'] + 10.0,
-            })
-    eot_df_all = pd.DataFrame(eot_df_all)
+    print(f"  Using eot_df with {len(eot_df)} trials (matches target_df_all with {len(target_df_all)} trials)")
 
     # Extract all trials (will include placeholders for trials with no eye data)
-    trials_all = extract_trial_trajectories(eot_df_all, eye_df, target_df_all,
+    trials_all = extract_trial_trajectories(eot_df, eye_df, target_df_all,
                                             successful_indices=successful_indices)
 
     # Separate successful trials for analysis
@@ -3633,35 +3614,12 @@ def main(session_id: str, trial_min_duration: float = 0.1, trial_max_duration: f
     )
 
     # Extract ALL trial trajectories for the interactive viewer (includes trials with no eye data)
-    # For successful trials: use actual end_of_trial times
-    # For failed trials: estimate 10-second timeout
+    # eot_df now contains ALL trials (successful + failed) with trial_success column
     print("\nExtracting ALL trials for interactive viewer...")
-    eot_df_all = []
-    for idx in range(len(target_df_all)):
-        if idx in successful_indices:
-            # Find corresponding eot entry
-            success_position = successful_indices.index(idx)
-            if success_position < len(eot_df):
-                eot_df_all.append({
-                    'frame': eot_df.iloc[success_position]['frame'],
-                    'timestamp': eot_df.iloc[success_position]['timestamp'],
-                })
-            else:
-                # Fallback
-                eot_df_all.append({
-                    'frame': target_df_all.iloc[idx]['frame'] + 600,
-                    'timestamp': target_df_all.iloc[idx]['timestamp'] + 10.0,
-                })
-        else:
-            # Failed trial - use 10 second timeout estimate
-            eot_df_all.append({
-                'frame': target_df_all.iloc[idx]['frame'] + 600,
-                'timestamp': target_df_all.iloc[idx]['timestamp'] + 10.0,
-            })
-    eot_df_all = pd.DataFrame(eot_df_all)
+    print(f"  Using eot_df with {len(eot_df)} trials (matches target_df_all with {len(target_df_all)} trials)")
 
     # Extract all trials (will include placeholders for trials with no eye data)
-    trials_all = extract_trial_trajectories(eot_df_all, eye_df, target_df_all,
+    trials_all = extract_trial_trajectories(eot_df, eye_df, target_df_all,
                                             successful_indices=successful_indices)
 
     # Separate successful trials for analysis
