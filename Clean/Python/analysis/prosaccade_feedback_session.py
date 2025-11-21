@@ -396,6 +396,9 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
             straight_line_distance = 0.0
             initial_direction_error = np.nan
             eye_times_raw = np.array([])
+            eye_x_full = np.array([])
+            eye_y_full = np.array([])
+            eye_times_full = np.array([])
             eye_start_time = start_time
             eye_end_time = end_time
         else:
@@ -434,6 +437,17 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
                 print(f"    last vstim_go frame within trial: {last_within_trial_frame}")
                 print(f"    final_eye_frame (next row in vstim_go): {final_eye_frame}")
                 print(f"    final position from vstim_go: ({final_eye_x:.3f}, {final_eye_y:.3f})")
+
+            # Append the final position to trajectory arrays for continuous plotting
+            # This ensures no gap/jump between trajectory and final position marker
+            eye_x_full = np.append(eye_trajectory['green_x'].values, final_eye_x)
+            eye_y_full = np.append(eye_trajectory['green_y'].values, final_eye_y)
+            # Also append timestamp for the final position
+            if eye_df_position + 1 < len(eye_df):
+                final_timestamp = eye_df.iloc[eye_df_position + 1]['timestamp']
+                eye_times_full = np.append(eye_times_raw, final_timestamp)
+            else:
+                eye_times_full = eye_times_raw
 
         if has_eye_data and len(eye_trajectory) > 1:
             dx = np.diff(eye_trajectory['green_x'].values)
@@ -507,9 +521,9 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
             'final_eye_x': final_eye_x,
             'final_eye_y': final_eye_y,
             'final_eye_frame': final_eye_frame,
-            'eye_x': eye_trajectory['green_x'].values if has_eye_data else np.array([]),
-            'eye_y': eye_trajectory['green_y'].values if has_eye_data else np.array([]),
-            'eye_times': eye_times_raw,
+            'eye_x': eye_x_full if has_eye_data else np.array([]),
+            'eye_y': eye_y_full if has_eye_data else np.array([]),
+            'eye_times': eye_times_full if has_eye_data else np.array([]),
             'eye_start_time': eye_start_time,  # For relative time calculations
             'path_length': path_length,
             'straight_line_distance': straight_line_distance,
