@@ -604,7 +604,10 @@ def plot_trajectories(trials: list[dict], results_dir: Optional[Path] = None,
         # Mark start and end points with different markers
         ax.plot(eye_x[0], eye_y[0], 'o', color=color, markersize=8, alpha=0.9,
                 markeredgecolor='white', markeredgewidth=1)
-        ax.plot(eye_x[-1], eye_y[-1], 's', color=color, markersize=8, alpha=0.9,
+        # Use calculated final position (from vstim_go next row after trial)
+        final_x = trial.get('final_eye_x', eye_x[-1])
+        final_y = trial.get('final_eye_y', eye_y[-1])
+        ax.plot(final_x, final_y, 's', color=color, markersize=8, alpha=0.9,
                 markeredgecolor='white', markeredgewidth=1)
 
         # Draw target position as black circle at actual position with actual diameter
@@ -706,10 +709,12 @@ def plot_trajectories_by_direction(trials: list[dict], results_dir: Optional[Pat
 
         ax.plot(eye_x, eye_y, '-', color=left_color, alpha=0.5, linewidth=1.5)
 
-        # Mark start and end points
+        # Mark start and end points (use calculated final position)
         ax.plot(eye_x[0], eye_y[0], 'o', color=left_color, markersize=6, alpha=0.7,
                 markeredgecolor='white', markeredgewidth=1)
-        ax.plot(eye_x[-1], eye_y[-1], 's', color=left_color, markersize=6, alpha=0.7,
+        final_x = trial.get('final_eye_x', eye_x[-1])
+        final_y = trial.get('final_eye_y', eye_y[-1])
+        ax.plot(final_x, final_y, 's', color=left_color, markersize=6, alpha=0.7,
                 markeredgecolor='white', markeredgewidth=1)
 
     # Plot right trials
@@ -719,10 +724,12 @@ def plot_trajectories_by_direction(trials: list[dict], results_dir: Optional[Pat
 
         ax.plot(eye_x, eye_y, '-', color=right_color, alpha=0.5, linewidth=1.5)
 
-        # Mark start and end points
+        # Mark start and end points (use calculated final position)
         ax.plot(eye_x[0], eye_y[0], 'o', color=right_color, markersize=6, alpha=0.7,
                 markeredgecolor='white', markeredgewidth=1)
-        ax.plot(eye_x[-1], eye_y[-1], 's', color=right_color, markersize=6, alpha=0.7,
+        final_x = trial.get('final_eye_x', eye_x[-1])
+        final_y = trial.get('final_eye_y', eye_y[-1])
+        ax.plot(final_x, final_y, 's', color=right_color, markersize=6, alpha=0.7,
                 markeredgecolor='white', markeredgewidth=1)
 
     # Draw targets
@@ -920,8 +927,11 @@ def interactive_trajectories(trials: list[dict], animal_id: Optional[str] = None
             start, = ax.plot(eye_x[0], eye_y[0], 'o', color=color,
                             markersize=10, markeredgecolor='white',
                             markeredgewidth=2, alpha=0.9, label='Start')
-            # Draw end position as circle with diameter 0.2 (radius 0.1)
-            end_circle = Circle((eye_x[-1], eye_y[-1]), radius=0.1, fill=True,
+            # Draw end position using calculated final_eye_x/y (from vstim_go next row)
+            # NOT the last trajectory point
+            final_x = trial.get('final_eye_x', eye_x[-1])
+            final_y = trial.get('final_eye_y', eye_y[-1])
+            end_circle = Circle((final_x, final_y), radius=0.1, fill=True,
                                facecolor=color, edgecolor='white', linewidth=2, alpha=0.9,
                                label='End' if trial_idx == 0 else None)
             ax.add_patch(end_circle)
@@ -1084,9 +1094,12 @@ def animate_trajectories(trials: list[dict], results_dir: Optional[Path] = None,
         current_start.set_data([eye_x[0]], [eye_y[0]])
         current_start.set_color(color)
 
-        # Update end marker if we're at the end of this trial
+        # Update end marker if we're at the end of this trial (use calculated final position)
+        trial = trials[current_trial_idx]
+        final_x = trial.get('final_eye_x', eye_x[-1] if len(eye_x) > 0 else 0)
+        final_y = trial.get('final_eye_y', eye_y[-1] if len(eye_y) > 0 else 0)
         if end_idx == len(eye_x):
-            current_end.set_data([eye_x[-1]], [eye_y[-1]])
+            current_end.set_data([final_x], [final_y])
             current_end.set_color(color)
         else:
             current_end.set_data([], [])
@@ -1103,7 +1116,7 @@ def animate_trajectories(trials: list[dict], results_dir: Optional[Path] = None,
             completed_start, = ax.plot(eye_x[0], eye_y[0], 'o', color=color,
                                       markersize=8, markeredgecolor='white',
                                       markeredgewidth=1, alpha=0.9)
-            completed_end, = ax.plot(eye_x[-1], eye_y[-1], 's', color=color,
+            completed_end, = ax.plot(final_x, final_y, 's', color=color,
                                     markersize=8, markeredgecolor='white',
                                     markeredgewidth=1, alpha=0.9)
 
@@ -1440,9 +1453,9 @@ def plot_final_positions_by_target(trials: list[dict], min_duration: float = 0.1
     # Group trials by target position only (ignore visibility)
     target_groups = defaultdict(list)
     for t in filtered_trials:
-        # Get final position (last sample)
-        final_x = t['eye_x'][-1]
-        final_y = t['eye_y'][-1]
+        # Get final position (use calculated final_eye_x/y from vstim_go)
+        final_x = t.get('final_eye_x', t['eye_x'][-1] if len(t['eye_x']) > 0 else np.nan)
+        final_y = t.get('final_eye_y', t['eye_y'][-1] if len(t['eye_y']) > 0 else np.nan)
 
         # Key: (target_x, target_y) - NO visibility
         target_key = (round(t['target_x'], 2), round(t['target_y'], 2))
