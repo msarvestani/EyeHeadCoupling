@@ -2624,6 +2624,219 @@ def compare_visible_invisible_performance(trials: list[dict], results_dir: Optio
     return fig, stats_dict
 
 
+def plot_visible_invisible_detailed_stats(trials: list[dict], results_dir: Optional[Path] = None,
+                                          animal_id: Optional[str] = None, session_date: str = "") -> tuple:
+    """Plot detailed statistics comparing visible vs invisible targets.
+
+    Shows:
+    - Initial direction error distributions
+    - Success/failure counts
+    - Direction error boxplots
+
+    This function is standalone and can be easily removed without affecting other analyses.
+
+    Parameters
+    ----------
+    trials : list of dict
+        List of trial data dictionaries (should include both successful and failed trials)
+    results_dir : Path, optional
+        Directory to save the figure
+    animal_id : str, optional
+        Animal identifier for filename
+    session_date : str, optional
+        Session date for title
+
+    Returns
+    -------
+    tuple of (fig, stats_dict)
+        Figure and dictionary containing statistics
+    """
+    from scipy import stats as scipy_stats
+
+    # Classify trials by target visibility
+    visible_trials = [t for t in trials if t.get('target_visible', 1) == 1]
+    invisible_trials = [t for t in trials if t.get('target_visible', 1) == 0]
+
+    n_visible = len(visible_trials)
+    n_invisible = len(invisible_trials)
+
+    print(f"\nDetailed Visible/Invisible Target Analysis:")
+    print(f"  Visible trials: {n_visible}")
+    print(f"  Invisible trials: {n_invisible}")
+
+    if n_visible == 0 or n_invisible == 0:
+        print("Warning: Not enough trials for visible/invisible detailed comparison")
+        return None, None
+
+    # Count success/failure for each group
+    visible_success = sum(1 for t in visible_trials if not t.get('trial_failed', False))
+    visible_failed = n_visible - visible_success
+    invisible_success = sum(1 for t in invisible_trials if not t.get('trial_failed', False))
+    invisible_failed = n_invisible - invisible_success
+
+    # Extract initial direction errors (only for successful trials with valid data)
+    visible_dir_errors = [t['initial_direction_error'] for t in visible_trials
+                         if not t.get('trial_failed', False) and not np.isnan(t.get('initial_direction_error', np.nan))]
+    invisible_dir_errors = [t['initial_direction_error'] for t in invisible_trials
+                           if not t.get('trial_failed', False) and not np.isnan(t.get('initial_direction_error', np.nan))]
+
+    # Create figure with 2x2 subplots
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    fig.suptitle(f'Visible vs Invisible Target Analysis - {animal_id} - {session_date}',
+                fontsize=14, fontweight='bold')
+
+    # Plot 1: Success/Failure counts (stacked bar chart)
+    ax = axes[0, 0]
+    categories = ['Visible', 'Invisible']
+    success_counts = [visible_success, invisible_success]
+    failed_counts = [visible_failed, invisible_failed]
+
+    x_pos = np.arange(len(categories))
+    width = 0.6
+
+    bars1 = ax.bar(x_pos, success_counts, width, label='Success', color='green', alpha=0.7)
+    bars2 = ax.bar(x_pos, failed_counts, width, bottom=success_counts, label='Failed', color='red', alpha=0.7)
+
+    ax.set_ylabel('Number of Trials', fontsize=12)
+    ax.set_title('Trial Success/Failure Counts', fontsize=12, fontweight='bold')
+    ax.set_xticks(x_pos)
+    ax.set_xticklabels(categories)
+    ax.legend()
+    ax.grid(True, alpha=0.3, axis='y')
+
+    # Add count labels on bars
+    for i, (s, f) in enumerate(zip(success_counts, failed_counts)):
+        ax.text(i, s/2, str(s), ha='center', va='center', fontweight='bold', fontsize=11)
+        ax.text(i, s + f/2, str(f), ha='center', va='center', fontweight='bold', fontsize=11)
+        ax.text(i, s + f + 1, f'n={s+f}', ha='center', va='bottom', fontsize=10)
+
+    # Plot 2: Success rates (percentage)
+    ax = axes[0, 1]
+    visible_success_rate = 100 * visible_success / n_visible if n_visible > 0 else 0
+    invisible_success_rate = 100 * invisible_success / n_invisible if n_invisible > 0 else 0
+
+    bars = ax.bar(x_pos, [visible_success_rate, invisible_success_rate], width,
+                  color=['green', 'darkgreen'], alpha=0.7)
+    ax.set_ylabel('Success Rate (%)', fontsize=12)
+    ax.set_title('Trial Success Rate', fontsize=12, fontweight='bold')
+    ax.set_xticks(x_pos)
+    ax.set_xticklabels(categories)
+    ax.set_ylim(0, 110)
+    ax.grid(True, alpha=0.3, axis='y')
+
+    # Add percentage labels on bars
+    for i, (rate, bar) in enumerate(zip([visible_success_rate, invisible_success_rate], bars)):
+        ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 2,
+               f'{rate:.1f}%', ha='center', va='bottom', fontweight='bold', fontsize=11)
+
+    # Plot 3: Initial direction error boxplots (successful trials only)
+    ax = axes[1, 0]
+    if len(visible_dir_errors) > 0 and len(invisible_dir_errors) > 0:
+        positions = [1, 2]
+        box_data = [visible_dir_errors, invisible_dir_errors]
+        bp = ax.boxplot(box_data, positions=positions, widths=0.6, patch_artist=True,
+                       boxprops=dict(facecolor='lightcoral', edgecolor='black'),
+                       medianprops=dict(color='darkred', linewidth=2))
+
+        # Statistical test
+        dir_stat, dir_p = scipy_stats.mannwhitneyu(visible_dir_errors, invisible_dir_errors,
+                                                   alternative='two-sided')
+
+        ax.set_xticks(positions)
+        ax.set_xticklabels(['Visible', 'Invisible'])
+        ax.set_ylabel('Initial Direction Error (degrees)', fontsize=12)
+        ax.set_title(f'Initial Direction Error (Successful Trials)\np = {dir_p:.4f}',
+                    fontsize=12, fontweight='bold')
+        ax.grid(True, alpha=0.3, axis='y')
+
+        # Add means as points
+        ax.plot(1, np.mean(visible_dir_errors), 'ro', markersize=10, label='Mean')
+        ax.plot(2, np.mean(invisible_dir_errors), 'ro', markersize=10)
+
+        # Add sample sizes
+        ax.text(1, ax.get_ylim()[0], f'n={len(visible_dir_errors)}', ha='center', va='top', fontsize=9)
+        ax.text(2, ax.get_ylim()[0], f'n={len(invisible_dir_errors)}', ha='center', va='top', fontsize=9)
+    else:
+        ax.text(0.5, 0.5, 'Insufficient data\nfor direction error analysis',
+               ha='center', va='center', transform=ax.transAxes, fontsize=12)
+        ax.set_xticks([])
+        ax.set_yticks([])
+        dir_p = np.nan
+
+    # Plot 4: Summary statistics table
+    ax = axes[1, 1]
+    ax.axis('off')
+
+    # Create table data
+    table_data = [
+        ['Metric', 'Visible', 'Invisible'],
+        ['Total Trials', f'{n_visible}', f'{n_invisible}'],
+        ['Successful', f'{visible_success} ({visible_success_rate:.1f}%)',
+         f'{invisible_success} ({invisible_success_rate:.1f}%)'],
+        ['Failed', f'{visible_failed} ({100-visible_success_rate:.1f}%)',
+         f'{invisible_failed} ({100-invisible_success_rate:.1f}%)'],
+        ['', '', ''],
+        ['Direction Error', 'Mean ± SD', ''],
+    ]
+
+    if len(visible_dir_errors) > 0:
+        table_data.append(['  Visible',
+                          f'{np.mean(visible_dir_errors):.1f}° ± {np.std(visible_dir_errors):.1f}°', ''])
+    if len(invisible_dir_errors) > 0:
+        table_data.append(['  Invisible',
+                          f'{np.mean(invisible_dir_errors):.1f}° ± {np.std(invisible_dir_errors):.1f}°', ''])
+
+    if len(visible_dir_errors) > 0 and len(invisible_dir_errors) > 0:
+        table_data.append(['  p-value', f'{dir_p:.4f}', ''])
+
+    table = ax.table(cellText=table_data, cellLoc='center', loc='center',
+                    colWidths=[0.4, 0.3, 0.3])
+    table.auto_set_font_size(False)
+    table.set_fontsize(10)
+    table.scale(1, 2)
+
+    # Style header row
+    for i in range(3):
+        table[(0, i)].set_facecolor('#2196F3')
+        table[(0, i)].set_text_props(weight='bold', color='white')
+
+    plt.tight_layout()
+
+    # Save figure
+    if results_dir:
+        filename = f"{animal_id}_{session_date}_visible_invisible_detailed_stats.png"
+        save_path = results_dir / filename
+        fig.savefig(save_path, dpi=150, bbox_inches='tight')
+        print(f"  Saved detailed visible/invisible stats to {save_path}")
+
+    # Compile statistics dictionary
+    stats_dict = {
+        'n_visible': n_visible,
+        'n_invisible': n_invisible,
+        'visible_success': visible_success,
+        'visible_failed': visible_failed,
+        'invisible_success': invisible_success,
+        'invisible_failed': invisible_failed,
+        'visible_success_rate': visible_success_rate,
+        'invisible_success_rate': invisible_success_rate,
+        'visible_dir_errors': visible_dir_errors,
+        'invisible_dir_errors': invisible_dir_errors,
+    }
+
+    if len(visible_dir_errors) > 0 and len(invisible_dir_errors) > 0:
+        stats_dict['dir_error_p_value'] = dir_p
+        stats_dict['dir_error_statistic'] = dir_stat
+
+    # Print summary
+    print(f"\n  Success Rate: Visible={visible_success_rate:.1f}%, Invisible={invisible_success_rate:.1f}%")
+    if len(visible_dir_errors) > 0 and len(invisible_dir_errors) > 0:
+        print(f"  Direction Error: Visible={np.mean(visible_dir_errors):.1f}°, Invisible={np.mean(invisible_dir_errors):.1f}°, p={dir_p:.4f}")
+        if dir_p < 0.05:
+            print(f"  *** Significant difference in direction error (p < 0.05)")
+
+    return fig, stats_dict
+
+
 def test_initial_direction_correlation(trials: list[dict], results_dir: Optional[Path] = None,
                                         animal_id: Optional[str] = None, session_date: str = "") -> tuple:
     """Test #2: Initial Direction Correlation - do initial movements point toward targets?
@@ -3523,6 +3736,16 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
             plt.show()
         plt.close(fig_vis)
 
+    # NEW: Detailed visible/invisible statistics (including success/failure and direction errors)
+    print("\nGenerating detailed visible vs invisible target statistics...")
+    fig_vis_detailed, vis_detailed_stats = plot_visible_invisible_detailed_stats(trials_all, results_dir=results_dir,
+                                                                                  animal_id=animal_id,
+                                                                                  session_date=date_str)
+    if fig_vis_detailed is not None:
+        if show_plots:
+            plt.show()
+        plt.close(fig_vis_detailed)
+
     print("\nPlotting final positions by target type...")
     fig_final_pos = plot_final_positions_by_target(trials_for_analysis, min_duration=trial_min_duration, max_duration=trial_max_duration,
                                                     results_dir=results_dir,
@@ -3722,6 +3945,15 @@ def main(session_id: str, trial_min_duration: float = 0.1, trial_max_duration: f
     if fig_vis is not None:
         plt.show()
         plt.close(fig_vis)
+
+    # NEW: Detailed visible/invisible statistics (including success/failure and direction errors)
+    print("\nGenerating detailed visible vs invisible target statistics...")
+    fig_vis_detailed, vis_detailed_stats = plot_visible_invisible_detailed_stats(trials_all, results_dir=results_dir,
+                                                                                  animal_id=animal_id,
+                                                                                  session_date=date_str)
+    if fig_vis_detailed is not None:
+        plt.show()
+        plt.close(fig_vis_detailed)
 
     print("\nPlotting final positions by target type...")
     fig_final_pos = plot_final_positions_by_target(trials_for_analysis, min_duration=trial_min_duration, max_duration=trial_max_duration,
