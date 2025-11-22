@@ -3583,7 +3583,7 @@ def plot_fixation_targeting_analysis(trials: list[dict], results_dir: Optional[P
 
     for trial in trials:
         # Skip trials without eye data
-        if 'eye_x' not in trial or 'eye_y' not in trial or 'eye_t' not in trial:
+        if 'eye_x' not in trial or 'eye_y' not in trial or 'eye_times' not in trial:
             continue
         if len(trial['eye_x']) == 0:
             continue
@@ -3591,7 +3591,7 @@ def plot_fixation_targeting_analysis(trials: list[dict], results_dir: Optional[P
         n_trials_with_data += 1
         eye_x = trial['eye_x']
         eye_y = trial['eye_y']
-        eye_t = trial['eye_t']
+        eye_t = trial['eye_times']
         target_x = trial.get('target_x', 0.0)
         target_y = trial.get('target_y', 0.0)
         target_radius = trial.get('target_radius', 0.15)
