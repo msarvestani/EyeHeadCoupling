@@ -3332,8 +3332,8 @@ def interactive_initial_direction_viewer(trials: list[dict], animal_id: Optional
 
 
 def interactive_fixation_viewer(trials: list[dict], animal_id: Optional[str] = None,
-                                 session_date: str = "", min_duration: float = 0.5,
-                                 max_movement: float = 0.1):
+                                 session_date: str = "", min_duration: float = 0.45,
+                                 max_movement: float = 0.15):
     """Interactive viewer showing detected fixations for each trial.
 
     Detects periods where eyes moved less than max_movement units for at least
@@ -3352,9 +3352,9 @@ def interactive_fixation_viewer(trials: list[dict], animal_id: Optional[str] = N
     session_date : str, optional
         Session date for title
     min_duration : float
-        Minimum fixation duration in seconds (default: 0.5)
+        Minimum fixation duration in seconds (default: 0.45)
     max_movement : float
-        Maximum movement threshold for fixation in stimulus units (default: 0.1)
+        Maximum movement threshold for fixation in stimulus units (default: 0.15)
     """
     if len(trials) == 0:
         print("No trials to display")
