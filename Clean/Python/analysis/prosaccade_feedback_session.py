@@ -3331,6 +3331,226 @@ def interactive_initial_direction_viewer(trials: list[dict], animal_id: Optional
     plt.show()
 
 
+def interactive_fixation_viewer(trials: list[dict], animal_id: Optional[str] = None,
+                                 session_date: str = "", min_duration: float = 0.5,
+                                 max_movement: float = 0.1):
+    """Interactive viewer showing detected fixations for each trial.
+
+    Detects periods where eyes moved less than max_movement units for at least
+    min_duration seconds, and highlights those points on the trajectory.
+
+    Press SPACE to advance to next trial.
+
+    This function is standalone and can be easily removed without affecting other analyses.
+
+    Parameters
+    ----------
+    trials : list of dict
+        List of trial data dictionaries
+    animal_id : str, optional
+        Animal identifier for title
+    session_date : str, optional
+        Session date for title
+    min_duration : float
+        Minimum fixation duration in seconds (default: 0.5)
+    max_movement : float
+        Maximum movement threshold for fixation in stimulus units (default: 0.1)
+    """
+    if len(trials) == 0:
+        print("No trials to display")
+        return
+
+    # Filter to trials with eye data
+    trials_with_data = [t for t in trials if len(t.get('eye_x', [])) > 0]
+    if len(trials_with_data) == 0:
+        print("No trials with eye tracking data")
+        return
+
+    print(f"Interactive Fixation Viewer: {len(trials_with_data)} trials")
+    print(f"Fixation criteria: ≥{min_duration}s duration, <{max_movement} units movement")
+    print("Press SPACE to advance, ESC or 'q' to quit")
+
+    fig, ax = plt.subplots(figsize=(12, 10))
+    current_trial_idx = [0]  # Use list to allow modification in nested function
+
+    def detect_fixations(eye_x, eye_y, eye_times):
+        """Detect fixation windows in the trajectory."""
+        if len(eye_x) < 2:
+            return []
+
+        fixations = []
+        n = len(eye_x)
+
+        # For each potential starting point
+        for i in range(n):
+            # Try to find the longest fixation starting at i
+            for j in range(i + 1, n + 1):
+                # Check if this window meets criteria
+                window_x = eye_x[i:j]
+                window_y = eye_y[i:j]
+                window_times = eye_times[i:j]
+
+                # Calculate duration
+                duration = window_times[-1] - window_times[0]
+
+                if duration < min_duration:
+                    continue  # Too short
+
+                # Calculate maximum movement in this window
+                x_range = np.max(window_x) - np.min(window_x)
+                y_range = np.max(window_y) - np.min(window_y)
+                max_move = np.sqrt(x_range**2 + y_range**2)
+
+                if max_move < max_movement:
+                    # This is a valid fixation
+                    # Check if we can extend it further
+                    continue
+                else:
+                    # Can't extend anymore, check if previous window was valid
+                    if j > i + 1:  # At least 2 points
+                        prev_window_times = eye_times[i:j-1]
+                        prev_duration = prev_window_times[-1] - prev_window_times[0]
+                        if prev_duration >= min_duration:
+                            fixations.append((i, j-1, prev_duration))
+                    break
+
+            # Check if we reached the end with a valid fixation
+            if j == n:
+                duration = eye_times[j-1] - eye_times[i]
+                if duration >= min_duration:
+                    window_x = eye_x[i:j]
+                    window_y = eye_y[i:j]
+                    x_range = np.max(window_x) - np.min(window_x)
+                    y_range = np.max(window_y) - np.min(window_y)
+                    max_move = np.sqrt(x_range**2 + y_range**2)
+                    if max_move < max_movement:
+                        fixations.append((i, j, duration))
+
+        # Remove overlapping fixations, keep longest
+        if len(fixations) == 0:
+            return []
+
+        # Sort by duration (longest first)
+        fixations.sort(key=lambda x: x[2], reverse=True)
+
+        # Remove overlaps
+        final_fixations = []
+        used_indices = set()
+
+        for start, end, duration in fixations:
+            # Check if any index in this range is already used
+            if any(idx in used_indices for idx in range(start, end)):
+                continue
+
+            # Add this fixation
+            final_fixations.append((start, end, duration))
+            used_indices.update(range(start, end))
+
+        # Sort by start index
+        final_fixations.sort(key=lambda x: x[0])
+
+        return final_fixations
+
+    def plot_trial(idx):
+        ax.clear()
+        trial = trials_with_data[idx]
+
+        eye_x = np.array(trial['eye_x'])
+        eye_y = np.array(trial['eye_y'])
+        eye_times = np.array(trial.get('eye_times', np.arange(len(eye_x))))
+        target_x = trial['target_x']
+        target_y = trial['target_y']
+        target_diameter = trial['target_diameter']
+        trial_num = trial.get('trial_number', idx + 1)
+        is_failed = trial.get('trial_failed', False)
+
+        # Detect fixations
+        fixations = detect_fixations(eye_x, eye_y, eye_times)
+
+        # Plot full trajectory (lighter)
+        if is_failed:
+            ax.plot(eye_x, eye_y, 'r-', linewidth=1.5, alpha=0.3, label='Eye trajectory (FAILED)', zorder=1)
+        else:
+            ax.plot(eye_x, eye_y, 'b-', linewidth=1.5, alpha=0.3, label='Eye trajectory', zorder=1)
+
+        # Plot non-fixation points (small dots)
+        fixation_mask = np.zeros(len(eye_x), dtype=bool)
+        for start, end, duration in fixations:
+            fixation_mask[start:end] = True
+
+        non_fixation_x = eye_x[~fixation_mask]
+        non_fixation_y = eye_y[~fixation_mask]
+        if len(non_fixation_x) > 0:
+            ax.plot(non_fixation_x, non_fixation_y, 'o', color='gray',
+                   markersize=4, alpha=0.5, label='Non-fixation', zorder=2)
+
+        # Highlight fixation points
+        colors = ['lime', 'yellow', 'cyan', 'magenta', 'orange']
+        for fix_idx, (start, end, duration) in enumerate(fixations):
+            fix_x = eye_x[start:end]
+            fix_y = eye_y[start:end]
+            color = colors[fix_idx % len(colors)]
+
+            # Plot fixation points (large, bright)
+            ax.plot(fix_x, fix_y, 'o', color=color, markersize=10, alpha=0.8,
+                   label=f'Fixation {fix_idx+1} ({duration:.2f}s)', zorder=4)
+
+            # Calculate and plot fixation center
+            fix_center_x = np.mean(fix_x)
+            fix_center_y = np.mean(fix_y)
+            ax.plot(fix_center_x, fix_center_y, 'x', color=color, markersize=15,
+                   markeredgewidth=3, zorder=5)
+
+        # Plot start position
+        start_x = eye_x[0]
+        start_y = eye_y[0]
+        ax.plot(start_x, start_y, 'go', markersize=12, label='Start', zorder=3)
+
+        # Plot target
+        target_circle = Circle((target_x, target_y), radius=target_diameter/2,
+                              fill=False, edgecolor='red', linewidth=2, linestyle='-')
+        ax.add_patch(target_circle)
+        ax.plot(target_x, target_y, 'r*', markersize=15, label='Target', zorder=5)
+
+        # Plot final position
+        final_x = trial.get('final_eye_x', eye_x[-1])
+        final_y = trial.get('final_eye_y', eye_y[-1])
+        ax.plot(final_x, final_y, 'ks', markersize=10, label='Final position', zorder=3)
+
+        ax.set_xlabel('Horizontal Position', fontsize=12)
+        ax.set_ylabel('Vertical Position', fontsize=12)
+
+        # Title with trial info and fixation count
+        title = f'Trial {trial_num}/{len(trials_with_data)} - {len(fixations)} fixation(s) detected'
+        if is_failed:
+            title += ' [FAILED]'
+
+        if animal_id or session_date:
+            title = f'{animal_id} {session_date}\n{title}'
+
+        ax.set_title(title, fontsize=12, fontweight='bold')
+        ax.legend(loc='upper right', fontsize=9, ncol=2)
+        ax.grid(True, alpha=0.3)
+        ax.set_xlim(-1.7, 1.7)
+        ax.set_ylim(-1, 1)
+        ax.set_aspect('equal', adjustable='box')
+
+        fig.canvas.draw()
+
+    def on_key(event):
+        if event.key == ' ':  # Space bar
+            current_trial_idx[0] = (current_trial_idx[0] + 1) % len(trials_with_data)
+            plot_trial(current_trial_idx[0])
+        elif event.key in ['escape', 'q']:
+            plt.close(fig)
+
+    fig.canvas.mpl_connect('key_press_event', on_key)
+
+    # Plot first trial
+    plot_trial(0)
+    plt.show()
+
+
 def test_left_right_targeted_movement(trials: list[dict], results_dir: Optional[Path] = None,
                                        animal_id: Optional[str] = None, session_date: str = "",
                                        n_shuffles: int = 1000) -> tuple:
@@ -4559,6 +4779,12 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
     if show_plots:
         interactive_initial_direction_viewer(trials_for_analysis, animal_id=animal_id, session_date=date_str)
 
+    # NEW: Interactive fixation viewer
+    print("\nShowing interactive fixation viewer...")
+    print("  (Shows detected fixation periods for each trial - press SPACE to advance)")
+    if show_plots:
+        interactive_fixation_viewer(trials_for_analysis, animal_id=animal_id, session_date=date_str)
+
     print("\nPlotting final positions by target type...")
     fig_final_pos = plot_final_positions_by_target(trials_for_analysis, min_duration=trial_min_duration, max_duration=trial_max_duration,
                                                     results_dir=results_dir,
@@ -4798,6 +5024,11 @@ def main(session_id: str, trial_min_duration: float = 0.1, trial_max_duration: f
     print("\nShowing interactive initial direction viewer...")
     print("  (Shows initial direction vectors for each trial - press SPACE to advance)")
     interactive_initial_direction_viewer(trials_for_analysis, animal_id=animal_id, session_date=date_str)
+
+    # NEW: Interactive fixation viewer
+    print("\nShowing interactive fixation viewer...")
+    print("  (Shows detected fixation periods for each trial - press SPACE to advance)")
+    interactive_fixation_viewer(trials_for_analysis, animal_id=animal_id, session_date=date_str)
 
     print("\nPlotting final positions by target type...")
     fig_final_pos = plot_final_positions_by_target(trials_for_analysis, min_duration=trial_min_duration, max_duration=trial_max_duration,
