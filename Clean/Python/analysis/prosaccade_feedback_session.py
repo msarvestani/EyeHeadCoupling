@@ -3651,8 +3651,8 @@ def plot_fixation_targeting_analysis(trials: list[dict], results_dir: Optional[P
 
     print(f"  Found {len(left_fixations)} left fixations and {len(right_fixations)} right fixations from {n_trials_with_data} trials with data")
 
-    # Create figure with 2x2 subplots
-    fig = plt.figure(figsize=(14, 12))
+    # Create figure with 3 subplots (2 plots stacked vertically + 1 stats table)
+    fig = plt.figure(figsize=(16, 12))
 
     # Typical target positions (approximate)
     left_target_x = -0.5
@@ -3660,7 +3660,7 @@ def plot_fixation_targeting_analysis(trials: list[dict], results_dir: Optional[P
     target_y = 0.0
     target_radius = 0.15
 
-    # Plot 1: Left target fixations
+    # Plot 1: Left target fixations (show right target in black)
     ax1 = plt.subplot(2, 2, 1)
     if left_fixations:
         centers_x = [f[0] for f in left_fixations]
@@ -3672,10 +3672,15 @@ def plot_fixation_targeting_analysis(trials: list[dict], results_dir: Optional[P
                              s=100, alpha=0.6, edgecolors='black', linewidths=0.5)
         plt.colorbar(scatter, ax=ax1, label='Fixation Span')
 
-        # Draw target circle
-        circle = Circle((left_target_x, target_y), target_radius,
-                       fill=False, edgecolor='red', linewidth=2, linestyle='--', label='Target')
-        ax1.add_patch(circle)
+        # Draw left target circle (red - the actual target)
+        circle_left = Circle((left_target_x, target_y), target_radius,
+                            fill=False, edgecolor='red', linewidth=2, linestyle='--', label='Left Target')
+        ax1.add_patch(circle_left)
+
+    # Draw right target circle (black - the other target)
+    circle_right = Circle((right_target_x, target_y), target_radius,
+                         fill=False, edgecolor='black', linewidth=1.5, linestyle=':', label='Right Target')
+    ax1.add_patch(circle_right)
 
     ax1.set_xlabel('X Position')
     ax1.set_ylabel('Y Position')
@@ -3684,8 +3689,8 @@ def plot_fixation_targeting_analysis(trials: list[dict], results_dir: Optional[P
     ax1.legend()
     ax1.set_aspect('equal')
 
-    # Plot 2: Right target fixations
-    ax2 = plt.subplot(2, 2, 2)
+    # Plot 2: Right target fixations (show left target in black)
+    ax2 = plt.subplot(2, 2, 3)  # Changed to (2,2,3) to stack vertically
     if right_fixations:
         centers_x = [f[0] for f in right_fixations]
         centers_y = [f[1] for f in right_fixations]
@@ -3696,10 +3701,15 @@ def plot_fixation_targeting_analysis(trials: list[dict], results_dir: Optional[P
                              s=100, alpha=0.6, edgecolors='black', linewidths=0.5)
         plt.colorbar(scatter, ax=ax2, label='Fixation Span')
 
-        # Draw target circle
-        circle = Circle((right_target_x, target_y), target_radius,
-                       fill=False, edgecolor='red', linewidth=2, linestyle='--', label='Target')
-        ax2.add_patch(circle)
+        # Draw right target circle (red - the actual target)
+        circle_right = Circle((right_target_x, target_y), target_radius,
+                             fill=False, edgecolor='red', linewidth=2, linestyle='--', label='Right Target')
+        ax2.add_patch(circle_right)
+
+    # Draw left target circle (black - the other target)
+    circle_left = Circle((left_target_x, target_y), target_radius,
+                        fill=False, edgecolor='black', linewidth=1.5, linestyle=':', label='Left Target')
+    ax2.add_patch(circle_left)
 
     ax2.set_xlabel('X Position')
     ax2.set_ylabel('Y Position')
@@ -3708,22 +3718,54 @@ def plot_fixation_targeting_analysis(trials: list[dict], results_dir: Optional[P
     ax2.legend()
     ax2.set_aspect('equal')
 
-    # Plot 3: Span distribution
-    ax3 = plt.subplot(2, 2, 3)
-    all_spans = [f[2] for f in left_fixations] + [f[2] for f in right_fixations]
-    if all_spans:
-        ax3.hist(all_spans, bins=30, alpha=0.7, color='steelblue', edgecolor='black')
-        ax3.axvline(np.mean(all_spans), color='red', linestyle='--', linewidth=2,
-                   label=f'Mean: {np.mean(all_spans):.3f}')
-        ax3.axvline(np.median(all_spans), color='orange', linestyle='--', linewidth=2,
-                   label=f'Median: {np.median(all_spans):.3f}')
-    ax3.set_xlabel('Fixation Span')
-    ax3.set_ylabel('Count')
-    ax3.set_title('Distribution of Fixation Spans')
-    ax3.legend()
-    ax3.grid(True, alpha=0.3)
+    # Plot 3: Mean positions with variance visualization
+    ax3 = plt.subplot(2, 2, 2)
 
-    # Plot 4: Statistics table
+    # Show mean positions as points with error bars
+    if left_fixations:
+        left_x = [f[0] for f in left_fixations]
+        left_y = [f[1] for f in left_fixations]
+        left_mean_x = np.mean(left_x)
+        left_mean_y = np.mean(left_y)
+        left_std_x = np.std(left_x)
+        left_std_y = np.std(left_y)
+
+        # Plot mean with error bars representing standard deviation
+        ax3.errorbar(left_mean_x, left_mean_y, xerr=left_std_x, yerr=left_std_y,
+                    fmt='o', markersize=10, color='blue', ecolor='blue', capsize=5,
+                    alpha=0.7, label='Left Target Mean ± SD')
+
+        # Draw target
+        circle_left = Circle((left_target_x, target_y), target_radius,
+                            fill=False, edgecolor='red', linewidth=2, linestyle='--')
+        ax3.add_patch(circle_left)
+
+    if right_fixations:
+        right_x = [f[0] for f in right_fixations]
+        right_y = [f[1] for f in right_fixations]
+        right_mean_x = np.mean(right_x)
+        right_mean_y = np.mean(right_y)
+        right_std_x = np.std(right_x)
+        right_std_y = np.std(right_y)
+
+        # Plot mean with error bars representing standard deviation
+        ax3.errorbar(right_mean_x, right_mean_y, xerr=right_std_x, yerr=right_std_y,
+                    fmt='o', markersize=10, color='green', ecolor='green', capsize=5,
+                    alpha=0.7, label='Right Target Mean ± SD')
+
+        # Draw target
+        circle_right = Circle((right_target_x, target_y), target_radius,
+                             fill=False, edgecolor='red', linewidth=2, linestyle='--')
+        ax3.add_patch(circle_right)
+
+    ax3.set_xlabel('X Position')
+    ax3.set_ylabel('Y Position')
+    ax3.set_title('Mean Fixation Positions with Variance')
+    ax3.grid(True, alpha=0.3)
+    ax3.legend()
+    ax3.set_aspect('equal')
+
+    # Plot 4: Statistics table with position and variance quantification
     ax4 = plt.subplot(2, 2, 4)
     ax4.axis('off')
 
@@ -3745,6 +3787,31 @@ def plot_fixation_targeting_analysis(trials: list[dict], results_dir: Optional[P
         prop_left_within = left_within / n_left if n_left > 0 else 0.0
         prop_right_within = right_within / n_right if n_right > 0 else 0.0
 
+        # Calculate average position and variance for each group
+        if left_fixations:
+            left_x = [f[0] for f in left_fixations]
+            left_y = [f[1] for f in left_fixations]
+            left_mean_x = np.mean(left_x)
+            left_mean_y = np.mean(left_y)
+            left_var_x = np.var(left_x)
+            left_var_y = np.var(left_y)
+            left_std_x = np.std(left_x)
+            left_std_y = np.std(left_y)
+        else:
+            left_mean_x = left_mean_y = left_var_x = left_var_y = left_std_x = left_std_y = 0.0
+
+        if right_fixations:
+            right_x = [f[0] for f in right_fixations]
+            right_y = [f[1] for f in right_fixations]
+            right_mean_x = np.mean(right_x)
+            right_mean_y = np.mean(right_y)
+            right_var_x = np.var(right_x)
+            right_var_y = np.var(right_y)
+            right_std_x = np.std(right_x)
+            right_std_y = np.std(right_y)
+        else:
+            right_mean_x = right_mean_y = right_var_x = right_var_y = right_std_x = right_std_y = 0.0
+
         # Create statistics text
         stats_text = f"""
 FIXATION STATISTICS
@@ -3753,20 +3820,17 @@ Total Fixations: {n_total}
   Left Target: {n_left}
   Right Target: {n_right}
 
-Fixation Span:
-  Mean: {np.mean(all_spans):.4f} units
-  Median: {np.median(all_spans):.4f} units
-  Std: {np.std(all_spans):.4f} units
+LEFT TARGET FIXATIONS:
+  Mean Position: ({left_mean_x:.4f}, {left_mean_y:.4f})
+  Std Dev (X, Y): ({left_std_x:.4f}, {left_std_y:.4f})
+  Variance (X, Y): ({left_var_x:.4f}, {left_var_y:.4f})
+  Within Target: {left_within}/{n_left} ({prop_left_within*100:.1f}%)
 
-Distance to Target:
-  Mean: {np.mean(all_dists):.4f} units
-  Median: {np.median(all_dists):.4f} units
-  Std: {np.std(all_dists):.4f} units
-
-Fixations Within Target:
-  Overall: {n_within}/{n_total} ({prop_within*100:.1f}%)
-  Left: {left_within}/{n_left} ({prop_left_within*100:.1f}%)
-  Right: {right_within}/{n_right} ({prop_right_within*100:.1f}%)
+RIGHT TARGET FIXATIONS:
+  Mean Position: ({right_mean_x:.4f}, {right_mean_y:.4f})
+  Std Dev (X, Y): ({right_std_x:.4f}, {right_std_y:.4f})
+  Variance (X, Y): ({right_var_x:.4f}, {right_var_y:.4f})
+  Within Target: {right_within}/{n_right} ({prop_right_within*100:.1f}%)
 
 TARGETING TEST:
   Random model: ~0% within target
@@ -3780,7 +3844,7 @@ TARGETING TEST:
 
         stats_text += f"\nVerdict: {verdict}"
 
-        ax4.text(0.1, 0.5, stats_text, fontsize=10, family='monospace',
+        ax4.text(0.05, 0.5, stats_text, fontsize=9, family='monospace',
                 verticalalignment='center', transform=ax4.transAxes)
     else:
         ax4.text(0.5, 0.5, 'No fixations detected', fontsize=12,
