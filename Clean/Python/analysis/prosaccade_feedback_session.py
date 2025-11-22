@@ -3463,6 +3463,7 @@ def interactive_fixation_viewer(trials: list[dict], animal_id: Optional[str] = N
         target_diameter = trial['target_diameter']
         trial_num = trial.get('trial_number', idx + 1)
         is_failed = trial.get('trial_failed', False)
+        target_visible = trial.get('target_visible', 1)
 
         # Detect fixations
         fixations = detect_fixations(eye_x, eye_y, eye_times)
@@ -3520,10 +3521,11 @@ def interactive_fixation_viewer(trials: list[dict], animal_id: Optional[str] = N
         ax.set_xlabel('Horizontal Position', fontsize=12)
         ax.set_ylabel('Vertical Position', fontsize=12)
 
-        # Title with trial info and fixation count
-        title = f'Trial {trial_num}/{len(trials_with_data)} - {len(fixations)} fixation(s) detected'
-        if is_failed:
-            title += ' [FAILED]'
+        # Title with trial info, visibility, success/failure, and fixation count
+        visibility_str = 'VISIBLE' if target_visible == 1 else 'INVISIBLE'
+        success_str = 'FAILED' if is_failed else 'SUCCESS'
+        title = f'Trial {trial_num}/{len(trials_with_data)} - Target: {visibility_str} - Status: {success_str}\n'
+        title += f'{len(fixations)} fixation(s) detected'
 
         if animal_id or session_date:
             title = f'{animal_id} {session_date}\n{title}'
