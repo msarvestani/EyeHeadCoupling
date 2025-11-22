@@ -3578,6 +3578,9 @@ def plot_fixation_targeting_analysis(trials: list[dict], results_dir: Optional[P
     left_fixations = []  # Each element: (center_x, center_y, span, distance_to_target, within_target)
     right_fixations = []
 
+    print(f"  Processing {len(trials)} trials for fixation detection...")
+    n_trials_with_data = 0
+
     for trial in trials:
         # Skip trials without eye data
         if 'eye_x' not in trial or 'eye_y' not in trial or 'eye_t' not in trial:
@@ -3585,6 +3588,7 @@ def plot_fixation_targeting_analysis(trials: list[dict], results_dir: Optional[P
         if len(trial['eye_x']) == 0:
             continue
 
+        n_trials_with_data += 1
         eye_x = trial['eye_x']
         eye_y = trial['eye_y']
         eye_t = trial['eye_t']
@@ -3644,6 +3648,8 @@ def plot_fixation_targeting_analysis(trials: list[dict], results_dir: Optional[P
                 i = j  # Skip past this fixation
             else:
                 i += 1
+
+    print(f"  Found {len(left_fixations)} left fixations and {len(right_fixations)} right fixations from {n_trials_with_data} trials with data")
 
     # Create figure with 2x2 subplots
     fig = plt.figure(figsize=(14, 12))
