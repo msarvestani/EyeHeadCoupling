@@ -3371,7 +3371,11 @@ def interactive_fixation_viewer(trials: list[dict], animal_id: Optional[str] = N
     current_trial_idx = [0]  # Use list to allow modification in nested function
 
     def detect_fixations(eye_x, eye_y, eye_times):
-        """Detect fixation windows in the trajectory."""
+        """Detect fixation windows in the trajectory.
+
+        Returns list of tuples: (start_idx, end_idx, duration, span)
+        where span is the maximum spatial movement during the fixation.
+        """
         if len(eye_x) < 2:
             return []
 
@@ -3405,10 +3409,16 @@ def interactive_fixation_viewer(trials: list[dict], animal_id: Optional[str] = N
                 else:
                     # Can't extend anymore, check if previous window was valid
                     if j > i + 1:  # At least 2 points
+                        prev_window_x = eye_x[i:j-1]
+                        prev_window_y = eye_y[i:j-1]
                         prev_window_times = eye_times[i:j-1]
                         prev_duration = prev_window_times[-1] - prev_window_times[0]
                         if prev_duration >= min_duration:
-                            fixations.append((i, j-1, prev_duration))
+                            # Calculate span for previous window
+                            prev_x_range = np.max(prev_window_x) - np.min(prev_window_x)
+                            prev_y_range = np.max(prev_window_y) - np.min(prev_window_y)
+                            prev_span = np.sqrt(prev_x_range**2 + prev_y_range**2)
+                            fixations.append((i, j-1, prev_duration, prev_span))
                     break
 
             # Check if we reached the end with a valid fixation
@@ -3421,7 +3431,7 @@ def interactive_fixation_viewer(trials: list[dict], animal_id: Optional[str] = N
                     y_range = np.max(window_y) - np.min(window_y)
                     max_move = np.sqrt(x_range**2 + y_range**2)
                     if max_move < max_movement:
-                        fixations.append((i, j, duration))
+                        fixations.append((i, j, duration, max_move))
 
         # Remove overlapping fixations, keep longest
         if len(fixations) == 0:
@@ -3434,13 +3444,13 @@ def interactive_fixation_viewer(trials: list[dict], animal_id: Optional[str] = N
         final_fixations = []
         used_indices = set()
 
-        for start, end, duration in fixations:
+        for start, end, duration, span in fixations:
             # Check if any index in this range is already used
             if any(idx in used_indices for idx in range(start, end)):
                 continue
 
             # Add this fixation
-            final_fixations.append((start, end, duration))
+            final_fixations.append((start, end, duration, span))
             used_indices.update(range(start, end))
 
         # Sort by start index
@@ -3465,6 +3475,14 @@ def interactive_fixation_viewer(trials: list[dict], animal_id: Optional[str] = N
         # Detect fixations
         fixations = detect_fixations(eye_x, eye_y, eye_times)
 
+        # Debug output: print fixation details
+        print(f"\nTrial {trial_num}: Detected {len(fixations)} fixation(s)")
+        print(f"  Total trajectory samples: {len(eye_x)}, Duration: {eye_times[-1] - eye_times[0]:.2f}s")
+        for fix_idx, (start, end, duration, span) in enumerate(fixations):
+            is_final = (end >= len(eye_x) - 2)  # Ends at or near last sample
+            final_marker = " [FINAL]" if is_final else ""
+            print(f"  Fixation {fix_idx+1}: samples [{start}:{end}], duration={duration:.2f}s, span={span:.4f}{final_marker}")
+
         # Plot full trajectory (lighter)
         if is_failed:
             ax.plot(eye_x, eye_y, 'r-', linewidth=1.5, alpha=0.3, label='Eye trajectory (FAILED)', zorder=1)
@@ -3473,7 +3491,7 @@ def interactive_fixation_viewer(trials: list[dict], animal_id: Optional[str] = N
 
         # Plot non-fixation points (small dots)
         fixation_mask = np.zeros(len(eye_x), dtype=bool)
-        for start, end, duration in fixations:
+        for start, end, duration, span in fixations:
             fixation_mask[start:end] = True
 
         non_fixation_x = eye_x[~fixation_mask]
@@ -3482,22 +3500,42 @@ def interactive_fixation_viewer(trials: list[dict], animal_id: Optional[str] = N
             ax.plot(non_fixation_x, non_fixation_y, 'o', color='gray',
                    markersize=4, alpha=0.5, label='Non-fixation', zorder=2)
 
-        # Highlight fixation points
-        colors = ['lime', 'yellow', 'cyan', 'magenta', 'orange']
-        for fix_idx, (start, end, duration) in enumerate(fixations):
+        # Highlight fixation points with colormap
+        cmap = plt.cm.plasma  # purple → yellow/pink (chronological)
+        n_fixations = len(fixations)
+
+        for fix_idx, (start, end, duration, span) in enumerate(fixations):
             fix_x = eye_x[start:end]
             fix_y = eye_y[start:end]
-            color = colors[fix_idx % len(colors)]
+
+            # Check if this is the final fixation (ends at or near last sample)
+            is_final_fixation = (end >= len(eye_x) - 2)
+
+            if is_final_fixation:
+                # Final fixation: distinctive gold color
+                color = 'gold'
+                label = f'Fixation {fix_idx+1} [FINAL] ({duration:.2f}s, span={span:.4f})'
+                markersize = 12
+                edgecolor = 'red'
+                edgewidth = 2
+            else:
+                # Map fixation index to colormap (0 to 1)
+                color_val = fix_idx / max(1, n_fixations - 1) if n_fixations > 1 else 0.5
+                color = cmap(color_val)
+                label = f'Fixation {fix_idx+1} ({duration:.2f}s, span={span:.4f})'
+                markersize = 10
+                edgecolor = None
+                edgewidth = 0
 
             # Plot fixation points (large, bright)
-            ax.plot(fix_x, fix_y, 'o', color=color, markersize=10, alpha=0.8,
-                   label=f'Fixation {fix_idx+1} ({duration:.2f}s)', zorder=4)
+            ax.plot(fix_x, fix_y, 'o', color=color, markersize=markersize, alpha=0.8,
+                   label=label, zorder=4, markeredgecolor=edgecolor, markeredgewidth=edgewidth)
 
             # Calculate and plot fixation center
             fix_center_x = np.mean(fix_x)
             fix_center_y = np.mean(fix_y)
-            ax.plot(fix_center_x, fix_center_y, 'x', color=color, markersize=15,
-                   markeredgewidth=3, zorder=5)
+            ax.plot(fix_center_x, fix_center_y, 'x', color=color if not is_final_fixation else 'red',
+                   markersize=15, markeredgewidth=3, zorder=5)
 
         # Plot start position
         start_x = eye_x[0]
