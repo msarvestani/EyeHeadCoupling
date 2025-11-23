@@ -806,17 +806,6 @@ def plot_trajectories_by_direction(trials: list[dict], results_dir: Optional[Pat
     ax.set_ylim(-1, 1)
     ax.set_aspect('equal', adjustable='box')
 
-    # Add legend
-    from matplotlib.lines import Line2D
-    legend_elements = [
-        Line2D([0], [0], color=left_color, linewidth=2, label=f'Left targets (n={len(left_trials)})'),
-        Line2D([0], [0], color=right_color, linewidth=2, label=f'Right targets (n={len(right_trials)})'),
-        Line2D([0], [0], marker='o', color='gray', linewidth=0, markersize=8,
-               markeredgecolor='white', markeredgewidth=1, label='Start'),
-        Line2D([0], [0], marker='s', color='gray', linewidth=0, markersize=8,
-               markeredgecolor='white', markeredgewidth=1, label='End'),
-    ]
-    ax.legend(handles=legend_elements, loc='upper right', fontsize=10, framealpha=0.9)
 
     plt.tight_layout()
 
@@ -1439,7 +1428,7 @@ def plot_path_length(trials: list[dict], results_dir: Optional[Path] = None,
     return fig
 
 
-def plot_final_positions_by_target(trials: list[dict], min_duration: float = 0.1, max_duration: float = 10.0,
+def plot_final_positions_by_target(trials: list[dict], min_duration: float = 0.1, max_duration: float = 15.0,
                                    results_dir: Optional[Path] = None, animal_id: Optional[str] = None,
                                    session_date: str = "") -> plt.Figure:
     """Plot final cursor positions grouped by target position.
@@ -3327,10 +3316,13 @@ def interactive_initial_direction_viewer(trials: list[dict], animal_id: Optional
     plot_trial(0)
     plt.show()
 
-
+# Fixation detection parameters - shared across analysis functions
+FIXATION_MIN_DURATION = 0.5  # seconds
+FIXATION_MAX_MOVEMENT = 0.15  # stimulus units
 def interactive_fixation_viewer(trials: list[dict], animal_id: Optional[str] = None,
-                                 session_date: str = "", min_duration: float = 0.7,
-                                 max_movement: float = 0.08):
+                                 session_date: str = "", 
+                                 min_duration: float = FIXATION_MIN_DURATION,
+                                 max_movement: float = FIXATION_MAX_MOVEMENT):
     """Interactive viewer showing detected fixations for each trial.
 
     Detects periods where eyes moved less than max_movement units for at least
@@ -3429,7 +3421,7 @@ def interactive_fixation_viewer(trials: list[dict], animal_id: Optional[str] = N
 
         # Sort by duration (longest first)
         fixations.sort(key=lambda x: x[2], reverse=True)
-
+ 
         # Remove overlaps
         final_fixations = []
         used_indices = set()
@@ -3482,12 +3474,17 @@ def interactive_fixation_viewer(trials: list[dict], animal_id: Optional[str] = N
             ax.plot(non_fixation_x, non_fixation_y, 'o', color='gray',
                    markersize=4, alpha=0.5, label='Non-fixation', zorder=2)
 
-        # Highlight fixation points
-        colors = ['lime', 'yellow', 'cyan', 'magenta', 'orange']
+        # Highlight fixation points with colormap (early = purple/blue, late = yellow/red)
+        cmap = plt.cm.coolwarm  # or try: viridis, inferno, plasma, coolwarm
+        n_fixations = len(fixations)
+        
         for fix_idx, (start, end, duration) in enumerate(fixations):
             fix_x = eye_x[start:end]
             fix_y = eye_y[start:end]
-            color = colors[fix_idx % len(colors)]
+            
+            # Map fixation index to colormap (0 to 1)
+            color_val = fix_idx / max(1, n_fixations - 1) if n_fixations > 1 else 0.5
+            color = cmap(color_val)
 
             # Plot fixation points (large, bright)
             ax.plot(fix_x, fix_y, 'o', color=color, markersize=10, alpha=0.8,
@@ -3553,7 +3550,8 @@ def interactive_fixation_viewer(trials: list[dict], animal_id: Optional[str] = N
 # NEW: Fixation targeting analysis function
 def plot_fixation_targeting_analysis(trials: list[dict], results_dir: Optional[Path] = None,
                                       animal_id: Optional[str] = None, session_date: str = "",
-                                      min_duration: float = 0.7, max_movement: float = 0.08):
+                                      min_duration: float = FIXATION_MIN_DURATION, 
+                                      max_movement: float = FIXATION_MAX_MOVEMENT):
     """Plot all fixations for left vs right target trials and test if targeted.
 
     Detects fixations (windows ≥ min_duration seconds with movement ≤ max_movement units)
@@ -3694,7 +3692,6 @@ def plot_fixation_targeting_analysis(trials: list[dict], results_dir: Optional[P
         ax.set_ylabel('Y Position')
         ax.set_title(title)
         ax.grid(True, alpha=0.3)
-        ax.legend()
         ax.set_aspect('equal')
 
     # Plot 1: Left Visible fixations
@@ -4880,7 +4877,7 @@ def _clean_path(path_str: str | Path) -> str:
 
 def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = None,
                    animal_id: str = "Tsh001", show_plots: bool = True,
-                   trial_min_duration: float = 0.1, trial_max_duration: float = 10.0,
+                   trial_min_duration: float = 0.1, trial_max_duration: float = 15.0,
                    show_failed_in_viewer: bool = False,
                    include_failed_trials: bool = False) -> pd.DataFrame:
     """Run saccade feedback analysis directly on a folder (without session manifest).
@@ -5044,15 +5041,6 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
             plt.show()
         plt.close(fig_vis_detailed)
 
-    # NEW: Heatmaps broken down by position and visibility
-    print("\nGenerating heatmaps by position and visibility...")
-    fig_heatmaps = plot_heatmaps_by_position_and_visibility(trials_for_analysis, results_dir=results_dir,
-                                                             animal_id=animal_id,
-                                                             session_date=date_str)
-    if show_plots:
-        plt.show()
-    plt.close(fig_heatmaps)
-
     # NEW: Test for voluntary targeted movement
     print("\nTesting for voluntary targeted movement...")
     fig_voluntary, voluntary_stats = test_voluntary_targeted_movement(trials_for_analysis, results_dir=results_dir,
@@ -5167,7 +5155,7 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
     return df
 
 
-def main(session_id: str, trial_min_duration: float = 0.1, trial_max_duration: float = 10.0,
+def main(session_id: str, trial_min_duration: float = 0.1, trial_max_duration: float = 15.0,
          show_failed_in_viewer: bool = False,
          include_failed_trials: bool = False) -> pd.DataFrame:
     """Run the saccade feedback analysis pipeline for ``session_id``.
