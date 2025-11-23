@@ -86,12 +86,10 @@ def load_feedback_data(folder_path: Path, animal_id: str = "Tsh001") -> Tuple[pd
         # Third column (index 2) is always trial_success (1=success, 0=failed)
         if n_cols >= 3:
             # Modern format: frame, timestamp, trial_success, [optional trial_number, green_x, green_y, diameter]
-            if n_cols == 3:
-                eot_df = pd.DataFrame(eot_arr, columns=['frame', 'timestamp', 'trial_success'])
-            elif n_cols == 7:
+            if n_cols == 7:
                 eot_df = pd.DataFrame(eot_arr, columns=['frame', 'timestamp', 'trial_success', 'trial_number', 'green_x', 'green_y', 'diameter'])
             elif n_cols == 6:
-                eot_df = pd.DataFrame(eot_arr, columns=['frame', 'timestamp', 'trial_success', 'trial_number', 'green_x', 'green_y'])
+                eot_df = pd.DataFrame(eot_arr, columns=['frame', 'timestamp', 'trial_success', 'green_x', 'green_y', 'diameter'])
                 eot_df['diameter'] = 0.2  # Default diameter if not present
             else:
                 # Flexible: just use first 2 and third column
@@ -141,20 +139,19 @@ def load_feedback_data(folder_path: Path, animal_id: str = "Tsh001") -> Tuple[pd
             'timestamp': eye_arr[:, 1],
             'green_x': eye_arr[:, -3],
             'green_y': eye_arr[:, -2],
+            'diameter': eye_arr[:, -4] if n_cols >= 4 else 0.2,
         })
-        eye_df['diameter'] = 0.2  # Default diameter
-
         eye_df['frame'] = eye_df['frame'].astype(int)
 
         # Remove duplicate frame entries - keep only the first occurrence
-        before_dedup = len(eye_df)
-        eye_df = eye_df.drop_duplicates(subset=['frame'], keep='first')
-        after_dedup = len(eye_df)
-        if before_dedup != after_dedup:
-            print(f"  Removed {before_dedup - after_dedup} duplicate frame entries")
+        #before_dedup = len(eye_df)
+        #eye_df = eye_df.drop_duplicates(subset=['frame'], keep='first')
+        #after_dedup = len(eye_df)
+        #if before_dedup != after_dedup:
+            #print(f"  Removed {before_dedup - after_dedup} duplicate frame entries")
 
-        eye_df = eye_df.sort_values('frame').reset_index(drop=True)
-        print(f"  Loaded {len(eye_df)} eye position samples (after deduplication)")
+       # eye_df = eye_df.sort_values('frame').reset_index(drop=True)
+        #print(f"  Loaded {len(eye_df)} eye position samples (after deduplication)")
     except Exception as e:
         raise ValueError(f"Error loading vstim_go file {vstim_go_file}: {e}")
 
@@ -486,8 +483,8 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
                 path_efficiency = 0.0
 
             # Initial movement direction: angle between initial movement and ideal vector
-            # Use first 10 samples (or fewer if trial is short) to determine initial direction
-            n_samples = min(10, len(eye_trajectory))
+            # Use first 5 samples (or fewer if trial is short) to determine initial direction
+            n_samples = min(5, len(eye_trajectory))
             initial_dx = eye_trajectory['green_x'].values[n_samples-1] - start_eye_x
             initial_dy = eye_trajectory['green_y'].values[n_samples-1] - start_eye_y
 
@@ -514,9 +511,9 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
             straight_line_distance = 0.0
             initial_direction_error = np.nan
 
-        # Sanity check: trial duration should not exceed 10 seconds (timeout)
-        if has_eye_data and eye_duration > 10.0:
-            print(f"WARNING: Trial {trial_num} has duration {eye_duration:.2f}s (> 10s timeout)")
+        # Sanity check: trial duration should not exceed 15 seconds (timeout)
+        if has_eye_data and eye_duration > 15.0:
+            print(f"WARNING: Trial {trial_num} has duration {eye_duration:.2f}s (> 15s timeout)")
             print(f"  start_time={start_time:.2f}, end_time={end_time:.2f}, duration={end_time-start_time:.2f}s")
             print(f"  eye_start_time={eye_start_time:.2f}, eye_end_time={eye_end_time:.2f}, eye_duration={eye_duration:.2f}s")
 
@@ -3256,7 +3253,7 @@ def interactive_initial_direction_viewer(trials: list[dict], animal_id: Optional
         ax.plot(start_x, start_y, 'go', markersize=12, label='Start', zorder=3)
 
         # Calculate and plot initial direction vector (same logic as in extract_trial_trajectories)
-        n_samples = min(10, len(eye_x))
+        n_samples = min(5, len(eye_x))
         if n_samples > 1:
             end_x = eye_x[n_samples - 1]
             end_y = eye_y[n_samples - 1]
@@ -3332,8 +3329,8 @@ def interactive_initial_direction_viewer(trials: list[dict], animal_id: Optional
 
 
 def interactive_fixation_viewer(trials: list[dict], animal_id: Optional[str] = None,
-                                 session_date: str = "", min_duration: float = 0.5,
-                                 max_movement: float = 0.12):
+                                 session_date: str = "", min_duration: float = 0.7,
+                                 max_movement: float = 0.08):
     """Interactive viewer showing detected fixations for each trial.
 
     Detects periods where eyes moved less than max_movement units for at least
@@ -3556,7 +3553,7 @@ def interactive_fixation_viewer(trials: list[dict], animal_id: Optional[str] = N
 # NEW: Fixation targeting analysis function
 def plot_fixation_targeting_analysis(trials: list[dict], results_dir: Optional[Path] = None,
                                       animal_id: Optional[str] = None, session_date: str = "",
-                                      min_duration: float = 0.5, max_movement: float = 0.12):
+                                      min_duration: float = 0.7, max_movement: float = 0.08):
     """Plot all fixations for left vs right target trials and test if targeted.
 
     Detects fixations (windows ≥ min_duration seconds with movement ≤ max_movement units)
@@ -3567,8 +3564,8 @@ def plot_fixation_targeting_analysis(trials: list[dict], results_dir: Optional[P
         results_dir: Directory to save results
         animal_id: Animal ID for plot title
         session_date: Session date for plot title
-        min_duration: Minimum fixation duration in seconds (default 0.5)
-        max_movement: Maximum movement during fixation in units (default 0.12)
+        min_duration: Minimum fixation duration in seconds (default 0.7)
+        max_movement: Maximum movement during fixation in units (default 0.08)
     """
     import numpy as np
     import matplotlib.pyplot as plt
