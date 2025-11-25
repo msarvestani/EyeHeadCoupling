@@ -177,17 +177,12 @@ def load_feedback_data(folder_path: Path, animal_id: str = "Tsh001") -> Tuple[pd
             target_df = pd.DataFrame(target_arr, columns=['frame', 'timestamp', 'target_x', 'target_y', 'diameter'])
             target_df['visible'] = 1  # Default to visible if column not present
             print(f"  Warning: 'visible' column not found, assuming all targets are visible")
-        elif n_cols == 4:
-            # Older format without diameter or visibility columns
-            target_df = pd.DataFrame(target_arr, columns=['frame', 'timestamp', 'target_x', 'target_y'])
-            target_df['diameter'] = 0.5  # Default target diameter if not present
-            target_df['visible'] = 1  # Default to visible
-            print(f"  Warning: 'diameter' and 'visible' columns not found, using defaults (0.5, visible)")
         else:
             raise ValueError(f"Unexpected number of columns: {n_cols}. Expected 4, 5, or 6.")
 
         target_df['frame'] = target_df['frame'].astype(int)
         target_df['visible'] = target_df['visible'].astype(int)
+        target_df['diameter'] = target_df['diameter'].astype(float)
 
         # Detect and remove duplicate entries
         original_len = len(target_df)
@@ -376,18 +371,18 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
         else:
             # Fallback if eot_df doesn't have this trial (shouldn't happen after filtering)
             print(f"Warning: No end_of_trial data for trial {trial_num}, using next trial start - ITI")
-            if i < n_trials - 1:
-                next_start_time = target_df.iloc[i+1]['timestamp']
-                next_start_frame = target_df.iloc[i+1]['frame']
-                end_time = next_start_time - ITI
-                if start_time != end_time:
-                    frame_rate = (next_start_frame - start_frame) / (next_start_time - start_time)
-                    end_frame = int(start_frame + (end_time - start_time) * frame_rate)
-                else:
-                    end_frame = start_frame
-            else:
-                end_time = start_time + ITI
-                end_frame = start_frame + 1000
+            # if i < n_trials - 1:
+            #     next_start_time = target_df.iloc[i+1]['timestamp']
+            #     next_start_frame = target_df.iloc[i+1]['frame']
+            #     end_time = next_start_time - ITI
+            #     if start_time != end_time:
+            #         frame_rate = (next_start_frame - start_frame) / (next_start_time - start_time)
+            #         end_frame = int(start_frame + (end_time - start_time) * frame_rate)
+            #     else:
+            #         end_frame = start_frame
+            # else:
+            #     end_time = start_time + ITI
+            #     end_frame = start_frame + 1000
 
         # Extract eye position trajectory for this trial
         # FIXED: Now starts from target onset, excluding inter-trial interval
@@ -438,7 +433,7 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
 
             if eye_df_position + 1 < len(eye_df):
                 # Get the next row after the last position within trial
-                next_row = eye_df.iloc[eye_df_position + 1]
+                next_row = eye_df.iloc[eye_df_position + 0]
                 final_eye_x = next_row['green_x']
                 final_eye_y = next_row['green_y']
                 final_eye_frame = int(next_row['frame'])
@@ -1428,7 +1423,7 @@ def plot_path_length(trials: list[dict], results_dir: Optional[Path] = None,
     return fig
 
 
-def plot_final_positions_by_target(trials: list[dict], min_duration: float = 0.1, max_duration: float = 15.0,
+def plot_final_positions_by_target(trials: list[dict], min_duration: float = 0.01, max_duration: float = 15.0,
                                    results_dir: Optional[Path] = None, animal_id: Optional[str] = None,
                                    session_date: str = "") -> plt.Figure:
     """Plot final cursor positions grouped by target position.
@@ -1571,7 +1566,7 @@ def plot_final_positions_by_target(trials: list[dict], min_duration: float = 0.1
     return fig
 
 
-def analyze_starting_position_bias_DEPRECATED(trials: list[dict], min_duration: float = 0.1, max_duration: float = 10.0,
+def analyze_starting_position_bias_DEPRECATED(trials: list[dict], min_duration: float = 0.01, max_duration: float = 10.0,
                                    time_window: tuple = (0.0, 0.1),
                                    results_dir: Optional[Path] = None, animal_id: Optional[str] = None,
                                    session_date: str = "") -> tuple:
@@ -1870,7 +1865,7 @@ def analyze_starting_position_bias_DEPRECATED(trials: list[dict], min_duration: 
     return fig, stats_dict
 
 
-def analyze_ending_position_bias_DEPRECATED(trials: list[dict], min_duration: float = 0.1, max_duration: float = 10.0,
+def analyze_ending_position_bias_DEPRECATED(trials: list[dict], min_duration: float = 0.01, max_duration: float = 10.0,
                                   time_window_before_end: tuple = (0.2, 0.0),
                                   results_dir: Optional[Path] = None, animal_id: Optional[str] = None,
                                   session_date: str = "") -> tuple:
@@ -3317,8 +3312,8 @@ def interactive_initial_direction_viewer(trials: list[dict], animal_id: Optional
     plt.show()
 
 # Fixation detection parameters - shared across analysis functions
-FIXATION_MIN_DURATION = 0.7  # seconds
-FIXATION_MAX_MOVEMENT = 0.15  # stimulus units
+FIXATION_MIN_DURATION = 0.5  # seconds
+FIXATION_MAX_MOVEMENT = 0.12  # stimulus units
 def interactive_fixation_viewer(trials: list[dict], animal_id: Optional[str] = None,
                                  session_date: str = "", 
                                  min_duration: float = FIXATION_MIN_DURATION,
@@ -3461,6 +3456,7 @@ def interactive_fixation_viewer(trials: list[dict], animal_id: Optional[str] = N
         target_y = trial['target_y']
         target_diameter = trial['target_diameter']
         trial_num = trial.get('trial_number', idx + 1)
+
         is_failed = trial.get('trial_failed', False)
         target_visible = trial.get('target_visible', 1)
 
@@ -3528,7 +3524,7 @@ def interactive_fixation_viewer(trials: list[dict], animal_id: Optional[str] = N
         # Title with trial info, visibility, success/failure, and fixation count
         visibility_str = 'VISIBLE' if target_visible == 1 else 'INVISIBLE'
         success_str = 'FAILED' if is_failed else 'SUCCESS'
-        title = f'Trial {trial_num}/{len(trials_with_data)} - Target: {visibility_str} - Status: {success_str}\n'
+        title = f'Trial {trial_num} (showing {idx + 1}/{len(trials_with_data)}) - Target: {visibility_str} - Status: {success_str}\n'
         title += f'{len(fixations)} fixation(s) detected'
 
         if animal_id or session_date:
@@ -3585,6 +3581,10 @@ def plot_fixation_targeting_analysis(trials: list[dict], results_dir: Optional[P
     right_visible_fixations = []
     right_invisible_fixations = []
 
+    # Also collect actual target positions
+    left_target_positions = []
+    right_target_positions = []
+
     print(f"  Processing {len(trials)} trials for fixation detection...")
     n_trials_with_data = 0
 
@@ -3608,6 +3608,13 @@ def plot_fixation_targeting_analysis(trials: list[dict], results_dir: Optional[P
         start_x = eye_x[0]
         is_left_target = target_x < start_x
         is_visible = target_visible == 1
+
+        # Collect target positions for later use
+        if is_left_target:
+            left_target_positions.append((target_x, target_y, target_radius))
+        else:
+            right_target_positions.append((target_x, target_y, target_radius))
+
 
         # Detect fixations using sliding window
         fixations = []
@@ -3670,11 +3677,31 @@ def plot_fixation_targeting_analysis(trials: list[dict], results_dir: Optional[P
     # Create figure with 6 subplots (4 fixation plots + mean positions + stats)
     fig = plt.figure(figsize=(18, 14))
 
-    # Typical target positions (approximate)
-    left_target_x = -0.5
-    right_target_x = 0.5
-    target_y = 0.0
-    target_radius = 0.15
+    # Extract actual target positions from collected data
+    if left_target_positions:
+        left_target_x = np.median([t[0] for t in left_target_positions])
+        left_target_y = np.median([t[1] for t in left_target_positions])
+    else:
+        left_target_x = -0.5
+        left_target_y = 0.0
+    
+    if right_target_positions:
+        right_target_x = np.median([t[0] for t in right_target_positions])
+        right_target_y = np.median([t[1] for t in right_target_positions])
+    else:
+        right_target_x = 0.5
+        right_target_y = 0.0
+    
+    # Use average y position (assumes both targets roughly at same y)
+    target_y = np.mean([left_target_y, right_target_y])
+    
+    # Get target radius from first available position
+    if left_target_positions:
+        target_radius = left_target_positions[0][2]
+    elif right_target_positions:
+        target_radius = right_target_positions[0][2]
+    else:
+        target_radius = 0.15
 
     # Helper function to plot fixations
     def plot_fixation_group(ax, fixations, target_x, target_y, other_target_x, title, target_label, other_label):
@@ -4887,7 +4914,7 @@ def _clean_path(path_str: str | Path) -> str:
 
 def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = None,
                    animal_id: str = "Tsh001", show_plots: bool = True,
-                   trial_min_duration: float = 0.1, trial_max_duration: float = 15.0,
+                   trial_min_duration: float = 0.01, trial_max_duration: float = 15.0,
                    show_failed_in_viewer: bool = False,
                    include_failed_trials: bool = False) -> pd.DataFrame:
     """Run saccade feedback analysis directly on a folder (without session manifest).
@@ -5165,7 +5192,7 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
     return df
 
 
-def main(session_id: str, trial_min_duration: float = 0.1, trial_max_duration: float = 15.0,
+def main(session_id: str, trial_min_duration: float = 0.01, trial_max_duration: float = 15.0,
          show_failed_in_viewer: bool = False,
          include_failed_trials: bool = False) -> pd.DataFrame:
     """Run the saccade feedback analysis pipeline for ``session_id``.
