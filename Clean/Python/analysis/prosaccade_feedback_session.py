@@ -5328,36 +5328,36 @@ def main(session_id: str, trial_min_duration: float = 0.01, trial_max_duration: 
         plt.show()
         plt.close(fig_vis_detailed)
 
-    # NEW: Heatmaps broken down by position and visibility
-    print("\nGenerating heatmaps by position and visibility...")
-    fig_heatmaps = plot_heatmaps_by_position_and_visibility(trials_for_analysis, results_dir=results_dir,
-                                                             animal_id=animal_id,
-                                                             session_date=date_str)
-    plt.show()
-    plt.close(fig_heatmaps)
+    # # NEW: Heatmaps broken down by position and visibility
+    # print("\nGenerating heatmaps by position and visibility...")
+    # fig_heatmaps = plot_heatmaps_by_position_and_visibility(trials_for_analysis, results_dir=results_dir,
+    #                                                          animal_id=animal_id,
+    #                                                          session_date=date_str)
+    # plt.show()
+    # plt.close(fig_heatmaps)
 
-    # NEW: Test for voluntary targeted movement
-    print("\nTesting for voluntary targeted movement...")
-    fig_voluntary, voluntary_stats = test_voluntary_targeted_movement(trials_for_analysis, results_dir=results_dir,
-                                                                       animal_id=animal_id,
-                                                                       session_date=date_str)
-    if fig_voluntary is not None:
-        plt.show()
-        plt.close(fig_voluntary)
+    # # NEW: Test for voluntary targeted movement
+    # print("\nTesting for voluntary targeted movement...")
+    # fig_voluntary, voluntary_stats = test_voluntary_targeted_movement(trials_for_analysis, results_dir=results_dir,
+    #                                                                    animal_id=animal_id,
+    #                                                                    session_date=date_str)
+    # if fig_voluntary is not None:
+    #     plt.show()
+    #     plt.close(fig_voluntary)
 
-    # NEW: Test for left/right targeted movement (simplified binary test)
-    print("\nTesting for left/right targeted movement (binary classification)...")
-    fig_lr_test, lr_test_stats = test_left_right_targeted_movement(trials_for_analysis, results_dir=results_dir,
-                                                                    animal_id=animal_id,
-                                                                    session_date=date_str)
-    if fig_lr_test is not None:
-        plt.show()
-        plt.close(fig_lr_test)
+    # # NEW: Test for left/right targeted movement (simplified binary test)
+    # print("\nTesting for left/right targeted movement (binary classification)...")
+    # fig_lr_test, lr_test_stats = test_left_right_targeted_movement(trials_for_analysis, results_dir=results_dir,
+    #                                                                 animal_id=animal_id,
+    #                                                                 session_date=date_str)
+    # if fig_lr_test is not None:
+    #     plt.show()
+    #     plt.close(fig_lr_test)
 
-    # NEW: Interactive initial direction viewer
-    print("\nShowing interactive initial direction viewer...")
-    print("  (Shows initial direction vectors for each trial - press SPACE to advance)")
-    interactive_initial_direction_viewer(trials_for_analysis, animal_id=animal_id, session_date=date_str)
+    # # NEW: Interactive initial direction viewer
+    # print("\nShowing interactive initial direction viewer...")
+    # print("  (Shows initial direction vectors for each trial - press SPACE to advance)")
+    # interactive_initial_direction_viewer(trials_for_analysis, animal_id=animal_id, session_date=date_str)
 
     # NEW: Interactive fixation viewer
     print("\nShowing interactive fixation viewer...")
