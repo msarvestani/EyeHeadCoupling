@@ -5292,41 +5292,41 @@ def main(session_id: str, trial_min_duration: float = 0.01, trial_max_duration: 
     plt.show()
     plt.close(fig_heat)
 
-    print("\nGenerating time-to-target plot...")
-    fig_time = plot_time_to_target(trials_for_analysis, results_dir, animal_id, date_str)
-    plt.show()
-    plt.close(fig_time)
+    # print("\nGenerating time-to-target plot...")
+    # fig_time = plot_time_to_target(trials_for_analysis, results_dir, animal_id, date_str)
+    # plt.show()
+    # plt.close(fig_time)
 
-    print("\nGenerating path length plot...")
-    fig_path = plot_path_length(trials_for_analysis, results_dir, animal_id, date_str)
-    plt.show()
-    plt.close(fig_path)
+    # print("\nGenerating path length plot...")
+    # fig_path = plot_path_length(trials_for_analysis, results_dir, animal_id, date_str)
+    # plt.show()
+    # plt.close(fig_path)
 
-    print("\nRunning left vs right target comparison...")
-    fig_lr, lr_stats = compare_left_right_performance(trials_for_analysis, left_x=-0.7, right_x=0.7,
-                                                       results_dir=results_dir,
-                                                       animal_id=animal_id,
-                                                       session_date=date_str)
-    if fig_lr is not None:
-        plt.show()
-        plt.close(fig_lr)
+    # print("\nRunning left vs right target comparison...")
+    # fig_lr, lr_stats = compare_left_right_performance(trials_for_analysis, left_x=-0.7, right_x=0.7,
+    #                                                    results_dir=results_dir,
+    #                                                    animal_id=animal_id,
+    #                                                    session_date=date_str)
+    # if fig_lr is not None:
+    #     plt.show()
+    #     plt.close(fig_lr)
 
-    print("\nRunning visible vs invisible target comparison...")
-    fig_vis, vis_stats = compare_visible_invisible_performance(trials_for_analysis, results_dir=results_dir,
-                                                                animal_id=animal_id,
-                                                                session_date=date_str)
-    if fig_vis is not None:
-        plt.show()
-        plt.close(fig_vis)
+    # print("\nRunning visible vs invisible target comparison...")
+    # fig_vis, vis_stats = compare_visible_invisible_performance(trials_for_analysis, results_dir=results_dir,
+    #                                                             animal_id=animal_id,
+    #                                                             session_date=date_str)
+    # if fig_vis is not None:
+    #     plt.show()
+    #     plt.close(fig_vis)
 
-    # NEW: Detailed visible/invisible statistics (including success/failure and direction errors)
-    print("\nGenerating detailed visible vs invisible target statistics...")
-    fig_vis_detailed, vis_detailed_stats = plot_visible_invisible_detailed_stats(trials_all, results_dir=results_dir,
-                                                                                  animal_id=animal_id,
-                                                                                  session_date=date_str)
-    if fig_vis_detailed is not None:
-        plt.show()
-        plt.close(fig_vis_detailed)
+    # # NEW: Detailed visible/invisible statistics (including success/failure and direction errors)
+    # print("\nGenerating detailed visible vs invisible target statistics...")
+    # fig_vis_detailed, vis_detailed_stats = plot_visible_invisible_detailed_stats(trials_all, results_dir=results_dir,
+    #                                                                               animal_id=animal_id,
+    #                                                                               session_date=date_str)
+    # if fig_vis_detailed is not None:
+    #     plt.show()
+    #     plt.close(fig_vis_detailed)
 
     # # NEW: Heatmaps broken down by position and visibility
     # print("\nGenerating heatmaps by position and visibility...")
