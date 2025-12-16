@@ -413,6 +413,7 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
             eye_x_full = np.array([])
             eye_y_full = np.array([])
             eye_times_full = np.array([])
+            eye_frames_full = np.array([])
             eye_start_time = start_time
             eye_end_time = end_time
             cursor_diameter = 0.2  # Default cursor diameter
@@ -427,6 +428,9 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
 
             # Extract cursor diameter (use first value from eye_trajectory)
             cursor_diameter = eye_trajectory['diameter'].values[0]
+
+            # Extract frame numbers from eye_trajectory
+            eye_frames_raw = eye_trajectory['frame'].values
 
             # OPTION 2: Use the next row after the last position within trial window
             # Get the last row within the trial window
@@ -460,12 +464,14 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
             # This ensures no gap/jump between trajectory and final position marker
             eye_x_full = np.append(eye_trajectory['green_x'].values, final_eye_x)
             eye_y_full = np.append(eye_trajectory['green_y'].values, final_eye_y)
-            # Also append timestamp for the final position
+            # Also append timestamp and frame for the final position
             if eye_df_position + 1 < len(eye_df):
                 final_timestamp = eye_df.iloc[eye_df_position + 1]['timestamp']
                 eye_times_full = np.append(eye_times_raw, final_timestamp)
+                eye_frames_full = np.append(eye_frames_raw, final_eye_frame)
             else:
                 eye_times_full = eye_times_raw
+                eye_frames_full = eye_frames_raw
 
         if has_eye_data and len(eye_trajectory) > 1:
             dx = np.diff(eye_trajectory['green_x'].values)
@@ -543,6 +549,7 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
             'eye_x': eye_x_full if has_eye_data else np.array([]),
             'eye_y': eye_y_full if has_eye_data else np.array([]),
             'eye_times': eye_times_full if has_eye_data else np.array([]),
+            'eye_frames': eye_frames_full if has_eye_data else np.array([]),
             'eye_start_time': eye_start_time,  # For relative time calculations
             'path_length': path_length,
             'straight_line_distance': straight_line_distance,
@@ -3608,7 +3615,7 @@ def save_detailed_fixation_data(trials: list[dict], results_dir: Optional[Path] 
     For each detected fixation, saves all individual data points including:
     - Trial number
     - Fixation number (within that trial)
-    - Frame number (index in eye trajectory)
+    - Frame number (absolute frame number from vstim_go CSV)
     - Eye position (x, y)
     - Distance from target
     - Time (if available)
@@ -3749,6 +3756,7 @@ def save_detailed_fixation_data(trials: list[dict], results_dir: Optional[Path] 
         eye_x = np.array(trial['eye_x'])
         eye_y = np.array(trial['eye_y'])
         eye_times = np.array(trial.get('eye_times', np.arange(len(eye_x))))
+        eye_frames = np.array(trial.get('eye_frames', np.arange(len(eye_x))))  # Absolute frame numbers
         target_x = trial['target_x']
         target_y = trial['target_y']
         target_radius = trial['target_diameter'] / 2.0
@@ -3796,6 +3804,7 @@ def save_detailed_fixation_data(trials: list[dict], results_dir: Optional[Path] 
                 pos_x = eye_x[frame_idx]
                 pos_y = eye_y[frame_idx]
                 time_sec = eye_times[frame_idx]
+                absolute_frame = int(eye_frames[frame_idx])  # Absolute frame number from vstim_go
 
                 # Calculate distance from target for this specific point
                 distance_from_target = np.sqrt((pos_x - target_x)**2 + (pos_y - target_y)**2)
@@ -3804,7 +3813,7 @@ def save_detailed_fixation_data(trials: list[dict], results_dir: Optional[Path] 
                 all_fixation_data.append({
                     'trial_number': trial_num,
                     'fixation_number': fix_num,
-                    'frame_number': frame_idx,
+                    'frame_number': absolute_frame,
                     'eye_x': pos_x,
                     'eye_y': pos_y,
                     'distance_from_target': distance_from_target,
