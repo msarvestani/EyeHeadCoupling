@@ -3730,7 +3730,7 @@ def save_detailed_fixation_data(trials: list[dict], results_dir: Optional[Path] 
                                             time_to_trial_end > 0.5)
 
             # Iterate through all frames in this fixation
-            for frame_idx in range(start_idx, end_idx):
+            for idx_within_fixation, frame_idx in enumerate(range(start_idx, end_idx)):
                 pos_x = eye_x[frame_idx]
                 pos_y = eye_y[frame_idx]
                 time_sec = eye_times[frame_idx]
@@ -3739,15 +3739,35 @@ def save_detailed_fixation_data(trials: list[dict], results_dir: Optional[Path] 
                 # Calculate distance from target for this specific point
                 distance_from_target = np.sqrt((pos_x - target_x)**2 + (pos_y - target_y)**2)
 
+                # Point-specific temporal metrics
+                time_since_fixation_start = time_sec - fix_times[0]
+                time_until_fixation_end = fixation_end_time - time_sec
+
+                # Point-specific spatial metrics
+                point_within_target = distance_from_target <= contact_threshold
+
+                # Frame-to-frame movement (velocity) at this point
+                if frame_idx > start_idx:
+                    prev_x = eye_x[frame_idx - 1]
+                    prev_y = eye_y[frame_idx - 1]
+                    frame_to_frame_movement = np.sqrt((pos_x - prev_x)**2 + (pos_y - prev_y)**2)
+                else:
+                    frame_to_frame_movement = 0.0  # First point has no previous movement
+
                 # Add data point to list
                 all_fixation_data.append({
                     'trial_number': trial_num,
                     'fixation_number': fix_num,
                     'frame_number': absolute_frame,
+                    'point_index_in_fixation': idx_within_fixation,
                     'eye_x': pos_x,
                     'eye_y': pos_y,
                     'distance_from_target': distance_from_target,
+                    'point_within_target': point_within_target,
+                    'frame_to_frame_movement': frame_to_frame_movement,
                     'time_sec': time_sec,
+                    'time_since_fixation_start': time_since_fixation_start,
+                    'time_until_fixation_end': time_until_fixation_end,
                     'target_x': target_x,
                     'target_y': target_y,
                     'target_radius': target_radius,
