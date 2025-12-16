@@ -3460,7 +3460,11 @@ def interactive_fixation_viewer(trials: list[dict], animal_id: Optional[str] = N
         target_x = trial['target_x']
         target_y = trial['target_y']
         target_diameter = trial['target_diameter']
+        target_radius = target_diameter / 2.0
+        cursor_radius = trial.get('cursor_diameter', 0.2) / 2.0
+        contact_threshold = target_radius + cursor_radius
         trial_num = trial.get('trial_number', idx + 1)
+        trial_end_time = trial.get('end_time', eye_times[-1] if len(eye_times) > 0 else 0)
 
         is_failed = trial.get('trial_failed', False)
         target_visible = trial.get('target_visible', 1)
@@ -3485,21 +3489,42 @@ def interactive_fixation_viewer(trials: list[dict], animal_id: Optional[str] = N
             ax.plot(non_fixation_x, non_fixation_y, 'o', color='gray',
                    markersize=4, alpha=0.5, label='Non-fixation', zorder=2)
 
-        # Highlight fixation points with colormap (early = purple/blue, late = yellow/red)
-        cmap = plt.cm.coolwarm  # or try: viridis, inferno, plasma, coolwarm
+        # Highlight fixation points with colormap (early = purple/blue, late = yellow)
+        # Use colormap that doesn't include red
+        cmap = plt.cm.viridis  # viridis goes from purple to yellow, no red
         n_fixations = len(fixations)
-        
+        n_missed = 0
+
         for fix_idx, (start, end, duration, span) in enumerate(fixations):
             fix_x = eye_x[start:end]
             fix_y = eye_y[start:end]
-            
-            # Map fixation index to colormap (0 to 1)
-            color_val = fix_idx / max(1, n_fixations - 1) if n_fixations > 1 else 0.5
-            color = cmap(color_val)
+            fix_times = eye_times[start:end]
+
+            # Calculate distances from target for all points in fixation
+            fix_distances = np.sqrt((fix_x - target_x)**2 + (fix_y - target_y)**2)
+            all_points_within_target = np.all(fix_distances <= contact_threshold)
+
+            # Calculate time from end of fixation to end of trial
+            fixation_end_time = fix_times[-1]
+            time_to_trial_end = trial_end_time - fixation_end_time
+
+            # Check if this is a potential missed detection
+            is_potential_missed = (all_points_within_target and time_to_trial_end > 0.5)
+
+            if is_potential_missed:
+                # Color potentially missed fixations in RED
+                color = 'red'
+                n_missed += 1
+                label = f'Fixation {fix_idx+1} - POTENTIALLY MISSED ({duration:.2f}s, span={span:.4f})'
+            else:
+                # Use colormap for other fixations (avoiding red)
+                color_val = fix_idx / max(1, n_fixations - 1) if n_fixations > 1 else 0.5
+                color = cmap(color_val)
+                label = f'Fixation {fix_idx+1} ({duration:.2f}s, span={span:.4f})'
 
             # Plot fixation points (large, bright)
             ax.plot(fix_x, fix_y, 'o', color=color, markersize=10, alpha=0.8,
-                   label=f'Fixation {fix_idx+1} ({duration:.2f}s, span={span:.4f})', zorder=4)
+                   label=label, zorder=4)
 
             # Calculate and plot fixation center
             fix_center_x = np.mean(fix_x)
@@ -3507,16 +3532,28 @@ def interactive_fixation_viewer(trials: list[dict], animal_id: Optional[str] = N
             ax.plot(fix_center_x, fix_center_y, 'x', color=color, markersize=15,
                    markeredgewidth=3, zorder=5)
 
+            # Add text label for potentially missed fixations
+            if is_potential_missed:
+                ax.text(fix_center_x, fix_center_y + 0.1, 'MISSED?',
+                       color='red', fontsize=12, fontweight='bold',
+                       ha='center', va='bottom', zorder=6)
+
         # Plot start position
         start_x = eye_x[0]
         start_y = eye_y[0]
         ax.plot(start_x, start_y, 'go', markersize=12, label='Start', zorder=3)
 
         # Plot target
-        target_circle = Circle((target_x, target_y), radius=target_diameter/2,
-                              fill=False, edgecolor='red', linewidth=2, linestyle='-')
+        target_circle = Circle((target_x, target_y), radius=target_radius,
+                              fill=False, edgecolor='red', linewidth=2, linestyle='-', label='Target')
         ax.add_patch(target_circle)
-        ax.plot(target_x, target_y, 'r*', markersize=15, label='Target', zorder=5)
+        ax.plot(target_x, target_y, 'r*', markersize=15, zorder=5)
+
+        # Plot contact threshold circle (target + cursor radius)
+        contact_circle = Circle((target_x, target_y), radius=contact_threshold,
+                               fill=False, edgecolor='orange', linewidth=2, linestyle='--',
+                               label=f'Contact threshold ({contact_threshold:.4f})', alpha=0.7)
+        ax.add_patch(contact_circle)
 
         # Plot final position
         final_x = trial.get('final_eye_x', eye_x[-1])
@@ -3531,6 +3568,9 @@ def interactive_fixation_viewer(trials: list[dict], animal_id: Optional[str] = N
         success_str = 'FAILED' if is_failed else 'SUCCESS'
         title = f'Trial {trial_num} (showing {idx + 1}/{len(trials_with_data)}) - Target: {visibility_str} - Status: {success_str}\n'
         title += f'{len(fixations)} fixation(s) detected'
+        if n_missed > 0:
+            title += f' ({n_missed} potentially missed)'
+        title += f'\nContact threshold: {contact_threshold:.4f} = target_r({target_radius:.4f}) + cursor_r({cursor_radius:.4f})'
 
         if animal_id or session_date:
             title = f'{animal_id} {session_date}\n{title}'
