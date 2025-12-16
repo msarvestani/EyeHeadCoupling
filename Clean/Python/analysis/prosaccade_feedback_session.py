@@ -3699,9 +3699,12 @@ def save_detailed_fixation_data(trials: list[dict], results_dir: Optional[Path] 
         eye_times = np.array(trial.get('eye_times', np.arange(len(eye_x))))
         target_x = trial['target_x']
         target_y = trial['target_y']
+        target_radius = trial['target_diameter'] / 2.0
         trial_num = trial.get('trial_number', 0)
         target_visible = trial.get('target_visible', 1)
         trial_failed = trial.get('trial_failed', False)
+        trial_duration = trial.get('duration', 0)
+        trial_end_time = trial.get('end_time', eye_times[-1] if len(eye_times) > 0 else 0)
 
         # Detect fixations for this trial
         fixations = detect_fixations(eye_x, eye_y, eye_times)
@@ -3710,13 +3713,36 @@ def save_detailed_fixation_data(trials: list[dict], results_dir: Optional[Path] 
         for fix_num, (start_idx, end_idx, duration, span) in enumerate(fixations, start=1):
             total_fixations += 1
 
+            # Calculate fixation-level metrics
+            fix_x = eye_x[start_idx:end_idx]
+            fix_y = eye_y[start_idx:end_idx]
+            fix_times = eye_times[start_idx:end_idx]
+
+            # Calculate distances from target for all points in fixation
+            fix_distances = np.sqrt((fix_x - target_x)**2 + (fix_y - target_y)**2)
+            max_dist_in_fixation = np.max(fix_distances)
+            min_dist_in_fixation = np.min(fix_distances)
+
+            # Check if ALL points are within target radius
+            all_points_within_target = np.all(fix_distances <= target_radius)
+
+            # Calculate time from end of fixation to end of trial
+            fixation_end_time = fix_times[-1]
+            time_to_trial_end = trial_end_time - fixation_end_time
+
+            # Determine if this is a potential missed detection
+            # Criteria: fixation is on target (all points within radius) AND
+            #           trial doesn't end promptly (>0.5s after fixation ends)
+            is_potential_missed_detection = (all_points_within_target and
+                                            time_to_trial_end > 0.5)
+
             # Iterate through all frames in this fixation
             for frame_idx in range(start_idx, end_idx):
                 pos_x = eye_x[frame_idx]
                 pos_y = eye_y[frame_idx]
                 time_sec = eye_times[frame_idx]
 
-                # Calculate distance from target
+                # Calculate distance from target for this specific point
                 distance_from_target = np.sqrt((pos_x - target_x)**2 + (pos_y - target_y)**2)
 
                 # Add data point to list
@@ -3730,10 +3756,19 @@ def save_detailed_fixation_data(trials: list[dict], results_dir: Optional[Path] 
                     'time_sec': time_sec,
                     'target_x': target_x,
                     'target_y': target_y,
+                    'target_radius': target_radius,
                     'target_visible': target_visible,
                     'trial_failed': trial_failed,
+                    'trial_duration': trial_duration,
                     'fixation_duration': duration,
-                    'fixation_span': span
+                    'fixation_span': span,
+                    'fixation_start_time': fix_times[0],
+                    'fixation_end_time': fixation_end_time,
+                    'all_points_within_target': all_points_within_target,
+                    'max_distance_from_target_in_fixation': max_dist_in_fixation,
+                    'min_distance_from_target_in_fixation': min_dist_in_fixation,
+                    'time_from_fixation_end_to_trial_end': time_to_trial_end,
+                    'is_potential_missed_detection': is_potential_missed_detection
                 })
 
     # Create DataFrame
@@ -3741,6 +3776,24 @@ def save_detailed_fixation_data(trials: list[dict], results_dir: Optional[Path] 
 
     print(f"Found {total_fixations} fixations across {len(trials_with_data)} trials")
     print(f"Total data points: {len(df)}")
+
+    # Summary of on-target fixations and potential missed detections
+    if len(df) > 0:
+        # Group by trial and fixation to get unique fixations (not individual frames)
+        fixation_summary = df.groupby(['trial_number', 'fixation_number']).first()
+
+        n_on_target = fixation_summary['all_points_within_target'].sum()
+        n_missed = fixation_summary['is_potential_missed_detection'].sum()
+
+        print(f"\nFixation Analysis:")
+        print(f"  Fixations with all points within target: {n_on_target}/{len(fixation_summary)} ({100*n_on_target/len(fixation_summary):.1f}%)")
+        print(f"  Potential missed detections (on-target but trial continued >0.5s): {n_missed}/{n_on_target} ({100*n_missed/n_on_target:.1f}% of on-target)" if n_on_target > 0 else f"  Potential missed detections: {n_missed}")
+
+        if n_missed > 0:
+            missed_fixations = fixation_summary[fixation_summary['is_potential_missed_detection']]
+            print(f"\n  Missed detection details:")
+            print(f"    Mean time from fixation end to trial end: {missed_fixations['time_from_fixation_end_to_trial_end'].mean():.2f}s")
+            print(f"    Trials with missed detections: {missed_fixations.index.get_level_values('trial_number').nunique()}")
 
     # Save to CSV if results_dir is provided
     if results_dir is not None:
