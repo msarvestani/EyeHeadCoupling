@@ -414,6 +414,7 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
             eye_times_full = np.array([])
             eye_start_time = start_time
             eye_end_time = end_time
+            cursor_diameter = 0.2  # Default cursor diameter
         else:
             # Calculate path length (cumulative distance along trajectory)
             start_eye_x = eye_trajectory['green_x'].values[0]
@@ -422,6 +423,9 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
             eye_start_time = eye_times_raw[0]
             eye_end_time = eye_times_raw[-1]
             eye_duration = eye_end_time - eye_start_time
+
+            # Extract cursor diameter (use first value from eye_trajectory)
+            cursor_diameter = eye_trajectory['diameter'].values[0]
 
             # OPTION 2: Use the next row after the last position within trial window
             # Get the last row within the trial window
@@ -529,6 +533,7 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
             'target_y': target_y,
             'target_diameter': target_diameter,
             'target_visible': target_visible,
+            'cursor_diameter': cursor_diameter,
             'start_eye_x': start_eye_x,
             'start_eye_y': start_eye_y,
             'final_eye_x': final_eye_x,
@@ -3587,7 +3592,13 @@ def save_detailed_fixation_data(trials: list[dict], results_dir: Optional[Path] 
     pd.DataFrame
         DataFrame with columns: trial_number, fixation_number, frame_number,
         eye_x, eye_y, distance_from_target, time_sec, target_x, target_y,
-        target_visible, trial_failed
+        target_radius, cursor_radius, contact_threshold, target_visible, trial_failed,
+        fixation_duration, fixation_span, all_points_within_target, etc.
+
+    Notes
+    -----
+    A fixation point is considered "on target" when the eye-to-target distance is
+    <= (target_radius + cursor_radius), accounting for both target and cursor sizes.
     """
     import pandas as pd
 
@@ -3700,6 +3711,7 @@ def save_detailed_fixation_data(trials: list[dict], results_dir: Optional[Path] 
         target_x = trial['target_x']
         target_y = trial['target_y']
         target_radius = trial['target_diameter'] / 2.0
+        cursor_radius = trial.get('cursor_diameter', 0.2) / 2.0  # Default to 0.2 if not present
         trial_num = trial.get('trial_number', 0)
         target_visible = trial.get('target_visible', 1)
         trial_failed = trial.get('trial_failed', False)
@@ -3723,8 +3735,10 @@ def save_detailed_fixation_data(trials: list[dict], results_dir: Optional[Path] 
             max_dist_in_fixation = np.max(fix_distances)
             min_dist_in_fixation = np.min(fix_distances)
 
-            # Check if ALL points are within target radius
-            all_points_within_target = np.all(fix_distances <= target_radius)
+            # Check if ALL points are within target radius + cursor radius (i.e., cursor touching target)
+            # A point is "on target" when the distance from eye to target center <= (target_radius + cursor_radius)
+            contact_threshold = target_radius + cursor_radius
+            all_points_within_target = np.all(fix_distances <= contact_threshold)
 
             # Calculate time from end of fixation to end of trial
             fixation_end_time = fix_times[-1]
@@ -3757,6 +3771,8 @@ def save_detailed_fixation_data(trials: list[dict], results_dir: Optional[Path] 
                     'target_x': target_x,
                     'target_y': target_y,
                     'target_radius': target_radius,
+                    'cursor_radius': cursor_radius,
+                    'contact_threshold': contact_threshold,
                     'target_visible': target_visible,
                     'trial_failed': trial_failed,
                     'trial_duration': trial_duration,
@@ -3859,7 +3875,8 @@ def plot_fixation_targeting_analysis(trials: list[dict], results_dir: Optional[P
         eye_t = trial['eye_times']
         target_x = trial.get('target_x', 0.0)
         target_y = trial.get('target_y', 0.0)
-        target_radius = trial.get('target_radius', 0.15)
+        target_radius = trial.get('target_diameter', 0.3) / 2.0 if 'target_diameter' in trial else trial.get('target_radius', 0.15)
+        cursor_radius = trial.get('cursor_diameter', 0.2) / 2.0
         target_visible = trial.get('target_visible', 1)
 
         # Determine if target is left or right
@@ -3910,7 +3927,9 @@ def plot_fixation_targeting_analysis(trials: list[dict], results_dir: Optional[P
 
                 # Calculate distance to target
                 dist_to_target = np.sqrt((center_x - target_x)**2 + (center_y - target_y)**2)
-                within_target = dist_to_target <= target_radius
+                # Check if fixation is "on target" accounting for both target and cursor sizes
+                contact_threshold = target_radius + cursor_radius
+                within_target = dist_to_target <= contact_threshold
 
                 fixation_info = (center_x, center_y, span, dist_to_target, within_target)
 
