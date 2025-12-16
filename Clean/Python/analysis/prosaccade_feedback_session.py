@@ -3553,6 +3553,211 @@ def interactive_fixation_viewer(trials: list[dict], animal_id: Optional[str] = N
     plt.show()
 
 
+def save_detailed_fixation_data(trials: list[dict], results_dir: Optional[Path] = None,
+                                  animal_id: Optional[str] = None, session_date: str = "",
+                                  min_duration: float = FIXATION_MIN_DURATION,
+                                  max_movement: float = FIXATION_MAX_MOVEMENT) -> pd.DataFrame:
+    """Save detailed frame-by-frame fixation data for all trials.
+
+    For each detected fixation, saves all individual data points including:
+    - Trial number
+    - Fixation number (within that trial)
+    - Frame number (index in eye trajectory)
+    - Eye position (x, y)
+    - Distance from target
+    - Time (if available)
+
+    Parameters
+    ----------
+    trials : list of dict
+        List of trial data dictionaries
+    results_dir : Path, optional
+        Directory to save CSV file. If None, doesn't save to disk.
+    animal_id : str, optional
+        Animal identifier for filename
+    session_date : str, optional
+        Session date for filename
+    min_duration : float
+        Minimum fixation duration in seconds (default: 0.5)
+    max_movement : float
+        Maximum movement threshold for fixation in stimulus units (default: 0.12)
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with columns: trial_number, fixation_number, frame_number,
+        eye_x, eye_y, distance_from_target, time_sec, target_x, target_y,
+        target_visible, trial_failed
+    """
+    import pandas as pd
+
+    def detect_fixations(eye_x, eye_y, eye_times):
+        """Detect fixation windows in the trajectory.
+
+        Returns list of tuples: (start_idx, end_idx, duration, span)
+        where span is the maximum spatial movement during the fixation.
+        """
+        if len(eye_x) < 2:
+            return []
+
+        fixations = []
+        n = len(eye_x)
+
+        # For each potential starting point
+        for i in range(n):
+            # Try to find the longest fixation starting at i
+            for j in range(i + 1, n + 1):
+                # Check if this window meets criteria
+                window_x = eye_x[i:j]
+                window_y = eye_y[i:j]
+                window_times = eye_times[i:j]
+
+                # Calculate duration
+                duration = window_times[-1] - window_times[0]
+
+                if duration < min_duration:
+                    continue  # Too short
+
+                # Calculate maximum movement in this window
+                x_range = np.max(window_x) - np.min(window_x)
+                y_range = np.max(window_y) - np.min(window_y)
+                max_move = np.sqrt(x_range**2 + y_range**2)
+
+                if max_move < max_movement:
+                    # This is a valid fixation
+                    # Check if we can extend it further
+                    continue
+                else:
+                    # Can't extend anymore, check if previous window was valid
+                    if j > i + 1:  # At least 2 points
+                        prev_window_x = eye_x[i:j-1]
+                        prev_window_y = eye_y[i:j-1]
+                        prev_window_times = eye_times[i:j-1]
+                        prev_duration = prev_window_times[-1] - prev_window_times[0]
+                        if prev_duration >= min_duration:
+                            # Calculate span for previous window
+                            prev_x_range = np.max(prev_window_x) - np.min(prev_window_x)
+                            prev_y_range = np.max(prev_window_y) - np.min(prev_window_y)
+                            prev_span = np.sqrt(prev_x_range**2 + prev_y_range**2)
+                            fixations.append((i, j-1, prev_duration, prev_span))
+                    break
+
+            # Check if we reached the end with a valid fixation
+            if j == n:
+                duration = eye_times[j-1] - eye_times[i]
+                if duration >= min_duration:
+                    window_x = eye_x[i:j]
+                    window_y = eye_y[i:j]
+                    x_range = np.max(window_x) - np.min(window_x)
+                    y_range = np.max(window_y) - np.min(window_y)
+                    max_move = np.sqrt(x_range**2 + y_range**2)
+                    if max_move < max_movement:
+                        fixations.append((i, j, duration, max_move))
+
+        # Remove overlapping fixations, keep longest
+        if len(fixations) == 0:
+            return []
+
+        # Sort by duration (longest first)
+        fixations.sort(key=lambda x: x[2], reverse=True)
+
+        # Remove overlaps
+        final_fixations = []
+        used_indices = set()
+
+        for start, end, duration, span in fixations:
+            # Check if any index in this range is already used
+            if any(idx in used_indices for idx in range(start, end)):
+                continue
+
+            # Add this fixation
+            final_fixations.append((start, end, duration, span))
+            used_indices.update(range(start, end))
+
+        # Sort by start index
+        final_fixations.sort(key=lambda x: x[0])
+
+        return final_fixations
+
+    # Filter to trials with eye data
+    trials_with_data = [t for t in trials if len(t.get('eye_x', [])) > 0]
+
+    if len(trials_with_data) == 0:
+        print("No trials with eye tracking data")
+        return pd.DataFrame()
+
+    print(f"Processing {len(trials_with_data)} trials for detailed fixation data...")
+    print(f"Fixation criteria: ≥{min_duration}s duration, <{max_movement} units movement")
+
+    # Collect all data points for all fixations
+    all_fixation_data = []
+    total_fixations = 0
+
+    for trial in trials_with_data:
+        eye_x = np.array(trial['eye_x'])
+        eye_y = np.array(trial['eye_y'])
+        eye_times = np.array(trial.get('eye_times', np.arange(len(eye_x))))
+        target_x = trial['target_x']
+        target_y = trial['target_y']
+        trial_num = trial.get('trial_number', 0)
+        target_visible = trial.get('target_visible', 1)
+        trial_failed = trial.get('trial_failed', False)
+
+        # Detect fixations for this trial
+        fixations = detect_fixations(eye_x, eye_y, eye_times)
+
+        # For each fixation, save all individual data points
+        for fix_num, (start_idx, end_idx, duration, span) in enumerate(fixations, start=1):
+            total_fixations += 1
+
+            # Iterate through all frames in this fixation
+            for frame_idx in range(start_idx, end_idx):
+                pos_x = eye_x[frame_idx]
+                pos_y = eye_y[frame_idx]
+                time_sec = eye_times[frame_idx]
+
+                # Calculate distance from target
+                distance_from_target = np.sqrt((pos_x - target_x)**2 + (pos_y - target_y)**2)
+
+                # Add data point to list
+                all_fixation_data.append({
+                    'trial_number': trial_num,
+                    'fixation_number': fix_num,
+                    'frame_number': frame_idx,
+                    'eye_x': pos_x,
+                    'eye_y': pos_y,
+                    'distance_from_target': distance_from_target,
+                    'time_sec': time_sec,
+                    'target_x': target_x,
+                    'target_y': target_y,
+                    'target_visible': target_visible,
+                    'trial_failed': trial_failed,
+                    'fixation_duration': duration,
+                    'fixation_span': span
+                })
+
+    # Create DataFrame
+    df = pd.DataFrame(all_fixation_data)
+
+    print(f"Found {total_fixations} fixations across {len(trials_with_data)} trials")
+    print(f"Total data points: {len(df)}")
+
+    # Save to CSV if results_dir is provided
+    if results_dir is not None:
+        results_dir = Path(results_dir)
+        results_dir.mkdir(parents=True, exist_ok=True)
+
+        filename = f"{animal_id}_detailed_fixation_data.csv" if animal_id else "detailed_fixation_data.csv"
+        if session_date:
+            filename = f"{animal_id}_{session_date}_detailed_fixation_data.csv"
+
+        filepath = results_dir / filename
+        df.to_csv(filepath, index=False)
+        print(f"Saved detailed fixation data to: {filepath}")
+
+    return df
+
+
 # NEW: Fixation targeting analysis function
 def plot_fixation_targeting_analysis(trials: list[dict], results_dir: Optional[Path] = None,
                                       animal_id: Optional[str] = None, session_date: str = "",
