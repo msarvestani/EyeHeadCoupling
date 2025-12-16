@@ -3364,99 +3364,64 @@ def interactive_fixation_viewer(trials: list[dict], animal_id: Optional[str] = N
         return
 
     print(f"Interactive Fixation Viewer: {len(trials_with_data)} trials")
-    print(f"Fixation criteria: ≥{min_duration}s duration, <{max_movement} units movement")
+    print(f"Fixation criteria: ≥{min_duration}s duration, frame-to-frame movement <{max_movement} units")
     print("Press SPACE to advance, ESC or 'q' to quit")
 
     fig, ax = plt.subplots(figsize=(12, 10))
     current_trial_idx = [0]  # Use list to allow modification in nested function
 
     def detect_fixations(eye_x, eye_y, eye_times):
-        """Detect fixation windows in the trajectory.
-        
+        """Detect fixation windows based on frame-to-frame movement velocity.
+
+        A fixation is a continuous segment where every consecutive frame-to-frame
+        movement is < max_movement, lasting for at least min_duration.
+
         Returns list of tuples: (start_idx, end_idx, duration, span)
-        where span is the maximum spatial movement during the fixation.
+        where span is calculated for informational purposes but NOT used for detection.
         """
         if len(eye_x) < 2:
             return []
 
-        fixations = []
         n = len(eye_x)
+        fixations = []
 
-        # For each potential starting point
-        for i in range(n):
-            # Try to find the longest fixation starting at i
-            for j in range(i + 1, n + 1):
-                # Check if this window meets criteria
-                window_x = eye_x[i:j]
-                window_y = eye_y[i:j]
-                window_times = eye_times[i:j]
+        i = 0
+        while i < n:
+            # Try to extend a fixation starting at point i
+            j = i + 1
 
-                # Calculate duration
-                duration = window_times[-1] - window_times[0]
+            # Extend while frame-to-frame movement is below threshold
+            while j < n:
+                # Calculate movement from point j-1 to point j
+                dx = eye_x[j] - eye_x[j-1]
+                dy = eye_y[j] - eye_y[j-1]
+                movement = np.sqrt(dx**2 + dy**2)
 
-                if duration < min_duration:
-                    continue  # Too short
-
-                # Calculate maximum movement in this window
-                x_range = np.max(window_x) - np.min(window_x)
-                y_range = np.max(window_y) - np.min(window_y)
-                max_move = np.sqrt(x_range**2 + y_range**2)
-
-                if max_move < max_movement:
-                    # This is a valid fixation
-                    # Check if we can extend it further
-                    continue
+                if movement < max_movement:
+                    j += 1  # Include point j in the fixation
                 else:
-                    # Can't extend anymore, check if previous window was valid
-                    if j > i + 1:  # At least 2 points
-                        prev_window_x = eye_x[i:j-1]
-                        prev_window_y = eye_y[i:j-1]
-                        prev_window_times = eye_times[i:j-1]
-                        prev_duration = prev_window_times[-1] - prev_window_times[0]
-                        if prev_duration >= min_duration:
-                            # Calculate span for previous window
-                            prev_x_range = np.max(prev_window_x) - np.min(prev_window_x)
-                            prev_y_range = np.max(prev_window_y) - np.min(prev_window_y)
-                            prev_span = np.sqrt(prev_x_range**2 + prev_y_range**2)
-                            fixations.append((i, j-1, prev_duration, prev_span))
-                    break
+                    break  # Movement too large, stop before point j
 
-            # Check if we reached the end with a valid fixation
-            if j == n:
+            # Now we have a potential fixation from index i to j (exclusive end)
+            # This includes points [i, i+1, ..., j-1]
+
+            if j > i + 1:  # At least 2 points
                 duration = eye_times[j-1] - eye_times[i]
                 if duration >= min_duration:
-                    window_x = eye_x[i:j]
-                    window_y = eye_y[i:j]
-                    x_range = np.max(window_x) - np.min(window_x)
-                    y_range = np.max(window_y) - np.min(window_y)
-                    max_move = np.sqrt(x_range**2 + y_range**2)
-                    if max_move < max_movement:
-                        fixations.append((i, j, duration, max_move))
+                    # Valid fixation! Calculate span for informational purposes
+                    fix_x = eye_x[i:j]
+                    fix_y = eye_y[i:j]
+                    x_range = np.max(fix_x) - np.min(fix_x)
+                    y_range = np.max(fix_y) - np.min(fix_y)
+                    span = np.sqrt(x_range**2 + y_range**2)
+                    fixations.append((i, j, duration, span))
+                    i = j  # Start next search after this fixation
+                else:
+                    i += 1  # Duration too short, try next starting point
+            else:
+                i += 1  # No valid extension, try next starting point
 
-        # Remove overlapping fixations, keep longest
-        if len(fixations) == 0:
-            return []
-
-        # Sort by duration (longest first)
-        fixations.sort(key=lambda x: x[2], reverse=True)
-
-        # Remove overlaps
-        final_fixations = []
-        used_indices = set()
-
-        for start, end, duration, span in fixations:
-            # Check if any index in this range is already used
-            if any(idx in used_indices for idx in range(start, end)):
-                continue
-
-            # Add this fixation
-            final_fixations.append((start, end, duration, span))
-            used_indices.update(range(start, end))
-
-        # Sort by start index
-        final_fixations.sort(key=lambda x: x[0])
-
-        return final_fixations
+        return fixations
 
     def plot_trial(idx):
         ax.clear()
@@ -3651,92 +3616,57 @@ def save_detailed_fixation_data(trials: list[dict], results_dir: Optional[Path] 
     import pandas as pd
 
     def detect_fixations(eye_x, eye_y, eye_times):
-        """Detect fixation windows in the trajectory.
+        """Detect fixation windows based on frame-to-frame movement velocity.
+
+        A fixation is a continuous segment where every consecutive frame-to-frame
+        movement is < max_movement, lasting for at least min_duration.
 
         Returns list of tuples: (start_idx, end_idx, duration, span)
-        where span is the maximum spatial movement during the fixation.
+        where span is calculated for informational purposes but NOT used for detection.
         """
         if len(eye_x) < 2:
             return []
 
-        fixations = []
         n = len(eye_x)
+        fixations = []
 
-        # For each potential starting point
-        for i in range(n):
-            # Try to find the longest fixation starting at i
-            for j in range(i + 1, n + 1):
-                # Check if this window meets criteria
-                window_x = eye_x[i:j]
-                window_y = eye_y[i:j]
-                window_times = eye_times[i:j]
+        i = 0
+        while i < n:
+            # Try to extend a fixation starting at point i
+            j = i + 1
 
-                # Calculate duration
-                duration = window_times[-1] - window_times[0]
+            # Extend while frame-to-frame movement is below threshold
+            while j < n:
+                # Calculate movement from point j-1 to point j
+                dx = eye_x[j] - eye_x[j-1]
+                dy = eye_y[j] - eye_y[j-1]
+                movement = np.sqrt(dx**2 + dy**2)
 
-                if duration < min_duration:
-                    continue  # Too short
-
-                # Calculate maximum movement in this window
-                x_range = np.max(window_x) - np.min(window_x)
-                y_range = np.max(window_y) - np.min(window_y)
-                max_move = np.sqrt(x_range**2 + y_range**2)
-
-                if max_move < max_movement:
-                    # This is a valid fixation
-                    # Check if we can extend it further
-                    continue
+                if movement < max_movement:
+                    j += 1  # Include point j in the fixation
                 else:
-                    # Can't extend anymore, check if previous window was valid
-                    if j > i + 1:  # At least 2 points
-                        prev_window_x = eye_x[i:j-1]
-                        prev_window_y = eye_y[i:j-1]
-                        prev_window_times = eye_times[i:j-1]
-                        prev_duration = prev_window_times[-1] - prev_window_times[0]
-                        if prev_duration >= min_duration:
-                            # Calculate span for previous window
-                            prev_x_range = np.max(prev_window_x) - np.min(prev_window_x)
-                            prev_y_range = np.max(prev_window_y) - np.min(prev_window_y)
-                            prev_span = np.sqrt(prev_x_range**2 + prev_y_range**2)
-                            fixations.append((i, j-1, prev_duration, prev_span))
-                    break
+                    break  # Movement too large, stop before point j
 
-            # Check if we reached the end with a valid fixation
-            if j == n:
+            # Now we have a potential fixation from index i to j (exclusive end)
+            # This includes points [i, i+1, ..., j-1]
+
+            if j > i + 1:  # At least 2 points
                 duration = eye_times[j-1] - eye_times[i]
                 if duration >= min_duration:
-                    window_x = eye_x[i:j]
-                    window_y = eye_y[i:j]
-                    x_range = np.max(window_x) - np.min(window_x)
-                    y_range = np.max(window_y) - np.min(window_y)
-                    max_move = np.sqrt(x_range**2 + y_range**2)
-                    if max_move < max_movement:
-                        fixations.append((i, j, duration, max_move))
+                    # Valid fixation! Calculate span for informational purposes
+                    fix_x = eye_x[i:j]
+                    fix_y = eye_y[i:j]
+                    x_range = np.max(fix_x) - np.min(fix_x)
+                    y_range = np.max(fix_y) - np.min(fix_y)
+                    span = np.sqrt(x_range**2 + y_range**2)
+                    fixations.append((i, j, duration, span))
+                    i = j  # Start next search after this fixation
+                else:
+                    i += 1  # Duration too short, try next starting point
+            else:
+                i += 1  # No valid extension, try next starting point
 
-        # Remove overlapping fixations, keep longest
-        if len(fixations) == 0:
-            return []
-
-        # Sort by duration (longest first)
-        fixations.sort(key=lambda x: x[2], reverse=True)
-
-        # Remove overlaps
-        final_fixations = []
-        used_indices = set()
-
-        for start, end, duration, span in fixations:
-            # Check if any index in this range is already used
-            if any(idx in used_indices for idx in range(start, end)):
-                continue
-
-            # Add this fixation
-            final_fixations.append((start, end, duration, span))
-            used_indices.update(range(start, end))
-
-        # Sort by start index
-        final_fixations.sort(key=lambda x: x[0])
-
-        return final_fixations
+        return fixations
 
     # Filter to trials with eye data
     trials_with_data = [t for t in trials if len(t.get('eye_x', [])) > 0]
@@ -3746,7 +3676,7 @@ def save_detailed_fixation_data(trials: list[dict], results_dir: Optional[Path] 
         return pd.DataFrame()
 
     print(f"Processing {len(trials_with_data)} trials for detailed fixation data...")
-    print(f"Fixation criteria: ≥{min_duration}s duration, <{max_movement} units movement")
+    print(f"Fixation criteria: ≥{min_duration}s duration, frame-to-frame movement <{max_movement} units")
 
     # Collect all data points for all fixations
     all_fixation_data = []
