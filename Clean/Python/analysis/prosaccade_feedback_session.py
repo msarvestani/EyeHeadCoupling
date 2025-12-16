@@ -133,13 +133,14 @@ def load_feedback_data(folder_path: Path, animal_id: str = "Tsh001") -> Tuple[pd
         if n_cols < 4:
             raise ValueError(f"Too few columns: {n_cols}. Expected at least 4 (frame, timestamp, x, y)")
 
-        # Extract columns: first 2 are frame & timestamp, last is ignored, -2 is y, -3 is x
+        # Extract columns: frame, timestamp, x, y, diameter (5th column)
+        # Note: Using positive indexing for diameter to get 5th column (index 4)
         eye_df = pd.DataFrame({
             'frame': eye_arr[:, 0],
             'timestamp': eye_arr[:, 1],
-            'green_x': eye_arr[:, -3],
-            'green_y': eye_arr[:, -2],
-            'diameter': eye_arr[:, -4] if n_cols >= 4 else 0.2,
+            'green_x': eye_arr[:, 2],
+            'green_y': eye_arr[:, 3],
+            'diameter': eye_arr[:, 4] if n_cols >= 5 else 0.2,
         })
         eye_df['frame'] = eye_df['frame'].astype(int)
 
