@@ -5324,6 +5324,12 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
         plt.show()
     plt.close(fig_fixation_targeting)
 
+    # NEW: Save detailed fixation data
+    print("\nSaving detailed fixation data...")
+    detailed_fixation_df = save_detailed_fixation_data(trials_for_analysis, results_dir=results_dir,
+                                                        animal_id=animal_id,
+                                                        session_date=date_str)
+
     print("\nPlotting final positions by target type...")
     fig_final_pos = plot_final_positions_by_target(trials_for_analysis, min_duration=trial_min_duration, max_duration=trial_max_duration,
                                                     results_dir=results_dir,
