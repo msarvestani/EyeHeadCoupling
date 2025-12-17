@@ -4219,6 +4219,268 @@ def compare_fixation_detection(folder_path: Path, vstim_go_fixation_df: Optional
     return comparison_df
 
 
+def compare_fixations_frame_by_frame(folder_path: Path, vstim_go_fixation_df: Optional[pd.DataFrame] = None,
+                                      results_dir: Optional[Path] = None,
+                                      animal_id: Optional[str] = None, session_date: str = "",
+                                      min_duration: float = FIXATION_MIN_DURATION) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """Compare fixations frame-by-frame between task's fixationlog and our vstim_go_fixation.
+
+    The task's fixationlog.csv has a last column where 0 indicates a fixation was detected
+    at that timepoint. Because fixations require a minimum duration, when the last column
+    is 0, it means that timepoint AND the previous min_duration seconds are all part of
+    the fixation.
+
+    This function:
+    1. Processes fixationlog.csv to identify all frames that are part of detected fixations
+    2. Compares with our vstim_go_fixation detection
+    3. Adds an 'agreement' column to fixationlog (1 = both agree, 0 = differ)
+    4. Only compares frames during trials (not inter-trial intervals)
+
+    Parameters
+    ----------
+    folder_path : Path
+        Path to session folder containing fixationlog.csv
+    vstim_go_fixation_df : pd.DataFrame, optional
+        DataFrame from create_vstim_go_fixation_csv (if already loaded)
+    results_dir : Path, optional
+        Directory to save output CSV
+    animal_id : str, optional
+        Animal identifier for filename
+    session_date : str, optional
+        Session date for filename
+    min_duration : float
+        Minimum fixation duration in seconds (default: 0.5)
+
+    Returns
+    -------
+    Tuple[pd.DataFrame, pd.DataFrame]
+        (fixationlog_with_agreement, comparison_summary)
+        - fixationlog_with_agreement: Original fixationlog with added columns
+        - comparison_summary: Summary statistics of the comparison
+    """
+    import pandas as pd
+
+    print(f"\nComparing fixations frame-by-frame...")
+    print(f"  Using minimum fixation duration: {min_duration}s")
+    folder_path = Path(folder_path)
+
+    # Load fixationlog.csv from task
+    fixlog_file = None
+    for f in folder_path.glob("*fixationlog*.csv"):
+        fixlog_file = f
+        break
+
+    if fixlog_file is None:
+        print("  No fixationlog.csv found in folder - cannot compare")
+        return pd.DataFrame(), pd.DataFrame()
+
+    print(f"  Loading task fixation log: {fixlog_file.name}")
+    try:
+        fixlog_df = pd.read_csv(fixlog_file)
+        print(f"    Loaded {len(fixlog_df)} rows from task fixationlog")
+        print(f"    Columns: {list(fixlog_df.columns)}")
+    except Exception as e:
+        print(f"    Error loading fixationlog: {e}")
+        return pd.DataFrame(), pd.DataFrame()
+
+    # Load vstim_go_fixation if not provided
+    if vstim_go_fixation_df is None:
+        vstim_go_fix_file = None
+        search_dirs = [results_dir, folder_path] if results_dir else [folder_path]
+        for search_dir in search_dirs:
+            if search_dir is None:
+                continue
+            for f in Path(search_dir).glob("*vstim_go_fixation*.csv"):
+                vstim_go_fix_file = f
+                break
+            if vstim_go_fix_file:
+                break
+
+        if vstim_go_fix_file is None:
+            print("  No vstim_go_fixation.csv found - run create_vstim_go_fixation_csv first")
+            return pd.DataFrame(), pd.DataFrame()
+
+        print(f"  Loading offline fixation analysis: {vstim_go_fix_file.name}")
+        vstim_go_fixation_df = pd.read_csv(vstim_go_fix_file)
+
+    print(f"    Loaded {len(vstim_go_fixation_df)} frames from our analysis")
+
+    # Identify the last column in fixationlog (fixation status)
+    last_col = fixlog_df.columns[-1]
+    print(f"  Fixation status column: '{last_col}'")
+
+    # Find which column has frame numbers or timestamps in fixationlog
+    frame_col = None
+    timestamp_col = None
+    for col in fixlog_df.columns:
+        col_lower = col.lower()
+        if 'frame' in col_lower:
+            frame_col = col
+        elif 'time' in col_lower and 'stamp' not in col_lower:
+            timestamp_col = col
+        elif 'timestamp' in col_lower:
+            timestamp_col = col
+
+    # If no frame column, use the first column (often frame number)
+    if frame_col is None and len(fixlog_df.columns) >= 1:
+        first_col = fixlog_df.columns[0]
+        if fixlog_df[first_col].dtype in ['int64', 'float64']:
+            frame_col = first_col
+            print(f"  Using first column '{frame_col}' as frame identifier")
+
+    if timestamp_col is None and len(fixlog_df.columns) >= 2:
+        second_col = fixlog_df.columns[1]
+        if fixlog_df[second_col].dtype == 'float64':
+            timestamp_col = second_col
+            print(f"  Using second column '{timestamp_col}' as timestamp")
+
+    if frame_col is None and timestamp_col is None:
+        print("  Error: Could not identify frame or timestamp column in fixationlog")
+        return pd.DataFrame(), pd.DataFrame()
+
+    # Process fixationlog to identify frames that are part of fixations
+    # When last_col == 0, that frame and previous min_duration seconds are in fixation
+    fixlog_df['task_in_fixation'] = False
+
+    # Find rows where fixation was detected (last column == 0)
+    fixation_detected_mask = fixlog_df[last_col] == 0
+    fixation_detected_indices = fixlog_df[fixation_detected_mask].index.tolist()
+
+    print(f"  Found {len(fixation_detected_indices)} timepoints where task detected fixation (last_col=0)")
+
+    # For each detection point, mark it and previous min_duration seconds as in fixation
+    if timestamp_col:
+        timestamps = fixlog_df[timestamp_col].values
+        for idx in fixation_detected_indices:
+            detection_time = timestamps[idx]
+            lookback_start = detection_time - min_duration
+
+            # Mark all frames within the lookback window as in fixation
+            mask = (fixlog_df[timestamp_col] >= lookback_start) & (fixlog_df[timestamp_col] <= detection_time)
+            fixlog_df.loc[mask, 'task_in_fixation'] = True
+    elif frame_col:
+        # Estimate frame rate from vstim_go_fixation
+        if 'timestamp' in vstim_go_fixation_df.columns:
+            timestamps_our = vstim_go_fixation_df['timestamp'].values
+            if len(timestamps_our) > 1:
+                frame_rate = 1.0 / np.median(np.diff(timestamps_our))
+                frames_in_min_duration = int(min_duration * frame_rate)
+                print(f"  Estimated frame rate: {frame_rate:.1f} Hz, lookback frames: {frames_in_min_duration}")
+            else:
+                frames_in_min_duration = int(min_duration * 60)  # Assume 60 Hz
+        else:
+            frames_in_min_duration = int(min_duration * 60)  # Assume 60 Hz
+
+        frames = fixlog_df[frame_col].values
+        for idx in fixation_detected_indices:
+            detection_frame = frames[idx]
+            lookback_start = detection_frame - frames_in_min_duration
+
+            # Mark all frames within the lookback window as in fixation
+            mask = (fixlog_df[frame_col] >= lookback_start) & (fixlog_df[frame_col] <= detection_frame)
+            fixlog_df.loc[mask, 'task_in_fixation'] = True
+
+    task_in_fix_count = fixlog_df['task_in_fixation'].sum()
+    print(f"  After lookback processing: {task_in_fix_count} frames marked as in fixation by task")
+
+    # Merge fixationlog with vstim_go_fixation by frame number
+    merge_col = frame_col if frame_col else None
+    if merge_col and merge_col in fixlog_df.columns and 'frame' in vstim_go_fixation_df.columns:
+        # Merge on frame number
+        merged_df = pd.merge(
+            fixlog_df,
+            vstim_go_fixation_df[['frame', 'in_fixation', 'trial_number', 'within_contact_threshold']],
+            left_on=merge_col,
+            right_on='frame',
+            how='left',
+            suffixes=('', '_our')
+        )
+        print(f"  Merged {len(merged_df)} frames by frame number")
+    else:
+        # Try to merge by timestamp if available
+        print("  Warning: Could not merge by frame number, attempting timestamp-based comparison")
+        merged_df = fixlog_df.copy()
+        merged_df['in_fixation'] = np.nan
+        merged_df['trial_number'] = 0
+        merged_df['within_contact_threshold'] = np.nan
+
+    # Only compare during trials (trial_number > 0)
+    if 'trial_number' in merged_df.columns:
+        trial_mask = merged_df['trial_number'] > 0
+        print(f"  Frames during trials: {trial_mask.sum()} (excluding inter-trial intervals)")
+    else:
+        trial_mask = pd.Series([True] * len(merged_df))
+        print("  Warning: No trial_number column, comparing all frames")
+
+    # Calculate agreement column
+    # 1 if both agree (both True or both False), 0 if they differ
+    merged_df['our_in_fixation'] = merged_df['in_fixation'].fillna(False).astype(bool)
+    merged_df['agreement'] = np.where(
+        trial_mask,
+        (merged_df['task_in_fixation'] == merged_df['our_in_fixation']).astype(int),
+        -1  # Mark inter-trial frames as -1
+    )
+
+    # Calculate detailed comparison statistics (only during trials)
+    trial_df = merged_df[trial_mask].copy()
+
+    # True positives: both detect fixation
+    tp = ((trial_df['task_in_fixation'] == True) & (trial_df['our_in_fixation'] == True)).sum()
+    # True negatives: both detect no fixation
+    tn = ((trial_df['task_in_fixation'] == False) & (trial_df['our_in_fixation'] == False)).sum()
+    # False positives: we detect fixation, task doesn't
+    fp = ((trial_df['task_in_fixation'] == False) & (trial_df['our_in_fixation'] == True)).sum()
+    # False negatives: task detects fixation, we don't
+    fn = ((trial_df['task_in_fixation'] == True) & (trial_df['our_in_fixation'] == False)).sum()
+
+    total_trial_frames = len(trial_df)
+    agreement_rate = (tp + tn) / total_trial_frames * 100 if total_trial_frames > 0 else 0
+
+    print(f"\n  Comparison Results (during trials only):")
+    print(f"    Total trial frames: {total_trial_frames}")
+    print(f"    Agreement rate: {agreement_rate:.1f}%")
+    print(f"    Both detect fixation (TP): {tp} frames ({tp/total_trial_frames*100:.1f}%)")
+    print(f"    Both detect no fixation (TN): {tn} frames ({tn/total_trial_frames*100:.1f}%)")
+    print(f"    We detect, task doesn't (FP): {fp} frames ({fp/total_trial_frames*100:.1f}%)")
+    print(f"    Task detects, we don't (FN): {fn} frames ({fn/total_trial_frames*100:.1f}%)")
+
+    # Create summary dataframe
+    summary_data = {
+        'metric': ['total_trial_frames', 'agreement_rate', 'true_positives', 'true_negatives',
+                   'false_positives', 'false_negatives', 'task_fixation_frames', 'our_fixation_frames'],
+        'value': [total_trial_frames, agreement_rate, tp, tn, fp, fn,
+                  trial_df['task_in_fixation'].sum(), trial_df['our_in_fixation'].sum()]
+    }
+    summary_df = pd.DataFrame(summary_data)
+
+    # Prepare output dataframe (fixationlog with added columns)
+    output_cols = list(fixlog_df.columns) + ['task_in_fixation', 'our_in_fixation', 'agreement']
+    if 'trial_number' in merged_df.columns:
+        output_cols.append('trial_number')
+
+    output_df = merged_df[[c for c in output_cols if c in merged_df.columns]].copy()
+
+    # Save outputs if results_dir provided
+    if results_dir is not None:
+        results_dir = Path(results_dir)
+        results_dir.mkdir(parents=True, exist_ok=True)
+
+        prefix = f"{animal_id}_{session_date}" if animal_id and session_date else (animal_id or "")
+        prefix = prefix + "_" if prefix else ""
+
+        # Save fixationlog with agreement
+        fixlog_output_path = results_dir / f"{prefix}fixationlog_with_agreement.csv"
+        output_df.to_csv(fixlog_output_path, index=False)
+        print(f"\n  Saved fixationlog with agreement to: {fixlog_output_path}")
+
+        # Save summary
+        summary_output_path = results_dir / f"{prefix}fixation_comparison_summary.csv"
+        summary_df.to_csv(summary_output_path, index=False)
+        print(f"  Saved comparison summary to: {summary_output_path}")
+
+    return output_df, summary_df
+
+
 # NEW: Fixation targeting analysis function
 def plot_fixation_targeting_analysis(trials: list[dict], results_dir: Optional[Path] = None,
                                       animal_id: Optional[str] = None, session_date: str = "",
