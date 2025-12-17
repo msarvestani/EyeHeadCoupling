@@ -4342,8 +4342,20 @@ def compare_fixations_frame_by_frame(folder_path: Path, vstim_go_fixation_df: Op
     # When last_col == 0, that frame and previous min_duration seconds are in fixation
     fixlog_df['task_in_fixation'] = False
 
+    # Debug: show unique values in last column
+    last_col_values = fixlog_df[last_col]
+    print(f"  Last column '{last_col}' dtype: {last_col_values.dtype}")
+    print(f"  Last column unique values: {sorted(last_col_values.unique())[:10]}...")  # Show first 10
+
     # Find rows where fixation was detected (last column == 0)
-    fixation_detected_mask = fixlog_df[last_col] == 0
+    # Handle different data types robustly
+    if last_col_values.dtype == 'object':  # String type
+        fixation_detected_mask = last_col_values.astype(str).str.strip() == '0'
+    elif np.issubdtype(last_col_values.dtype, np.floating):
+        fixation_detected_mask = np.abs(last_col_values) < 0.001  # Close to 0
+    else:
+        fixation_detected_mask = last_col_values == 0
+
     fixation_detected_indices = fixlog_df[fixation_detected_mask].index.tolist()
 
     print(f"  Found {len(fixation_detected_indices)} timepoints where task detected fixation (last_col=0)")
