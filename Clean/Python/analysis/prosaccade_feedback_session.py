@@ -4068,6 +4068,157 @@ def create_vstim_go_fixation_csv(folder_path: Path, results_dir: Optional[Path] 
     return eye_df
 
 
+def compare_fixation_detection(folder_path: Path, vstim_go_fixation_df: Optional[pd.DataFrame] = None,
+                                results_dir: Optional[Path] = None,
+                                animal_id: Optional[str] = None, session_date: str = "") -> pd.DataFrame:
+    """Compare offline fixation detection with task's real-time fixation log.
+
+    Compares fixations detected by our analysis (vstim_go_fixation) with those
+    detected in real-time by the task (fixationlog.csv).
+
+    Parameters
+    ----------
+    folder_path : Path
+        Path to session folder containing fixationlog.csv
+    vstim_go_fixation_df : pd.DataFrame, optional
+        DataFrame from create_vstim_go_fixation_csv (if already loaded)
+    results_dir : Path, optional
+        Directory to save comparison CSV
+    animal_id : str, optional
+        Animal identifier for filename
+    session_date : str, optional
+        Session date for filename
+
+    Returns
+    -------
+    pd.DataFrame
+        Comparison results per trial
+    """
+    import pandas as pd
+
+    print(f"\nComparing fixation detection...")
+    folder_path = Path(folder_path)
+
+    # Load fixationlog.csv from task
+    fixlog_file = None
+    for f in folder_path.glob("*fixationlog*.csv"):
+        fixlog_file = f
+        break
+
+    if fixlog_file is None:
+        print("  No fixationlog.csv found in folder - cannot compare")
+        return pd.DataFrame()
+
+    print(f"  Loading task fixation log: {fixlog_file.name}")
+    try:
+        fixlog_df = pd.read_csv(fixlog_file)
+        print(f"    Loaded {len(fixlog_df)} fixation events from task")
+    except Exception as e:
+        print(f"    Error loading fixationlog: {e}")
+        return pd.DataFrame()
+
+    # Load vstim_go_fixation if not provided
+    if vstim_go_fixation_df is None:
+        vstim_go_fix_file = None
+        for f in (results_dir or folder_path).glob("*vstim_go_fixation*.csv"):
+            vstim_go_fix_file = f
+            break
+
+        if vstim_go_fix_file is None:
+            print("  No vstim_go_fixation.csv found - run create_vstim_go_fixation_csv first")
+            return pd.DataFrame()
+
+        print(f"  Loading offline fixation analysis: {vstim_go_fix_file.name}")
+        vstim_go_fixation_df = pd.read_csv(vstim_go_fix_file)
+
+    # Get our detected fixations (grouped by trial and fixation_id)
+    our_fixations = vstim_go_fixation_df[
+        (vstim_go_fixation_df['in_fixation'] == True) &
+        (vstim_go_fixation_df['trial_number'] > 0)
+    ].copy()
+
+    # Group by trial and fixation to get fixation summaries
+    our_fix_summary = our_fixations.groupby(['trial_number', 'fixation_id']).agg({
+        'timestamp': ['min', 'max', 'count'],
+        'within_contact_threshold': 'all',  # All points on target?
+        'distance_from_target': 'mean'
+    }).reset_index()
+
+    our_fix_summary.columns = ['trial_number', 'fixation_id', 'start_time', 'end_time',
+                                'n_frames', 'all_on_target', 'mean_distance']
+    our_fix_summary['duration'] = our_fix_summary['end_time'] - our_fix_summary['start_time']
+
+    print(f"    Our offline analysis: {len(our_fix_summary)} fixations across {our_fix_summary['trial_number'].nunique()} trials")
+
+    # Analyze task's fixation log by trial
+    # (Structure depends on what's in fixationlog.csv - you may need to adjust this)
+    trial_col = None
+    for col in ['trial', 'trial_number', 'trial_num']:
+        if col in fixlog_df.columns:
+            trial_col = col
+            break
+
+    if trial_col:
+        task_fixations_per_trial = fixlog_df.groupby(trial_col).size()
+        print(f"    Task real-time: {len(fixlog_df)} fixation events across {task_fixations_per_trial.index.nunique()} trials")
+    else:
+        print(f"    Task real-time: {len(fixlog_df)} fixation events (no trial column found)")
+        task_fixations_per_trial = pd.Series()
+
+    # Compare by trial
+    comparison_data = []
+
+    for trial_num in our_fix_summary['trial_number'].unique():
+        our_trial_fixes = our_fix_summary[our_fix_summary['trial_number'] == trial_num]
+        n_our_fixes = len(our_trial_fixes)
+        n_our_on_target = our_trial_fixes['all_on_target'].sum()
+
+        # Get task fixations for this trial
+        if trial_col:
+            task_trial_fixes = fixlog_df[fixlog_df[trial_col] == trial_num]
+            n_task_fixes = len(task_trial_fixes)
+        else:
+            n_task_fixes = 0  # Can't match without trial info
+
+        comparison_data.append({
+            'trial_number': trial_num,
+            'our_fixations': n_our_fixes,
+            'our_on_target_fixations': n_our_on_target,
+            'task_fixations': n_task_fixes,
+            'difference': n_our_fixes - n_task_fixes,
+            'potential_missed_by_task': max(0, n_our_on_target - n_task_fixes)
+        })
+
+    comparison_df = pd.DataFrame(comparison_data)
+
+    # Print summary
+    print(f"\n  Comparison Summary:")
+    print(f"    Trials analyzed: {len(comparison_df)}")
+    print(f"    Total our fixations: {comparison_df['our_fixations'].sum()}")
+    print(f"    Total task fixations: {comparison_df['task_fixations'].sum()}")
+    print(f"    Trials where we detected MORE fixations: {(comparison_df['difference'] > 0).sum()}")
+    print(f"    Trials where task detected MORE fixations: {(comparison_df['difference'] < 0).sum()}")
+    print(f"    Trials with perfect match: {(comparison_df['difference'] == 0).sum()}")
+
+    if comparison_df['potential_missed_by_task'].sum() > 0:
+        print(f"    Potential missed detections by task: {comparison_df['potential_missed_by_task'].sum()} on-target fixations")
+
+    # Save comparison
+    if results_dir is not None:
+        results_dir = Path(results_dir)
+        results_dir.mkdir(parents=True, exist_ok=True)
+
+        filename = f"{animal_id}_fixation_comparison.csv" if animal_id else "fixation_comparison.csv"
+        if session_date:
+            filename = f"{animal_id}_{session_date}_fixation_comparison.csv"
+
+        filepath = results_dir / filename
+        comparison_df.to_csv(filepath, index=False)
+        print(f"  Saved comparison to: {filepath}")
+
+    return comparison_df
+
+
 # NEW: Fixation targeting analysis function
 def plot_fixation_targeting_analysis(trials: list[dict], results_dir: Optional[Path] = None,
                                       animal_id: Optional[str] = None, session_date: str = "",
@@ -5648,6 +5799,12 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
     vstim_go_fixation_df = create_vstim_go_fixation_csv(folder_path, results_dir=results_dir,
                                                          animal_id=animal_id,
                                                          session_date=date_str)
+
+    # NEW: Compare with task's real-time fixation detection
+    comparison_df = compare_fixation_detection(folder_path, vstim_go_fixation_df=vstim_go_fixation_df,
+                                                results_dir=results_dir,
+                                                animal_id=animal_id,
+                                                session_date=date_str)
 
     print("\nPlotting final positions by target type...")
     fig_final_pos = plot_final_positions_by_target(trials_for_analysis, min_duration=trial_min_duration, max_duration=trial_max_duration,
