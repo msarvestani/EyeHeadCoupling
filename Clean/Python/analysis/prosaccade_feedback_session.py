@@ -3827,6 +3827,239 @@ def save_detailed_fixation_data(trials: list[dict], results_dir: Optional[Path] 
     return df
 
 
+def create_vstim_go_fixation_csv(folder_path: Path, results_dir: Optional[Path] = None,
+                                   animal_id: Optional[str] = None, session_date: str = "",
+                                   min_duration: float = FIXATION_MIN_DURATION,
+                                   max_movement: float = FIXATION_MAX_MOVEMENT) -> pd.DataFrame:
+    """Create frame-by-frame CSV from vstim_go with fixation detection and target metrics.
+
+    This function processes ALL frames from vstim_go (not just fixation points) and adds:
+    - Frame-to-frame movement (velocity)
+    - Which trial the frame belongs to
+    - Target information for that trial
+    - Whether the frame is part of a detected fixation
+    - Distance from target and contact threshold
+    - Whether the frame is within contact threshold
+
+    Parameters
+    ----------
+    folder_path : Path
+        Path to session folder containing vstim_go, vstim_cue, endoftrial CSVs
+    results_dir : Path, optional
+        Directory to save output CSV
+    animal_id : str, optional
+        Animal identifier for filename
+    session_date : str, optional
+        Session date for filename
+    min_duration : float
+        Minimum fixation duration in seconds (default: 0.5)
+    max_movement : float
+        Maximum frame-to-frame movement for fixation (default: 0.12)
+
+    Returns
+    -------
+    pd.DataFrame
+        Frame-by-frame data with fixation detection and target metrics
+    """
+    import pandas as pd
+
+    print(f"\nCreating vstim_go_fixation CSV...")
+    print(f"Fixation criteria: ≥{min_duration}s duration, frame-to-frame movement <{max_movement} units")
+
+    # Load the CSV files
+    folder_path = Path(folder_path)
+    files = list(folder_path.glob("*.csv"))
+
+    vstim_go_file = None
+    vstim_cue_file = None
+    eot_file = None
+
+    for f in files:
+        fname = f.name.lower()
+        if "vstim_go" in fname:
+            vstim_go_file = f
+        elif "vstim_cue" in fname:
+            vstim_cue_file = f
+        elif "endoftrial" in fname or "end_of_trial" in fname:
+            eot_file = f
+
+    if vstim_go_file is None:
+        raise FileNotFoundError(f"Could not find vstim_go file in {folder_path}")
+    if vstim_cue_file is None:
+        raise FileNotFoundError(f"Could not find vstim_cue file in {folder_path}")
+    if eot_file is None:
+        raise FileNotFoundError(f"Could not find endoftrial file in {folder_path}")
+
+    # Load vstim_go
+    print(f"Loading {vstim_go_file.name}...")
+    cleaned = clean_csv(str(vstim_go_file))
+    eye_arr = np.genfromtxt(cleaned, delimiter=",", skip_header=1, dtype=float)
+    if eye_arr.ndim == 1:
+        eye_arr = eye_arr.reshape(1, -1)
+
+    eye_df = pd.DataFrame({
+        'frame': eye_arr[:, 0].astype(int),
+        'timestamp': eye_arr[:, 1],
+        'eye_x': eye_arr[:, 2],
+        'eye_y': eye_arr[:, 3],
+        'cursor_diameter': eye_arr[:, 4] if eye_arr.shape[1] >= 5 else 0.2,
+    })
+
+    # Load vstim_cue
+    print(f"Loading {vstim_cue_file.name}...")
+    cleaned = clean_csv(str(vstim_cue_file))
+    target_arr = np.genfromtxt(cleaned, delimiter=",", skip_header=1, dtype=float)
+    if target_arr.ndim == 1:
+        target_arr = target_arr.reshape(1, -1)
+
+    n_cols = target_arr.shape[1]
+    if n_cols == 6:
+        target_df = pd.DataFrame(target_arr, columns=['frame', 'timestamp', 'target_x', 'target_y', 'target_diameter', 'visible'])
+    elif n_cols == 5:
+        target_df = pd.DataFrame(target_arr, columns=['frame', 'timestamp', 'target_x', 'target_y', 'target_diameter'])
+        target_df['visible'] = 1
+    else:
+        raise ValueError(f"Unexpected number of columns in vstim_cue: {n_cols}")
+
+    target_df['frame'] = target_df['frame'].astype(int)
+    target_df = target_df.drop_duplicates(subset=['frame'], keep='first')
+
+    # Load endoftrial
+    print(f"Loading {eot_file.name}...")
+    cleaned = clean_csv(str(eot_file))
+    eot_arr = np.genfromtxt(cleaned, delimiter=",", skip_header=1, dtype=float)
+    if eot_arr.ndim == 1:
+        eot_arr = eot_arr.reshape(1, -1)
+    eot_df = pd.DataFrame(eot_arr, columns=['frame', 'timestamp'])
+    eot_df['frame'] = eot_df['frame'].astype(int)
+
+    # Match each vstim_go frame to a trial
+    print("Matching frames to trials...")
+    eye_df['trial_number'] = 0
+    eye_df['target_x'] = np.nan
+    eye_df['target_y'] = np.nan
+    eye_df['target_diameter'] = np.nan
+    eye_df['target_visible'] = 0
+    eye_df['trial_start_frame'] = 0
+    eye_df['trial_end_frame'] = 0
+
+    for trial_idx in range(len(target_df)):
+        start_frame = target_df.iloc[trial_idx]['frame']
+        end_frame = eot_df.iloc[trial_idx]['frame'] if trial_idx < len(eot_df) else eye_df['frame'].max()
+
+        mask = (eye_df['frame'] >= start_frame) & (eye_df['frame'] <= end_frame)
+        eye_df.loc[mask, 'trial_number'] = trial_idx + 1
+        eye_df.loc[mask, 'target_x'] = target_df.iloc[trial_idx]['target_x']
+        eye_df.loc[mask, 'target_y'] = target_df.iloc[trial_idx]['target_y']
+        eye_df.loc[mask, 'target_diameter'] = target_df.iloc[trial_idx]['target_diameter']
+        eye_df.loc[mask, 'target_visible'] = target_df.iloc[trial_idx]['visible']
+        eye_df.loc[mask, 'trial_start_frame'] = start_frame
+        eye_df.loc[mask, 'trial_end_frame'] = end_frame
+
+    # Calculate frame-to-frame movement
+    print("Calculating frame-to-frame movement...")
+    eye_df['frame_to_frame_movement'] = 0.0
+    eye_df.loc[1:, 'frame_to_frame_movement'] = np.sqrt(
+        np.diff(eye_df['eye_x'])**2 + np.diff(eye_df['eye_y'])**2
+    )
+
+    # Calculate distance from target and contact threshold
+    print("Calculating distance from target...")
+    eye_df['target_radius'] = eye_df['target_diameter'] / 2.0
+    eye_df['cursor_radius'] = eye_df['cursor_diameter'] / 2.0
+    eye_df['contact_threshold'] = eye_df['target_radius'] + eye_df['cursor_radius']
+    eye_df['distance_from_target'] = np.sqrt(
+        (eye_df['eye_x'] - eye_df['target_x'])**2 +
+        (eye_df['eye_y'] - eye_df['target_y'])**2
+    )
+    eye_df['within_contact_threshold'] = eye_df['distance_from_target'] <= eye_df['contact_threshold']
+
+    # Initialize fixation columns
+    eye_df['in_fixation'] = False
+    eye_df['fixation_id'] = 0
+    eye_df['point_index_in_fixation'] = 0
+    eye_df['time_since_fixation_start'] = 0.0
+
+    # Detect fixations per trial
+    print("Detecting fixations...")
+
+    def detect_fixations_for_trial(trial_mask):
+        """Detect fixations for frames in a single trial."""
+        trial_data = eye_df[trial_mask].copy()
+        if len(trial_data) < 2:
+            return []
+
+        eye_x = trial_data['eye_x'].values
+        eye_y = trial_data['eye_y'].values
+        eye_times = trial_data['timestamp'].values
+        indices = trial_data.index.values
+
+        fixations = []  # List of (start_idx, end_idx, start_time)
+
+        i = 0
+        n = len(eye_x)
+        while i < n:
+            j = i + 1
+            while j < n:
+                dx = eye_x[j] - eye_x[j-1]
+                dy = eye_y[j] - eye_y[j-1]
+                movement = np.sqrt(dx**2 + dy**2)
+
+                if movement < max_movement:
+                    j += 1
+                else:
+                    break
+
+            if j > i + 1:
+                duration = eye_times[j-1] - eye_times[i]
+                if duration >= min_duration:
+                    fixations.append((indices[i], indices[j-1], eye_times[i]))
+                    i = j
+                else:
+                    i += 1
+            else:
+                i += 1
+
+        return fixations
+
+    # Process each trial
+    for trial_num in eye_df['trial_number'].unique():
+        if trial_num == 0:  # Skip inter-trial intervals
+            continue
+
+        trial_mask = eye_df['trial_number'] == trial_num
+        fixations = detect_fixations_for_trial(trial_mask)
+
+        for fix_id, (start_idx, end_idx, start_time) in enumerate(fixations, start=1):
+            # Mark frames as in fixation
+            fix_mask = (eye_df.index >= start_idx) & (eye_df.index <= end_idx)
+            eye_df.loc[fix_mask, 'in_fixation'] = True
+            eye_df.loc[fix_mask, 'fixation_id'] = fix_id
+
+            # Calculate point index and time since fixation start
+            for idx, (row_idx, row) in enumerate(eye_df[fix_mask].iterrows()):
+                eye_df.at[row_idx, 'point_index_in_fixation'] = idx
+                eye_df.at[row_idx, 'time_since_fixation_start'] = row['timestamp'] - start_time
+
+    print(f"Processed {len(eye_df)} frames across {eye_df['trial_number'].nunique() - 1} trials")
+    print(f"Detected {eye_df['in_fixation'].sum()} frames in fixations")
+
+    # Save to CSV
+    if results_dir is not None:
+        results_dir = Path(results_dir)
+        results_dir.mkdir(parents=True, exist_ok=True)
+
+        filename = f"{animal_id}_vstim_go_fixation.csv" if animal_id else "vstim_go_fixation.csv"
+        if session_date:
+            filename = f"{animal_id}_{session_date}_vstim_go_fixation.csv"
+
+        filepath = results_dir / filename
+        eye_df.to_csv(filepath, index=False)
+        print(f"Saved vstim_go_fixation CSV to: {filepath}")
+
+    return eye_df
+
+
 # NEW: Fixation targeting analysis function
 def plot_fixation_targeting_analysis(trials: list[dict], results_dir: Optional[Path] = None,
                                       animal_id: Optional[str] = None, session_date: str = "",
