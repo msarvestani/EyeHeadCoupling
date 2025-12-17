@@ -5635,6 +5635,12 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
                                                         animal_id=animal_id,
                                                         session_date=date_str)
 
+    # NEW: Create vstim_go_fixation CSV for debugging
+    print("\nCreating vstim_go_fixation CSV for debugging...")
+    vstim_go_fixation_df = create_vstim_go_fixation_csv(folder_path, results_dir=results_dir,
+                                                         animal_id=animal_id,
+                                                         session_date=date_str)
+
     print("\nPlotting final positions by target type...")
     fig_final_pos = plot_final_positions_by_target(trials_for_analysis, min_duration=trial_min_duration, max_duration=trial_max_duration,
                                                     results_dir=results_dir,
