@@ -3930,8 +3930,16 @@ def create_vstim_go_fixation_csv(folder_path: Path, results_dir: Optional[Path] 
     eot_arr = np.genfromtxt(cleaned, delimiter=",", skip_header=1, dtype=float)
     if eot_arr.ndim == 1:
         eot_arr = eot_arr.reshape(1, -1)
-    eot_df = pd.DataFrame(eot_arr, columns=['frame', 'timestamp'])
-    eot_df['frame'] = eot_df['frame'].astype(int)
+
+    # Handle variable number of columns in endoftrial (only need first 2)
+    n_cols_eot = eot_arr.shape[1]
+    if n_cols_eot >= 2:
+        eot_df = pd.DataFrame({
+            'frame': eot_arr[:, 0].astype(int),
+            'timestamp': eot_arr[:, 1]
+        })
+    else:
+        raise ValueError(f"endoftrial file has too few columns: {n_cols_eot}")
 
     # Match each vstim_go frame to a trial
     print("Matching frames to trials...")
