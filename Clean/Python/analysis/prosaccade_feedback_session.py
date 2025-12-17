@@ -6074,11 +6074,19 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
                                                          animal_id=animal_id,
                                                          session_date=date_str)
 
-    # NEW: Compare with task's real-time fixation detection
+    # NEW: Compare with task's real-time fixation detection (summary by trial)
     comparison_df = compare_fixation_detection(folder_path, vstim_go_fixation_df=vstim_go_fixation_df,
                                                 results_dir=results_dir,
                                                 animal_id=animal_id,
                                                 session_date=date_str)
+
+    # NEW: Frame-by-frame comparison with agreement column
+    fixlog_with_agreement, comparison_summary = compare_fixations_frame_by_frame(
+        folder_path, vstim_go_fixation_df=vstim_go_fixation_df,
+        results_dir=results_dir,
+        animal_id=animal_id,
+        session_date=date_str
+    )
 
     print("\nPlotting final positions by target type...")
     fig_final_pos = plot_final_positions_by_target(trials_for_analysis, min_duration=trial_min_duration, max_duration=trial_max_duration,
