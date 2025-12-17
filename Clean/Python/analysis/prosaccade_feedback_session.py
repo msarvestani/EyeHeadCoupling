@@ -4201,22 +4201,45 @@ def compare_fixations_frame_by_frame(folder_path: Path, vstim_go_fixation_df: Op
     task_in_fix_count = fixlog_df['task_in_fixation'].sum()
     print(f"  After lookback processing: {task_in_fix_count} frames marked as in fixation by task")
 
-    # Merge fixationlog with vstim_go_fixation by frame number
-    merge_col = frame_col if frame_col else None
-    if merge_col and merge_col in fixlog_df.columns and 'frame' in vstim_go_fixation_df.columns:
-        # Merge on frame number
-        merged_df = pd.merge(
-            fixlog_df,
-            vstim_go_fixation_df[['frame', 'in_fixation', 'trial_number', 'within_contact_threshold']],
-            left_on=merge_col,
-            right_on='frame',
-            how='left',
-            suffixes=('', '_our')
+    # Merge fixationlog with vstim_go_fixation using nearest timestamp match
+    # (frame numbers may differ slightly between the two sources)
+    if timestamp_col and 'timestamp' in vstim_go_fixation_df.columns:
+        # Sort both by timestamp for merge_asof
+        fixlog_df_sorted = fixlog_df.sort_values(timestamp_col).copy()
+        vstim_sorted = vstim_go_fixation_df[['timestamp', 'frame', 'in_fixation', 'trial_number', 'within_contact_threshold']].sort_values('timestamp').copy()
+
+        # Use merge_asof to find nearest timestamp match
+        merged_df = pd.merge_asof(
+            fixlog_df_sorted,
+            vstim_sorted,
+            left_on=timestamp_col,
+            right_on='timestamp',
+            direction='nearest',
+            tolerance=0.1,  # Allow up to 100ms difference
+            suffixes=('', '_vstim')
         )
-        print(f"  Merged {len(merged_df)} frames by frame number")
+        print(f"  Merged {len(merged_df)} frames by nearest timestamp (tolerance=0.1s)")
+
+        # Check how many matched
+        matched_count = merged_df['in_fixation'].notna().sum()
+        print(f"  Successfully matched: {matched_count}/{len(merged_df)} frames")
+    elif frame_col and 'frame' in vstim_go_fixation_df.columns:
+        # Fallback: try merge_asof on frame number
+        fixlog_df_sorted = fixlog_df.sort_values(frame_col).copy()
+        vstim_sorted = vstim_go_fixation_df[['frame', 'in_fixation', 'trial_number', 'within_contact_threshold']].sort_values('frame').copy()
+
+        merged_df = pd.merge_asof(
+            fixlog_df_sorted,
+            vstim_sorted,
+            left_on=frame_col,
+            right_on='frame',
+            direction='nearest',
+            tolerance=5,  # Allow up to 5 frame difference
+            suffixes=('', '_vstim')
+        )
+        print(f"  Merged {len(merged_df)} frames by nearest frame number (tolerance=5)")
     else:
-        # Try to merge by timestamp if available
-        print("  Warning: Could not merge by frame number, attempting timestamp-based comparison")
+        print("  Warning: Could not merge - no timestamp or frame column found")
         merged_df = fixlog_df.copy()
         merged_df['in_fixation'] = np.nan
         merged_df['trial_number'] = 0
