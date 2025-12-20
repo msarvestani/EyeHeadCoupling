@@ -3990,11 +3990,8 @@ def create_vstim_go_fixation_csv(folder_path: Path, results_dir: Optional[Path] 
 
         return fixations
 
-    # Process each trial
+    # Process each trial (including inter-trial intervals where trial_number=0)
     for trial_num in eye_df['trial_number'].unique():
-        if trial_num == 0:  # Skip inter-trial intervals
-            continue
-
         trial_mask = eye_df['trial_number'] == trial_num
         fixations = detect_fixations_for_trial(trial_mask)
 
@@ -4009,8 +4006,11 @@ def create_vstim_go_fixation_csv(folder_path: Path, results_dir: Optional[Path] 
                 eye_df.at[row_idx, 'point_index_in_fixation'] = idx
                 eye_df.at[row_idx, 'time_since_fixation_start'] = row['timestamp'] - start_time
 
-    print(f"Processed {len(eye_df)} frames across {eye_df['trial_number'].nunique() - 1} trials")
-    print(f"Detected {eye_df['in_fixation'].sum()} frames in fixations")
+    n_trials = eye_df['trial_number'].nunique()
+    has_iti = 0 in eye_df['trial_number'].values
+    trial_desc = f"{n_trials - 1} trials + inter-trial intervals" if has_iti else f"{n_trials} trials"
+    print(f"Processed {len(eye_df)} frames across {trial_desc}")
+    print(f"Detected {eye_df['in_fixation'].sum()} frames in fixations (including inter-trial intervals)")
 
     # Save to CSV
     if results_dir is not None:
