@@ -2662,7 +2662,7 @@ def interactive_initial_direction_viewer(trials: list[dict], animal_id: Optional
 
 # Fixation detection parameters - shared across analysis functions
 FIXATION_MIN_DURATION = 0.5  # seconds
-FIXATION_MAX_MOVEMENT = 0.12  # stimulus units
+FIXATION_MAX_MOVEMENT = 0.1  # stimulus units
 def interactive_fixation_viewer(trials: list[dict], animal_id: Optional[str] = None,
                                  session_date: str = "", 
                                  min_duration: float = FIXATION_MIN_DURATION,
