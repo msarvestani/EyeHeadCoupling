@@ -928,6 +928,130 @@ def plot_time_to_target(trials: list[dict], results_dir: Optional[Path] = None,
     return fig
 
 
+def plot_trial_success(eot_df: pd.DataFrame, results_dir: Optional[Path] = None,
+                       animal_id: Optional[str] = None, session_date: str = "") -> plt.Figure:
+    """Plot trial success vs failure summary, independent of --include-failed-trials flag.
+
+    Creates a figure with:
+    - Top: Bar chart showing fraction of successful vs failed trials
+    - Bottom: Time-series showing trial success/failure for each trial
+
+    Parameters
+    ----------
+    eot_df : pd.DataFrame
+        End-of-trial dataframe containing all trials with 'trial_success' column
+        (2 = success, other values = failed)
+    results_dir : Path, optional
+        Directory to save the figure
+    animal_id : str, optional
+        Animal identifier for filename
+    session_date : str, optional
+        Session date for title
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+        The generated figure
+    """
+    if 'trial_success' not in eot_df.columns:
+        print("Warning: trial_success column not found in eot_df, cannot plot trial success")
+        return None
+
+    # Get trial success values (2 = success, other = failed)
+    trial_success = eot_df['trial_success'].values
+    n_trials = len(trial_success)
+    trial_numbers = np.arange(1, n_trials + 1)
+
+    # Calculate success/failure counts
+    is_success = trial_success == 2
+    n_success = np.sum(is_success)
+    n_failed = n_trials - n_success
+    pct_success = 100 * n_success / n_trials if n_trials > 0 else 0
+    pct_failed = 100 * n_failed / n_trials if n_trials > 0 else 0
+
+    # Create figure with 2 subplots
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8), height_ratios=[1, 1.5])
+
+    # --- Top plot: Bar chart showing fraction of success vs failure ---
+    categories = ['Success', 'Failed']
+    counts = [n_success, n_failed]
+    percentages = [pct_success, pct_failed]
+    colors = ['forestgreen', 'firebrick']
+
+    bars = ax1.bar(categories, counts, color=colors, edgecolor='black', linewidth=1.5)
+
+    # Add count and percentage labels on bars
+    for bar, count, pct in zip(bars, counts, percentages):
+        height = bar.get_height()
+        ax1.text(bar.get_x() + bar.get_width()/2., height,
+                f'{count}\n({pct:.1f}%)',
+                ha='center', va='bottom', fontsize=12, fontweight='bold')
+
+    ax1.set_ylabel('Number of Trials', fontsize=12)
+    title = 'Trial Success Rate (All Trials)'
+    if animal_id:
+        title += f' - {animal_id}'
+    if session_date:
+        title += f' ({session_date})'
+    ax1.set_title(title, fontsize=14, fontweight='bold')
+    ax1.set_ylim(0, max(counts) * 1.2)  # Leave room for labels
+    ax1.grid(True, alpha=0.3, axis='y')
+
+    # --- Bottom plot: Time-series of trial success/failure ---
+    # Plot each trial as a colored point/bar
+    success_trials = trial_numbers[is_success]
+    failed_trials = trial_numbers[~is_success]
+
+    # Use scatter plot with different colors
+    ax2.scatter(success_trials, np.ones(len(success_trials)),
+                c='forestgreen', s=50, marker='o', label=f'Success (n={n_success})',
+                edgecolors='darkgreen', linewidths=0.5)
+    ax2.scatter(failed_trials, np.zeros(len(failed_trials)),
+                c='firebrick', s=50, marker='x', label=f'Failed (n={n_failed})',
+                linewidths=2)
+
+    # Add connecting lines showing the sequence
+    for i in range(n_trials):
+        y_val = 1 if is_success[i] else 0
+        color = 'forestgreen' if is_success[i] else 'firebrick'
+        ax2.vlines(trial_numbers[i], 0.5, y_val, colors=color, alpha=0.3, linewidth=1)
+
+    # Add horizontal reference lines
+    ax2.axhline(1, color='forestgreen', linestyle='--', alpha=0.3, linewidth=1)
+    ax2.axhline(0, color='firebrick', linestyle='--', alpha=0.3, linewidth=1)
+
+    # Calculate and plot running success rate
+    ax2_twin = ax2.twinx()
+    running_success = np.cumsum(is_success) / trial_numbers * 100
+    ax2_twin.plot(trial_numbers, running_success, 'b-', linewidth=2, alpha=0.7,
+                  label='Running success rate')
+    ax2_twin.set_ylabel('Running Success Rate (%)', fontsize=11, color='blue')
+    ax2_twin.tick_params(axis='y', labelcolor='blue')
+    ax2_twin.set_ylim(0, 105)
+
+    ax2.set_xlabel('Trial Number', fontsize=12)
+    ax2.set_ylabel('Trial Outcome', fontsize=12)
+    ax2.set_yticks([0, 1])
+    ax2.set_yticklabels(['Failed', 'Success'])
+    ax2.set_xlim(0, n_trials + 1)
+    ax2.set_ylim(-0.3, 1.5)
+    ax2.set_title('Trial Outcomes Over Time', fontsize=12, fontweight='bold')
+    ax2.grid(True, alpha=0.3, axis='x')
+    ax2.legend(loc='upper left', fontsize=10)
+
+    plt.tight_layout()
+
+    # Save figure if results directory provided
+    if results_dir:
+        results_dir.mkdir(parents=True, exist_ok=True)
+        prefix = f"{animal_id}_" if animal_id else ""
+        filename = f"{prefix}trial_success_summary.png"
+        fig.savefig(results_dir / filename, dpi=150, bbox_inches='tight')
+        print(f"Saved trial success summary to {results_dir / filename}")
+
+    return fig
+
+
 def plot_path_length(trials: list[dict], results_dir: Optional[Path] = None,
                      animal_id: Optional[str] = None, session_date: str = "") -> plt.Figure:
     """Plot trajectory path length by trial.
@@ -4481,6 +4605,14 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
         print("No valid trials found, exiting")
         return pd.DataFrame()
 
+    # Plot trial success summary (uses ALL trials, independent of --include-failed-trials flag)
+    print("\nGenerating trial success summary plot...")
+    fig_success = plot_trial_success(eot_df, results_dir, animal_id, date_str)
+    if fig_success is not None:
+        if show_plots:
+            plt.show()
+        plt.close(fig_success)
+
     # Interactive viewer: show all trials or just successful ones
     print("\nShowing interactive trajectory viewer...")
     if show_failed_in_viewer:
@@ -4718,6 +4850,13 @@ def main(session_id: str, trial_min_duration: float = 0.01, trial_max_duration: 
     if len(trials_for_analysis) == 0:
         print("No valid trials found, exiting")
         return pd.DataFrame()
+
+    # Plot trial success summary (uses ALL trials, independent of --include-failed-trials flag)
+    print("\nGenerating trial success summary plot...")
+    fig_success = plot_trial_success(eot_df, results_dir, animal_id, date_str)
+    if fig_success is not None:
+        plt.show()
+        plt.close(fig_success)
 
     # Generate plots
     print("\nGenerating trajectory plot...")
