@@ -83,7 +83,7 @@ def load_feedback_data(folder_path: Path, animal_id: str = "Tsh001") -> Tuple[pd
         print(f"  Detected {n_cols} columns in endoftrial file")
 
         # Handle different column formats
-        # Third column (index 2) is always trial_success (2=success, 1=failed)
+        # Third column (index 2) is always trial_success (2=success, 0 or 1=failed)
         if n_cols >= 3:
             # Modern format: frame, timestamp, trial_success, [optional trial_number, green_x, green_y, diameter]
             if n_cols == 7:
@@ -110,7 +110,7 @@ def load_feedback_data(folder_path: Path, animal_id: str = "Tsh001") -> Tuple[pd
         print(f"  Loaded {len(eot_df)} end-of-trial events")
         if 'trial_success' in eot_df.columns:
             n_success = (eot_df['trial_success'] == 2).sum()
-            n_failed = (eot_df['trial_success'] == 1).sum()
+            n_failed = (eot_df['trial_success'] != 2).sum()
             print(f"  Trial success indicators: {n_success} successful, {n_failed} failed")
     except Exception as e:
         raise ValueError(f"Error loading end of trial file {endoftrial_file}: {e}")
@@ -222,7 +222,7 @@ def identify_and_filter_failed_trials(target_df: pd.DataFrame, eot_df: pd.DataFr
                                       exclude_failed: bool = True) -> Tuple[pd.DataFrame, list, list]:
     """Identify failed trials using the trial_success column in end_of_trial data.
 
-    The trial_success column in eot_df indicates: 2=success, 1=failed.
+    The trial_success column in eot_df indicates: 2=success, 0 or 1=failed.
     Each eot_df row corresponds to one trial (both successful and failed).
 
     Parameters
