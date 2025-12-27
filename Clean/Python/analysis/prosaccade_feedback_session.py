@@ -83,7 +83,7 @@ def load_feedback_data(folder_path: Path, animal_id: str = "Tsh001") -> Tuple[pd
         print(f"  Detected {n_cols} columns in endoftrial file")
 
         # Handle different column formats
-        # Third column (index 2) is always trial_success (1=success, 0=failed)
+        # Third column (index 2) is always trial_success (2=success, 1=failed)
         if n_cols >= 3:
             # Modern format: frame, timestamp, trial_success, [optional trial_number, green_x, green_y, diameter]
             if n_cols == 7:
@@ -109,8 +109,8 @@ def load_feedback_data(folder_path: Path, animal_id: str = "Tsh001") -> Tuple[pd
 
         print(f"  Loaded {len(eot_df)} end-of-trial events")
         if 'trial_success' in eot_df.columns:
-            n_success = (eot_df['trial_success'] == 1).sum()
-            n_failed = (eot_df['trial_success'] == 0).sum()
+            n_success = (eot_df['trial_success'] == 2).sum()
+            n_failed = (eot_df['trial_success'] != 2).sum()
             print(f"  Trial success indicators: {n_success} successful, {n_failed} failed")
     except Exception as e:
         raise ValueError(f"Error loading end of trial file {endoftrial_file}: {e}")
@@ -272,7 +272,7 @@ def identify_and_filter_failed_trials(target_df: pd.DataFrame, eot_df: pd.DataFr
 
         n_trials = min(len(target_df), len(eot_df))
         for idx in range(n_trials):
-            if idx < len(trial_success_flags) and trial_success_flags[idx] == 1:
+            if idx < len(trial_success_flags) and trial_success_flags[idx] == 2:
                 successful_indices.append(idx)
             else:
                 failed_indices.append(idx)
@@ -2661,7 +2661,7 @@ def interactive_initial_direction_viewer(trials: list[dict], animal_id: Optional
     plt.show()
 
 # Fixation detection parameters - shared across analysis functions
-FIXATION_MIN_DURATION = 0.5  # seconds
+FIXATION_MIN_DURATION = 0.75  # seconds
 FIXATION_MAX_MOVEMENT = 0.1  # stimulus units
 def interactive_fixation_viewer(trials: list[dict], animal_id: Optional[str] = None,
                                  session_date: str = "", 
