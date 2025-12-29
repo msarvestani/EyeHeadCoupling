@@ -3284,9 +3284,9 @@ def calculate_and_validate_trial_success(trials: list[dict], eot_df: pd.DataFram
     print(f"TRIAL SUCCESS VALIDATION")
     print(f"{'='*80}")
     print(f"Calculating trial success from fixation data and comparing to actual results...")
-    print(f"Success criterion: Fixation ENDS on target, with final on-target period ≥{min_fixation_duration}s")
+    print(f"Success criterion: Fixation (≥{min_fixation_duration}s) that ENDS on target")
     print(f"Fixation detection: frame-to-frame movement < {max_movement} units")
-    print(f"  (Fixation can start off-target, but must end on-target)")
+    print(f"  (If fixation ends on target, count TOTAL fixation duration)")
     print()
 
     def detect_fixations(eye_x, eye_y, eye_times):
@@ -3443,20 +3443,20 @@ def calculate_and_validate_trial_success(trials: list[dict], eot_df: pd.DataFram
             within_target = fix_distances <= contact_threshold
 
             # NEW APPROACH: Check if fixation ENDS on target
-            # If yes, find the final continuous on-target period
-            on_target_duration = 0.0
-            if within_target[-1]:  # Last point is on target
+            # If yes, use the TOTAL fixation duration (not just the on-target portion)
+            ends_on_target = within_target[-1]
+
+            # Also calculate the final on-target portion for diagnostic purposes
+            final_on_target_duration = 0.0
+            if ends_on_target:
                 # Find the start of the final continuous on-target period
-                # Work backwards from the end to find where it started
                 final_period_start = len(within_target) - 1
                 for i in range(len(within_target) - 2, -1, -1):
                     if within_target[i]:
                         final_period_start = i
                     else:
-                        break  # Found the start of the final on-target period
-
-                # Calculate duration of final on-target period
-                on_target_duration = fix_times[-1] - fix_times[final_period_start]
+                        break
+                final_on_target_duration = fix_times[-1] - fix_times[final_period_start]
 
             # OLD APPROACH: all points within target (for comparison)
             all_points_within_target = np.all(within_target)
@@ -3475,15 +3475,16 @@ def calculate_and_validate_trial_success(trials: list[dict], eot_df: pd.DataFram
                 pct_within = 100 * np.mean(within_target)
                 print(f"      Fix {fix_idx+1}: {duration:.3f}s total, span={span:.4f}")
                 print(f"              from t={fix_times[0]:.2f}s to t={fix_times[-1]:.2f}s")
-                print(f"              NEW: ends_on_target={within_target[-1]}, final_on_target_duration={on_target_duration:.3f}s")
-                print(f"              OLD: all_on_target={all_points_within_target}, {pct_within:.0f}% within")
+                print(f"              NEW: ends_on_target={ends_on_target}, will_count_as={duration if ends_on_target else 0:.3f}s")
+                print(f"              (final_on_target_portion={final_on_target_duration:.3f}s, {pct_within:.0f}% within)")
+                print(f"              OLD: all_on_target={all_points_within_target}")
 
-            # NEW: Track fixations that end on target
-            if on_target_duration > 0:
-                on_target_fixations.append((start_idx, end_idx, on_target_duration, span))
-                if on_target_duration > max_fixation_duration:
-                    max_fixation_duration = on_target_duration
-                    max_fixation_info = f"{on_target_duration:.3f}s on-target (ends at t={fix_times[-1]:.2f}s)"
+            # NEW: Track fixations that end on target, using TOTAL duration
+            if ends_on_target:
+                on_target_fixations.append((start_idx, end_idx, duration, span))
+                if duration > max_fixation_duration:
+                    max_fixation_duration = duration
+                    max_fixation_info = f"{duration:.3f}s total fixation (ends on target at t={fix_times[-1]:.2f}s)"
 
             # Track alternatives
             if center_on_target and duration > max_fixation_duration_center:
