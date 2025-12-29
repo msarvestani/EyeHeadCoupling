@@ -3248,18 +3248,20 @@ def save_detailed_fixation_data(trials: list[dict], results_dir: Optional[Path] 
 
 
 def calculate_and_validate_trial_success(trials: list[dict], eot_df: pd.DataFrame,
-                                         min_fixation_duration: float = 0.65) -> pd.DataFrame:
+                                         min_fixation_duration: float = 0.65,
+                                         max_movement: float = 0.1) -> pd.DataFrame:
     """Calculate trial success from fixation data and compare to actual trial success.
 
     For each trial, this function:
-    1. Calculates whether the animal successfully fixated on target for required duration
-    2. Compares this calculated success to the actual trial_success from task
-    3. Reports any discrepancies
+    1. Detects fixations using frame-to-frame movement threshold (same as interactive viewer)
+    2. Checks which fixations are within the target contact threshold
+    3. Determines if any on-target fixation meets the minimum duration requirement
+    4. Compares to actual trial_success from task
 
     Success criteria:
-    - Eye position must stay within contact_threshold (target_radius + cursor_radius)
-      for at least min_fixation_duration seconds (default: 0.65s)
-    - If eye position leaves the target area, the continuous fixation period ends
+    - Fixation detected when consecutive frame-to-frame movements < max_movement
+    - Fixation must have all points within contact_threshold (target_radius + cursor_radius)
+    - Fixation duration must be >= min_fixation_duration (default: 0.65s)
 
     Parameters
     ----------
@@ -3269,6 +3271,8 @@ def calculate_and_validate_trial_success(trials: list[dict], eot_df: pd.DataFram
         End-of-trial dataframe with actual trial_success column (2=success, !=2=failed)
     min_fixation_duration : float
         Minimum fixation duration required for success (default: 0.65 seconds)
+    max_movement : float
+        Maximum frame-to-frame movement for fixation detection (default: 0.1 units)
 
     Returns
     -------
@@ -3280,8 +3284,60 @@ def calculate_and_validate_trial_success(trials: list[dict], eot_df: pd.DataFram
     print(f"TRIAL SUCCESS VALIDATION")
     print(f"{'='*80}")
     print(f"Calculating trial success from fixation data and comparing to actual results...")
-    print(f"Success criterion: Eye within target for ≥{min_fixation_duration}s")
+    print(f"Success criterion: Fixation on target for ≥{min_fixation_duration}s")
+    print(f"Fixation detection: frame-to-frame movement < {max_movement} units")
     print()
+
+    def detect_fixations(eye_x, eye_y, eye_times):
+        """Detect fixation windows based on frame-to-frame movement velocity.
+
+        Same algorithm as interactive_fixation_viewer.
+
+        Returns list of tuples: (start_idx, end_idx, duration, span)
+        """
+        if len(eye_x) < 2:
+            return []
+
+        n = len(eye_x)
+        fixations = []
+
+        i = 0
+        while i < n:
+            # Try to extend a fixation starting at point i
+            j = i + 1
+
+            # Extend while frame-to-frame movement is below threshold
+            while j < n:
+                # Calculate movement from point j-1 to point j
+                dx = eye_x[j] - eye_x[j-1]
+                dy = eye_y[j] - eye_y[j-1]
+                movement = np.sqrt(dx**2 + dy**2)
+
+                if movement < max_movement:
+                    j += 1  # Include point j in the fixation
+                else:
+                    break  # Movement too large, stop before point j
+
+            # Now we have a potential fixation from index i to j (exclusive end)
+            # This includes points [i, i+1, ..., j-1]
+
+            if j > i + 1:  # At least 2 points
+                duration = eye_times[j-1] - eye_times[i]
+                if duration >= min_fixation_duration:
+                    # Valid fixation! Calculate span for informational purposes
+                    fix_x = eye_x[i:j]
+                    fix_y = eye_y[i:j]
+                    x_range = np.max(fix_x) - np.min(fix_x)
+                    y_range = np.max(fix_y) - np.min(fix_y)
+                    span = np.sqrt(x_range**2 + y_range**2)
+                    fixations.append((i, j, duration, span))
+                    i = j  # Start next search after this fixation
+                else:
+                    i += 1  # Duration too short, try next starting point
+            else:
+                i += 1  # No valid extension, try next starting point
+
+        return fixations
 
     results = []
 
@@ -3314,7 +3370,13 @@ def calculate_and_validate_trial_success(trials: list[dict], eot_df: pd.DataFram
                 'calculated_success': None,
                 'match': None,
                 'max_fixation_duration': 0.0,
-                'explanation': 'No eye data'
+                'max_fixation_info': '',
+                'explanation': 'No eye data',
+                'target_x': trial.get('target_x', np.nan),
+                'target_y': trial.get('target_y', np.nan),
+                'contact_threshold': np.nan,
+                'num_fixations_detected': 0,
+                'num_on_target_fixations': 0,
             })
             continue
 
@@ -3331,7 +3393,13 @@ def calculate_and_validate_trial_success(trials: list[dict], eot_df: pd.DataFram
                 'calculated_success': None,
                 'match': None,
                 'max_fixation_duration': 0.0,
-                'explanation': 'Empty eye trajectory'
+                'max_fixation_info': '',
+                'explanation': 'Empty eye trajectory',
+                'target_x': trial.get('target_x', np.nan),
+                'target_y': trial.get('target_y', np.nan),
+                'contact_threshold': np.nan,
+                'num_fixations_detected': 0,
+                'num_on_target_fixations': 0,
             })
             continue
 
@@ -3347,49 +3415,43 @@ def calculate_and_validate_trial_success(trials: list[dict], eot_df: pd.DataFram
             print(f"    contact_threshold={contact_threshold:.4f}")
             print(f"    eye_trajectory: {len(eye_x)} samples, times: {eye_times[0]:.2f}s to {eye_times[-1]:.2f}s")
 
-        # Calculate distance from target for all eye positions
-        distances = np.sqrt((eye_x - target_x)**2 + (eye_y - target_y)**2)
-        within_target = distances <= contact_threshold
+        # Step 1: Detect all fixations using frame-to-frame movement
+        fixations = detect_fixations(eye_x, eye_y, eye_times)
 
         if debug_this_trial:
-            n_within = np.sum(within_target)
-            print(f"    {n_within}/{len(within_target)} samples within target ({100*n_within/len(within_target):.1f}%)")
-            if n_within > 0:
-                min_dist = distances.min()
-                print(f"    min distance to target: {min_dist:.4f}")
+            print(f"    Detected {len(fixations)} fixations (movement-based):")
 
-        # Find continuous periods where eye is within target
-        # A continuous period means all consecutive frames are within target
+        # Step 2: For each fixation, check if it's on target
         max_fixation_duration = 0.0
         max_fixation_info = ""
+        on_target_fixations = []
 
-        if np.any(within_target):
-            # Find start and end of each continuous period
-            # Add sentinels to detect boundaries
-            padded = np.concatenate(([False], within_target, [False]))
-            diff = np.diff(padded.astype(int))
-            starts = np.where(diff == 1)[0]  # Where it changes from False to True
-            ends = np.where(diff == -1)[0]   # Where it changes from True to False
+        for fix_idx, (start_idx, end_idx, duration, span) in enumerate(fixations):
+            # Get eye positions for this fixation
+            fix_x = eye_x[start_idx:end_idx]
+            fix_y = eye_y[start_idx:end_idx]
+            fix_times = eye_times[start_idx:end_idx]
 
-            if debug_this_trial:
-                print(f"    Found {len(starts)} continuous fixation periods:")
+            # Calculate distances from target for all points in fixation
+            fix_distances = np.sqrt((fix_x - target_x)**2 + (fix_y - target_y)**2)
+            all_points_within_target = np.all(fix_distances <= contact_threshold)
 
-            for period_idx, (start_idx, end_idx) in enumerate(zip(starts, ends)):
-                # Duration of this continuous fixation period
-                duration = eye_times[end_idx - 1] - eye_times[start_idx]
+            if debug_this_trial and fix_idx < 3:  # Show first 3 fixations
+                print(f"      Fix {fix_idx+1}: {duration:.3f}s, span={span:.4f}, on_target={all_points_within_target}")
+                print(f"              from t={fix_times[0]:.2f}s to t={fix_times[-1]:.2f}s")
 
-                if debug_this_trial and period_idx < 3:  # Show first 3 periods
-                    print(f"      Period {period_idx+1}: {duration:.3f}s (from t={eye_times[start_idx]:.2f}s to t={eye_times[end_idx-1]:.2f}s)")
-
+            if all_points_within_target:
+                on_target_fixations.append((start_idx, end_idx, duration, span))
                 if duration > max_fixation_duration:
                     max_fixation_duration = duration
-                    max_fixation_info = f"{duration:.3f}s fixation from t={eye_times[start_idx]:.2f}s to t={eye_times[end_idx-1]:.2f}s"
+                    max_fixation_info = f"{duration:.3f}s fixation from t={fix_times[0]:.2f}s to t={fix_times[-1]:.2f}s"
 
         # Determine calculated success
         calculated_success = (max_fixation_duration >= min_fixation_duration)
 
         if debug_this_trial:
-            print(f"    max_fixation_duration={max_fixation_duration:.3f}s, calculated_success={calculated_success}")
+            print(f"    On-target fixations: {len(on_target_fixations)}/{len(fixations)}")
+            print(f"    max_on_target_fixation={max_fixation_duration:.3f}s, calculated_success={calculated_success}")
 
         # Check if it matches actual success
         if actual_success is None:
@@ -3417,6 +3479,8 @@ def calculate_and_validate_trial_success(trials: list[dict], eot_df: pd.DataFram
             'target_x': target_x,
             'target_y': target_y,
             'contact_threshold': contact_threshold,
+            'num_fixations_detected': len(fixations),
+            'num_on_target_fixations': len(on_target_fixations),
         })
 
     # Create DataFrame
@@ -3460,7 +3524,8 @@ def calculate_and_validate_trial_success(trials: list[dict], eot_df: pd.DataFram
                 print(f"\n  Trial {int(row['trial_number'])}:")
                 print(f"    Actual: {'SUCCESS' if row['actual_success'] else 'FAILED'} (code={row['actual_success_code']})")
                 print(f"    Calculated: {'SUCCESS' if row['calculated_success'] else 'FAILED'}")
-                print(f"    Max fixation duration: {row['max_fixation_duration']:.3f}s (threshold: {min_fixation_duration}s)")
+                print(f"    Fixations detected: {int(row['num_fixations_detected'])} total, {int(row['num_on_target_fixations'])} on target")
+                print(f"    Max on-target fixation: {row['max_fixation_duration']:.3f}s (threshold: {min_fixation_duration}s)")
                 if row['max_fixation_info']:
                     print(f"    {row['max_fixation_info']}")
                 print(f"    Contact threshold: {row['contact_threshold']:.4f}")
