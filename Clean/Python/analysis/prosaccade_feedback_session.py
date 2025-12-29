@@ -3284,8 +3284,9 @@ def calculate_and_validate_trial_success(trials: list[dict], eot_df: pd.DataFram
     print(f"TRIAL SUCCESS VALIDATION")
     print(f"{'='*80}")
     print(f"Calculating trial success from fixation data and comparing to actual results...")
-    print(f"Success criterion: Fixation on target for ≥{min_fixation_duration}s")
+    print(f"Success criterion: Fixation ENDS on target, with final on-target period ≥{min_fixation_duration}s")
     print(f"Fixation detection: frame-to-frame movement < {max_movement} units")
+    print(f"  (Fixation can start off-target, but must end on-target)")
     print()
 
     def detect_fixations(eye_x, eye_y, eye_times):
@@ -3421,10 +3422,13 @@ def calculate_and_validate_trial_success(trials: list[dict], eot_df: pd.DataFram
         if debug_this_trial:
             print(f"    Detected {len(fixations)} fixations (movement-based):")
 
-        # Step 2: For each fixation, check if it's on target
+        # Step 2: For each fixation, check if it ENDS on target
+        # The key insight: a fixation can start off-target, but if it ends on-target,
+        # we calculate the duration from when the eye entered the target until the end
         max_fixation_duration = 0.0
         max_fixation_info = ""
         on_target_fixations = []
+        max_fixation_duration_old = 0.0  # Old method: all points within
         max_fixation_duration_center = 0.0  # Alternative: center-based
         max_fixation_duration_majority = 0.0  # Alternative: majority-based
 
@@ -3436,7 +3440,28 @@ def calculate_and_validate_trial_success(trials: list[dict], eot_df: pd.DataFram
 
             # Calculate distances from target for all points in fixation
             fix_distances = np.sqrt((fix_x - target_x)**2 + (fix_y - target_y)**2)
-            all_points_within_target = np.all(fix_distances <= contact_threshold)
+            within_target = fix_distances <= contact_threshold
+
+            # NEW APPROACH: Check if fixation ENDS on target
+            # If yes, find the final continuous on-target period
+            on_target_duration = 0.0
+            if within_target[-1]:  # Last point is on target
+                # Find the start of the final continuous on-target period
+                # Work backwards from the end to find where it started
+                final_period_start = len(within_target) - 1
+                for i in range(len(within_target) - 2, -1, -1):
+                    if within_target[i]:
+                        final_period_start = i
+                    else:
+                        break  # Found the start of the final on-target period
+
+                # Calculate duration of final on-target period
+                on_target_duration = fix_times[-1] - fix_times[final_period_start]
+
+            # OLD APPROACH: all points within target (for comparison)
+            all_points_within_target = np.all(within_target)
+            if all_points_within_target and duration > max_fixation_duration_old:
+                max_fixation_duration_old = duration
 
             # Alternative criteria for diagnosis
             center_x = np.mean(fix_x)
@@ -3444,19 +3469,21 @@ def calculate_and_validate_trial_success(trials: list[dict], eot_df: pd.DataFram
             center_distance = np.sqrt((center_x - target_x)**2 + (center_y - target_y)**2)
             center_on_target = center_distance <= contact_threshold
 
-            majority_within = np.mean(fix_distances <= contact_threshold) >= 0.5
+            majority_within = np.mean(within_target) >= 0.5
 
             if debug_this_trial and fix_idx < 3:  # Show first 3 fixations
-                pct_within = 100 * np.mean(fix_distances <= contact_threshold)
-                print(f"      Fix {fix_idx+1}: {duration:.3f}s, span={span:.4f}")
+                pct_within = 100 * np.mean(within_target)
+                print(f"      Fix {fix_idx+1}: {duration:.3f}s total, span={span:.4f}")
                 print(f"              from t={fix_times[0]:.2f}s to t={fix_times[-1]:.2f}s")
-                print(f"              all_on_target={all_points_within_target}, center_on_target={center_on_target}, {pct_within:.0f}% within")
+                print(f"              NEW: ends_on_target={within_target[-1]}, final_on_target_duration={on_target_duration:.3f}s")
+                print(f"              OLD: all_on_target={all_points_within_target}, {pct_within:.0f}% within")
 
-            if all_points_within_target:
-                on_target_fixations.append((start_idx, end_idx, duration, span))
-                if duration > max_fixation_duration:
-                    max_fixation_duration = duration
-                    max_fixation_info = f"{duration:.3f}s fixation from t={fix_times[0]:.2f}s to t={fix_times[-1]:.2f}s"
+            # NEW: Track fixations that end on target
+            if on_target_duration > 0:
+                on_target_fixations.append((start_idx, end_idx, on_target_duration, span))
+                if on_target_duration > max_fixation_duration:
+                    max_fixation_duration = on_target_duration
+                    max_fixation_info = f"{on_target_duration:.3f}s on-target (ends at t={fix_times[-1]:.2f}s)"
 
             # Track alternatives
             if center_on_target and duration > max_fixation_duration_center:
@@ -3464,17 +3491,19 @@ def calculate_and_validate_trial_success(trials: list[dict], eot_df: pd.DataFram
             if majority_within and duration > max_fixation_duration_majority:
                 max_fixation_duration_majority = duration
 
-        # Determine calculated success (primary criterion: all points within)
+        # Determine calculated success using NEW method (fixation ends on target)
         calculated_success = (max_fixation_duration >= min_fixation_duration)
 
         # Alternative success criteria for diagnosis
+        calculated_success_old = (max_fixation_duration_old >= min_fixation_duration)  # Old: all points
         calculated_success_strict = (max_fixation_duration > min_fixation_duration)  # > instead of >=
         calculated_success_center = (max_fixation_duration_center >= min_fixation_duration)
         calculated_success_majority = (max_fixation_duration_majority >= min_fixation_duration)
 
         if debug_this_trial:
             print(f"    On-target fixations: {len(on_target_fixations)}/{len(fixations)}")
-            print(f"    max_on_target_fixation={max_fixation_duration:.3f}s, calculated_success={calculated_success}")
+            print(f"    NEW METHOD: max_on_target={max_fixation_duration:.3f}s, success={calculated_success}")
+            print(f"    OLD METHOD: max_on_target={max_fixation_duration_old:.3f}s, success={calculated_success_old}")
             print(f"    Alternative criteria:")
             print(f"      Strict (> 0.65): success={calculated_success_strict}")
             print(f"      Center-based: max={max_fixation_duration_center:.3f}s, success={calculated_success_center}")
