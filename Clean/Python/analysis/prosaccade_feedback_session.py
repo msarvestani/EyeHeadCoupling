@@ -929,7 +929,8 @@ def plot_time_to_target(trials: list[dict], results_dir: Optional[Path] = None,
 
 
 def plot_trial_success(eot_df: pd.DataFrame, results_dir: Optional[Path] = None,
-                       animal_id: Optional[str] = None, session_date: str = "") -> plt.Figure:
+                       animal_id: Optional[str] = None, session_date: str = "",
+                       chance_results: Optional[dict] = None) -> plt.Figure:
     """Plot trial success vs failure summary, independent of --include-failed-trials flag.
 
     Creates a figure with:
@@ -947,6 +948,8 @@ def plot_trial_success(eot_df: pd.DataFrame, results_dir: Optional[Path] = None,
         Animal identifier for filename
     session_date : str, optional
         Session date for title
+    chance_results : dict, optional
+        Results from calculate_chance_performance() to add chance level to plot
 
     Returns
     -------
@@ -997,6 +1000,24 @@ def plot_trial_success(eot_df: pd.DataFrame, results_dir: Optional[Path] = None,
     ax1.set_ylim(0, max(counts) * 1.2)  # Leave room for labels
     ax1.grid(True, alpha=0.3, axis='y')
 
+    # Add chance level annotation if provided
+    if chance_results is not None:
+        chance_pct = 100 * chance_results['mean_success_rate']
+        ci_95_pct = 100 * chance_results['ci_95']
+        actual_pct = pct_success
+        # Add text box showing chance level and comparison
+        textstr = f'Chance level: {chance_pct:.1f}% (95% CI: {ci_95_pct[0]:.1f}%-{ci_95_pct[1]:.1f}%)'
+        if actual_pct > ci_95_pct[1]:
+            sig_str = '***' if actual_pct > 100 * chance_results['ci_99'][1] else '**'
+            textstr += f'\nActual: {actual_pct:.1f}% {sig_str} ABOVE CHANCE'
+        elif actual_pct < ci_95_pct[0]:
+            textstr += f'\nActual: {actual_pct:.1f}% (below chance)'
+        else:
+            textstr += f'\nActual: {actual_pct:.1f}% (within chance range)'
+        ax1.text(0.98, 0.98, textstr, transform=ax1.transAxes,
+                fontsize=10, verticalalignment='top', horizontalalignment='right',
+                bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+
     # --- Bottom plot: Time-series of trial success/failure ---
     # Plot each trial as a colored point/bar
     success_trials = trial_numbers[is_success]
@@ -1025,9 +1046,21 @@ def plot_trial_success(eot_df: pd.DataFrame, results_dir: Optional[Path] = None,
     running_success = np.cumsum(is_success) / trial_numbers * 100
     ax2_twin.plot(trial_numbers, running_success, 'b-', linewidth=2, alpha=0.7,
                   label='Running success rate')
+
+    # Add chance level line if provided
+    if chance_results is not None:
+        chance_pct = 100 * chance_results['mean_success_rate']
+        ci_95_pct = 100 * chance_results['ci_95']
+        ax2_twin.axhline(chance_pct, color='orange', linestyle='--', linewidth=2,
+                        alpha=0.8, label=f'Chance level ({chance_pct:.1f}%)')
+        # Add shaded region for 95% CI
+        ax2_twin.axhspan(ci_95_pct[0], ci_95_pct[1], color='orange', alpha=0.15,
+                        label=f'Chance 95% CI')
+
     ax2_twin.set_ylabel('Running Success Rate (%)', fontsize=11, color='blue')
     ax2_twin.tick_params(axis='y', labelcolor='blue')
     ax2_twin.set_ylim(0, 105)
+    ax2_twin.legend(loc='upper right', fontsize=9)
 
     ax2.set_xlabel('Trial Number', fontsize=12)
     ax2.set_ylabel('Trial Outcome', fontsize=12)
@@ -5216,7 +5249,7 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
 
     # Plot trial success summary (uses ALL trials, independent of --include-failed-trials flag)
     print("\nGenerating trial success summary plot...")
-    fig_success = plot_trial_success(eot_df, results_dir, animal_id, date_str)
+    fig_success = plot_trial_success(eot_df, results_dir, animal_id, date_str, chance_results=chance_results)
     if fig_success is not None:
         if show_plots:
             plt.show()
@@ -5508,7 +5541,7 @@ def main(session_id: str, trial_min_duration: float = 0.01, trial_max_duration: 
 
     # Plot trial success summary (uses ALL trials, independent of --include-failed-trials flag)
     print("\nGenerating trial success summary plot...")
-    fig_success = plot_trial_success(eot_df, results_dir, animal_id, date_str)
+    fig_success = plot_trial_success(eot_df, results_dir, animal_id, date_str, chance_results=chance_results)
     if fig_success is not None:
         plt.show()
         plt.close(fig_success)
