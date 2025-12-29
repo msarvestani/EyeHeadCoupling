@@ -3597,6 +3597,219 @@ def calculate_and_validate_trial_success(trials: list[dict], eot_df: pd.DataFram
     return df
 
 
+def calculate_chance_performance(trials: list[dict], eot_df: pd.DataFrame,
+                                min_fixation_duration: float = 0.65,
+                                max_movement: float = 0.1,
+                                n_shuffles: int = 1000,
+                                min_shift_seconds: float = 3.0,
+                                random_seed: Optional[int] = None) -> dict:
+    """Calculate chance-level performance by shuffling trial timing.
+
+    For each trial, circularly shift the eye position time series by a random offset
+    and recompute whether the trial would succeed with that shifted timing.
+
+    Parameters
+    ----------
+    trials : list of dict
+        List of trial data dictionaries
+    eot_df : pd.DataFrame
+        End-of-trial dataframe (not used, for consistency with validation function)
+    min_fixation_duration : float
+        Minimum fixation duration for success (default: 0.65s)
+    max_movement : float
+        Maximum frame-to-frame movement for fixation detection (default: 0.1)
+    n_shuffles : int
+        Number of shuffle iterations (default: 1000)
+    min_shift_seconds : float
+        Minimum shift amount in seconds (default: 3.0s)
+    random_seed : int, optional
+        Random seed for reproducibility
+
+    Returns
+    -------
+    dict
+        Dictionary with keys:
+        - 'n_shuffles': number of shuffles performed
+        - 'shuffled_success_rates': array of success rates for each shuffle
+        - 'mean_success_rate': mean success rate across shuffles
+        - 'ci_95': 95% confidence interval (lower, upper)
+        - 'ci_99': 99% confidence interval (lower, upper)
+        - 'actual_success_rate': actual success rate from task
+    """
+    print(f"\n{'='*80}")
+    print(f"CHANCE PERFORMANCE CALCULATION")
+    print(f"{'='*80}")
+    print(f"Computing shuffled success rate with {n_shuffles} random time shifts...")
+    print(f"Minimum shift: {min_shift_seconds}s")
+    print()
+
+    if random_seed is not None:
+        np.random.seed(random_seed)
+
+    # Helper function to detect fixations (same as in validation)
+    def detect_fixations(eye_x, eye_y, eye_times):
+        if len(eye_x) < 2:
+            return []
+
+        n = len(eye_x)
+        fixations = []
+
+        i = 0
+        while i < n:
+            j = i + 1
+            while j < n:
+                dx = eye_x[j] - eye_x[j-1]
+                dy = eye_y[j] - eye_y[j-1]
+                movement = np.sqrt(dx**2 + dy**2)
+
+                if movement < max_movement:
+                    j += 1
+                else:
+                    break
+
+            if j > i + 1:
+                duration = eye_times[j-1] - eye_times[i]
+                if duration >= min_fixation_duration:
+                    fixations.append((i, j, duration))
+                    i = j
+                else:
+                    i += 1
+            else:
+                i += 1
+
+        return fixations
+
+    # Filter trials with eye data
+    valid_trials = [t for t in trials if t.get('has_eye_data', False) and len(t.get('eye_x', [])) > 0]
+    n_trials = len(valid_trials)
+
+    if n_trials == 0:
+        print("No valid trials with eye data!")
+        return None
+
+    print(f"Valid trials with eye data: {n_trials}")
+
+    # Get actual success rate
+    n_actual_success = sum(1 for t in valid_trials
+                          if t.get('trial_number', 0) <= len(eot_df)
+                          and eot_df.iloc[t['trial_number']-1]['trial_success'] == 2)
+    actual_success_rate = n_actual_success / n_trials
+
+    print(f"Actual success rate: {n_actual_success}/{n_trials} ({100*actual_success_rate:.1f}%)")
+    print()
+
+    # Run shuffles
+    shuffled_success_rates = []
+
+    for shuffle_idx in range(n_shuffles):
+        if (shuffle_idx + 1) % 100 == 0:
+            print(f"  Shuffle {shuffle_idx + 1}/{n_shuffles}...", end='\r')
+
+        n_shuffle_success = 0
+
+        for trial in valid_trials:
+            # Get trial data
+            eye_x = np.array(trial['eye_x'])
+            eye_y = np.array(trial['eye_y'])
+            eye_times = np.array(trial['eye_times'])
+
+            if len(eye_x) < 2:
+                continue
+
+            # Get target info
+            target_x = trial['target_x']
+            target_y = trial['target_y']
+            target_radius = trial['target_diameter'] / 2.0
+            cursor_radius = trial.get('cursor_diameter', 0.2) / 2.0
+            contact_threshold = target_radius + cursor_radius
+
+            # Calculate trial duration
+            trial_duration = eye_times[-1] - eye_times[0]
+
+            # Generate random shift (in seconds)
+            if trial_duration > min_shift_seconds:
+                # Shift by at least min_shift_seconds
+                shift_seconds = np.random.uniform(min_shift_seconds, trial_duration)
+            else:
+                # For short trials, shift by any amount
+                shift_seconds = np.random.uniform(0, trial_duration)
+
+            # Find the index corresponding to this time shift
+            # Circular shift: move data forward in time, wrap around
+            shift_idx = np.searchsorted(eye_times - eye_times[0], shift_seconds)
+
+            # Circularly shift the position arrays
+            eye_x_shifted = np.roll(eye_x, shift_idx)
+            eye_y_shifted = np.roll(eye_y, shift_idx)
+
+            # Detect fixations in shifted data
+            fixations = detect_fixations(eye_x_shifted, eye_y_shifted, eye_times)
+
+            # Check if any fixation ends on target with sufficient duration
+            trial_success = False
+            for start_idx, end_idx, duration in fixations:
+                # Get eye positions for this fixation
+                fix_x = eye_x_shifted[start_idx:end_idx]
+                fix_y = eye_y_shifted[start_idx:end_idx]
+
+                # Calculate distances from target
+                fix_distances = np.sqrt((fix_x - target_x)**2 + (fix_y - target_y)**2)
+
+                # Check if fixation ends on target
+                if fix_distances[-1] <= contact_threshold:
+                    # Success! Fixation ends on target with duration >= min_fixation_duration
+                    trial_success = True
+                    break
+
+            if trial_success:
+                n_shuffle_success += 1
+
+        # Calculate success rate for this shuffle
+        shuffle_success_rate = n_shuffle_success / n_trials
+        shuffled_success_rates.append(shuffle_success_rate)
+
+    print(f"  Shuffle {n_shuffles}/{n_shuffles}... Done!              ")
+
+    # Convert to numpy array
+    shuffled_success_rates = np.array(shuffled_success_rates)
+
+    # Calculate statistics
+    mean_success_rate = np.mean(shuffled_success_rates)
+    ci_95 = np.percentile(shuffled_success_rates, [2.5, 97.5])
+    ci_99 = np.percentile(shuffled_success_rates, [0.5, 99.5])
+
+    print()
+    print(f"Results from {n_shuffles} shuffles:")
+    print(f"-" * 80)
+    print(f"  Chance success rate: {100*mean_success_rate:.2f}%")
+    print(f"  95% CI: [{100*ci_95[0]:.2f}%, {100*ci_95[1]:.2f}%]")
+    print(f"  99% CI: [{100*ci_99[0]:.2f}%, {100*ci_99[1]:.2f}%]")
+    print()
+    print(f"  Actual success rate: {100*actual_success_rate:.2f}%")
+
+    if actual_success_rate > ci_99[1]:
+        print(f"  *** Actual performance is SIGNIFICANTLY ABOVE CHANCE (p < 0.01) ***")
+    elif actual_success_rate > ci_95[1]:
+        print(f"  ** Actual performance is significantly above chance (p < 0.05) **")
+    elif actual_success_rate < ci_95[0]:
+        print(f"  Actual performance is below chance level")
+    else:
+        print(f"  Actual performance is within chance range")
+
+    print(f"\n{' '*80}")
+
+    return {
+        'n_shuffles': n_shuffles,
+        'shuffled_success_rates': shuffled_success_rates,
+        'mean_success_rate': mean_success_rate,
+        'ci_95': ci_95,
+        'ci_99': ci_99,
+        'actual_success_rate': actual_success_rate,
+        'n_trials': n_trials,
+        'n_actual_success': n_actual_success,
+    }
+
+
 def create_vstim_go_fixation_csv(folder_path: Path, results_dir: Optional[Path] = None,
                                    animal_id: Optional[str] = None, session_date: str = "",
                                    min_duration: float = FIXATION_MIN_DURATION,
@@ -4965,6 +5178,42 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
         validation_df.to_csv(validation_filepath, index=False)
         print(f"Saved validation results to: {validation_filepath}")
 
+    # Calculate chance performance via shuffling
+    chance_results = calculate_chance_performance(trials_all, eot_df, n_shuffles=1000, random_seed=42)
+
+    # Save chance performance results
+    if results_dir is not None and chance_results is not None:
+        chance_filename = f"{animal_id}_{date_str}_chance_performance.csv" if animal_id and date_str else "chance_performance.csv"
+        chance_filepath = results_dir / chance_filename
+        # Save the shuffled success rates as a CSV
+        chance_df = pd.DataFrame({
+            'shuffle_idx': range(chance_results['n_shuffles']),
+            'success_rate': chance_results['shuffled_success_rates']
+        })
+        chance_df.to_csv(chance_filepath, index=False)
+        print(f"Saved chance performance results to: {chance_filepath}")
+
+        # Also save summary statistics
+        summary_filename = f"{animal_id}_{date_str}_chance_summary.txt" if animal_id and date_str else "chance_summary.txt"
+        summary_filepath = results_dir / summary_filename
+        with open(summary_filepath, 'w') as f:
+            f.write(f"Chance Performance Analysis\n")
+            f.write(f"{'='*80}\n\n")
+            f.write(f"Number of shuffles: {chance_results['n_shuffles']}\n")
+            f.write(f"Valid trials: {chance_results['n_trials']}\n")
+            f.write(f"Actual successes: {chance_results['n_actual_success']}\n")
+            f.write(f"Actual success rate: {100*chance_results['actual_success_rate']:.2f}%\n\n")
+            f.write(f"Chance success rate: {100*chance_results['mean_success_rate']:.2f}%\n")
+            f.write(f"95% CI: [{100*chance_results['ci_95'][0]:.2f}%, {100*chance_results['ci_95'][1]:.2f}%]\n")
+            f.write(f"99% CI: [{100*chance_results['ci_99'][0]:.2f}%, {100*chance_results['ci_99'][1]:.2f}%]\n\n")
+            if chance_results['actual_success_rate'] > chance_results['ci_99'][1]:
+                f.write(f"Result: Actual performance is SIGNIFICANTLY ABOVE CHANCE (p < 0.01)\n")
+            elif chance_results['actual_success_rate'] > chance_results['ci_95'][1]:
+                f.write(f"Result: Actual performance is significantly above chance (p < 0.05)\n")
+            else:
+                f.write(f"Result: Actual performance is within chance range\n")
+        print(f"Saved chance summary to: {summary_filepath}")
+
     # Plot trial success summary (uses ALL trials, independent of --include-failed-trials flag)
     print("\nGenerating trial success summary plot...")
     fig_success = plot_trial_success(eot_df, results_dir, animal_id, date_str)
@@ -5220,6 +5469,42 @@ def main(session_id: str, trial_min_duration: float = 0.01, trial_max_duration: 
         validation_filepath = results_dir / validation_filename
         validation_df.to_csv(validation_filepath, index=False)
         print(f"Saved validation results to: {validation_filepath}")
+
+    # Calculate chance performance via shuffling
+    chance_results = calculate_chance_performance(trials_all, eot_df, n_shuffles=1000, random_seed=42)
+
+    # Save chance performance results
+    if results_dir is not None and chance_results is not None:
+        chance_filename = f"{animal_id}_{date_str}_chance_performance.csv" if animal_id and date_str else "chance_performance.csv"
+        chance_filepath = results_dir / chance_filename
+        # Save the shuffled success rates as a CSV
+        chance_df = pd.DataFrame({
+            'shuffle_idx': range(chance_results['n_shuffles']),
+            'success_rate': chance_results['shuffled_success_rates']
+        })
+        chance_df.to_csv(chance_filepath, index=False)
+        print(f"Saved chance performance results to: {chance_filepath}")
+
+        # Also save summary statistics
+        summary_filename = f"{animal_id}_{date_str}_chance_summary.txt" if animal_id and date_str else "chance_summary.txt"
+        summary_filepath = results_dir / summary_filename
+        with open(summary_filepath, 'w') as f:
+            f.write(f"Chance Performance Analysis\n")
+            f.write(f"{'='*80}\n\n")
+            f.write(f"Number of shuffles: {chance_results['n_shuffles']}\n")
+            f.write(f"Valid trials: {chance_results['n_trials']}\n")
+            f.write(f"Actual successes: {chance_results['n_actual_success']}\n")
+            f.write(f"Actual success rate: {100*chance_results['actual_success_rate']:.2f}%\n\n")
+            f.write(f"Chance success rate: {100*chance_results['mean_success_rate']:.2f}%\n")
+            f.write(f"95% CI: [{100*chance_results['ci_95'][0]:.2f}%, {100*chance_results['ci_95'][1]:.2f}%]\n")
+            f.write(f"99% CI: [{100*chance_results['ci_99'][0]:.2f}%, {100*chance_results['ci_99'][1]:.2f}%]\n\n")
+            if chance_results['actual_success_rate'] > chance_results['ci_99'][1]:
+                f.write(f"Result: Actual performance is SIGNIFICANTLY ABOVE CHANCE (p < 0.01)\n")
+            elif chance_results['actual_success_rate'] > chance_results['ci_95'][1]:
+                f.write(f"Result: Actual performance is significantly above chance (p < 0.05)\n")
+            else:
+                f.write(f"Result: Actual performance is within chance range\n")
+        print(f"Saved chance summary to: {summary_filepath}")
 
     # Plot trial success summary (uses ALL trials, independent of --include-failed-trials flag)
     print("\nGenerating trial success summary plot...")
