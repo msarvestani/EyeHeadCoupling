@@ -3285,8 +3285,13 @@ def calculate_and_validate_trial_success(trials: list[dict], eot_df: pd.DataFram
 
     results = []
 
-    for trial in trials:
+    # Debug: Print info about first few trials
+    debug_first_n = 5
+
+    for trial_idx, trial in enumerate(trials):
         trial_num = trial.get('trial_number', -1)
+
+        debug_this_trial = (trial_idx < debug_first_n)
 
         # Get actual trial success from eot_df
         if trial_num <= len(eot_df):
@@ -3295,6 +3300,10 @@ def calculate_and_validate_trial_success(trials: list[dict], eot_df: pd.DataFram
         else:
             actual_success_code = -1
             actual_success = None
+
+        if debug_this_trial:
+            print(f"\n  DEBUG Trial {trial_num}:")
+            print(f"    actual_success_code={actual_success_code}, actual_success={actual_success}")
 
         # Skip trials without eye data
         if not trial.get('has_eye_data', False):
@@ -3333,9 +3342,21 @@ def calculate_and_validate_trial_success(trials: list[dict], eot_df: pd.DataFram
         cursor_radius = trial.get('cursor_diameter', 0.2) / 2.0
         contact_threshold = target_radius + cursor_radius
 
+        if debug_this_trial:
+            print(f"    target=({target_x:.3f}, {target_y:.3f}), target_r={target_radius:.4f}, cursor_r={cursor_radius:.4f}")
+            print(f"    contact_threshold={contact_threshold:.4f}")
+            print(f"    eye_trajectory: {len(eye_x)} samples, times: {eye_times[0]:.2f}s to {eye_times[-1]:.2f}s")
+
         # Calculate distance from target for all eye positions
         distances = np.sqrt((eye_x - target_x)**2 + (eye_y - target_y)**2)
         within_target = distances <= contact_threshold
+
+        if debug_this_trial:
+            n_within = np.sum(within_target)
+            print(f"    {n_within}/{len(within_target)} samples within target ({100*n_within/len(within_target):.1f}%)")
+            if n_within > 0:
+                min_dist = distances.min()
+                print(f"    min distance to target: {min_dist:.4f}")
 
         # Find continuous periods where eye is within target
         # A continuous period means all consecutive frames are within target
@@ -3350,9 +3371,15 @@ def calculate_and_validate_trial_success(trials: list[dict], eot_df: pd.DataFram
             starts = np.where(diff == 1)[0]  # Where it changes from False to True
             ends = np.where(diff == -1)[0]   # Where it changes from True to False
 
-            for start_idx, end_idx in zip(starts, ends):
+            if debug_this_trial:
+                print(f"    Found {len(starts)} continuous fixation periods:")
+
+            for period_idx, (start_idx, end_idx) in enumerate(zip(starts, ends)):
                 # Duration of this continuous fixation period
                 duration = eye_times[end_idx - 1] - eye_times[start_idx]
+
+                if debug_this_trial and period_idx < 3:  # Show first 3 periods
+                    print(f"      Period {period_idx+1}: {duration:.3f}s (from t={eye_times[start_idx]:.2f}s to t={eye_times[end_idx-1]:.2f}s)")
 
                 if duration > max_fixation_duration:
                     max_fixation_duration = duration
@@ -3360,6 +3387,9 @@ def calculate_and_validate_trial_success(trials: list[dict], eot_df: pd.DataFram
 
         # Determine calculated success
         calculated_success = (max_fixation_duration >= min_fixation_duration)
+
+        if debug_this_trial:
+            print(f"    max_fixation_duration={max_fixation_duration:.3f}s, calculated_success={calculated_success}")
 
         # Check if it matches actual success
         if actual_success is None:
@@ -3405,29 +3435,36 @@ def calculate_and_validate_trial_success(trials: list[dict], eot_df: pd.DataFram
         print(f"  Mismatches:  {n_mismatch}/{n_total} ({100*n_mismatch/n_total:.1f}%)")
         print()
 
-        # Show success breakdown
-        n_actual_success = df['actual_success'].sum()
-        n_actual_failed = (~df['actual_success']).sum()
-        n_calc_success = df['calculated_success'].sum()
-        n_calc_failed = (~df['calculated_success']).sum()
+        # Show success breakdown (excluding None values)
+        n_actual_success = df['actual_success'].fillna(False).sum()
+        n_actual_failed = df[df['actual_success'] == False].shape[0]  # Count False values only
+        n_calc_success = df['calculated_success'].fillna(False).sum()
+        n_calc_failed = df[df['calculated_success'] == False].shape[0]  # Count False values only
 
-        print(f"  Actual:      {n_actual_success} success, {n_actual_failed} failed")
-        print(f"  Calculated:  {n_calc_success} success, {n_calc_failed} failed")
+        print(f"  Actual:      {int(n_actual_success)} success, {int(n_actual_failed)} failed")
+        print(f"  Calculated:  {int(n_calc_success)} success, {int(n_calc_failed)} failed")
         print()
 
-        # Show mismatches in detail
+        # Show mismatches in detail (limit to first 10 for readability)
         if n_mismatch > 0:
             print(f"\n{'!'*80}")
-            print(f"MISMATCHES DETECTED ({n_mismatch} trials):")
+            print(f"MISMATCHES DETECTED ({int(n_mismatch)} trials):")
             print(f"{'!'*80}")
             mismatches = df[df['match'] == False].copy()
-            for _, row in mismatches.iterrows():
-                print(f"\n  Trial {row['trial_number']}:")
+
+            # Show first 10 mismatches in detail
+            n_show = min(10, len(mismatches))
+            print(f"\nShowing first {n_show} of {len(mismatches)} mismatches:")
+
+            for idx, (_, row) in enumerate(mismatches.head(n_show).iterrows()):
+                print(f"\n  Trial {int(row['trial_number'])}:")
                 print(f"    Actual: {'SUCCESS' if row['actual_success'] else 'FAILED'} (code={row['actual_success_code']})")
                 print(f"    Calculated: {'SUCCESS' if row['calculated_success'] else 'FAILED'}")
                 print(f"    Max fixation duration: {row['max_fixation_duration']:.3f}s (threshold: {min_fixation_duration}s)")
-                print(f"    {row['max_fixation_info']}")
+                if row['max_fixation_info']:
+                    print(f"    {row['max_fixation_info']}")
                 print(f"    Contact threshold: {row['contact_threshold']:.4f}")
+                print(f"    Target position: ({row['target_x']:.3f}, {row['target_y']:.3f})")
         else:
             print(f"\n{'✓'*80}")
             print(f"ALL TRIALS MATCH! Calculated success matches actual success perfectly.")
