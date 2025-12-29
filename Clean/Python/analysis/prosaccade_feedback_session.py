@@ -3247,6 +3247,197 @@ def save_detailed_fixation_data(trials: list[dict], results_dir: Optional[Path] 
     return df
 
 
+def calculate_and_validate_trial_success(trials: list[dict], eot_df: pd.DataFrame,
+                                         min_fixation_duration: float = 0.65) -> pd.DataFrame:
+    """Calculate trial success from fixation data and compare to actual trial success.
+
+    For each trial, this function:
+    1. Calculates whether the animal successfully fixated on target for required duration
+    2. Compares this calculated success to the actual trial_success from task
+    3. Reports any discrepancies
+
+    Success criteria:
+    - Eye position must stay within contact_threshold (target_radius + cursor_radius)
+      for at least min_fixation_duration seconds (default: 0.65s)
+    - If eye position leaves the target area, the continuous fixation period ends
+
+    Parameters
+    ----------
+    trials : list of dict
+        List of trial data dictionaries with eye position and target information
+    eot_df : pd.DataFrame
+        End-of-trial dataframe with actual trial_success column (2=success, !=2=failed)
+    min_fixation_duration : float
+        Minimum fixation duration required for success (default: 0.65 seconds)
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with columns: trial_number, actual_success, calculated_success,
+        match, max_fixation_duration, explanation
+    """
+    print(f"\n{'='*80}")
+    print(f"TRIAL SUCCESS VALIDATION")
+    print(f"{'='*80}")
+    print(f"Calculating trial success from fixation data and comparing to actual results...")
+    print(f"Success criterion: Eye within target for ≥{min_fixation_duration}s")
+    print()
+
+    results = []
+
+    for trial in trials:
+        trial_num = trial.get('trial_number', -1)
+
+        # Get actual trial success from eot_df
+        if trial_num <= len(eot_df):
+            actual_success_code = eot_df.iloc[trial_num - 1]['trial_success']
+            actual_success = (actual_success_code == 2)  # 2 = success
+        else:
+            actual_success_code = -1
+            actual_success = None
+
+        # Skip trials without eye data
+        if not trial.get('has_eye_data', False):
+            results.append({
+                'trial_number': trial_num,
+                'actual_success': actual_success,
+                'actual_success_code': actual_success_code,
+                'calculated_success': None,
+                'match': None,
+                'max_fixation_duration': 0.0,
+                'explanation': 'No eye data'
+            })
+            continue
+
+        # Extract eye position data
+        eye_x = np.array(trial.get('eye_x', []))
+        eye_y = np.array(trial.get('eye_y', []))
+        eye_times = np.array(trial.get('eye_times', []))
+
+        if len(eye_x) == 0 or len(eye_times) == 0:
+            results.append({
+                'trial_number': trial_num,
+                'actual_success': actual_success,
+                'actual_success_code': actual_success_code,
+                'calculated_success': None,
+                'match': None,
+                'max_fixation_duration': 0.0,
+                'explanation': 'Empty eye trajectory'
+            })
+            continue
+
+        # Get target information
+        target_x = trial['target_x']
+        target_y = trial['target_y']
+        target_radius = trial['target_diameter'] / 2.0
+        cursor_radius = trial.get('cursor_diameter', 0.2) / 2.0
+        contact_threshold = target_radius + cursor_radius
+
+        # Calculate distance from target for all eye positions
+        distances = np.sqrt((eye_x - target_x)**2 + (eye_y - target_y)**2)
+        within_target = distances <= contact_threshold
+
+        # Find continuous periods where eye is within target
+        # A continuous period means all consecutive frames are within target
+        max_fixation_duration = 0.0
+        max_fixation_info = ""
+
+        if np.any(within_target):
+            # Find start and end of each continuous period
+            # Add sentinels to detect boundaries
+            padded = np.concatenate(([False], within_target, [False]))
+            diff = np.diff(padded.astype(int))
+            starts = np.where(diff == 1)[0]  # Where it changes from False to True
+            ends = np.where(diff == -1)[0]   # Where it changes from True to False
+
+            for start_idx, end_idx in zip(starts, ends):
+                # Duration of this continuous fixation period
+                duration = eye_times[end_idx - 1] - eye_times[start_idx]
+
+                if duration > max_fixation_duration:
+                    max_fixation_duration = duration
+                    max_fixation_info = f"{duration:.3f}s fixation from t={eye_times[start_idx]:.2f}s to t={eye_times[end_idx-1]:.2f}s"
+
+        # Determine calculated success
+        calculated_success = (max_fixation_duration >= min_fixation_duration)
+
+        # Check if it matches actual success
+        if actual_success is None:
+            match = None
+            explanation = f"No actual success data; calculated: {calculated_success}"
+        else:
+            match = (calculated_success == actual_success)
+            if match:
+                explanation = f"✓ Match: max_fixation={max_fixation_duration:.3f}s"
+            else:
+                if calculated_success and not actual_success:
+                    explanation = f"✗ MISMATCH: Calculated SUCCESS (fixation={max_fixation_duration:.3f}s) but actual FAILED"
+                else:
+                    explanation = f"✗ MISMATCH: Calculated FAILED (max_fixation={max_fixation_duration:.3f}s) but actual SUCCESS"
+
+        results.append({
+            'trial_number': trial_num,
+            'actual_success': actual_success,
+            'actual_success_code': actual_success_code,
+            'calculated_success': calculated_success,
+            'match': match,
+            'max_fixation_duration': max_fixation_duration,
+            'max_fixation_info': max_fixation_info,
+            'explanation': explanation,
+            'target_x': target_x,
+            'target_y': target_y,
+            'contact_threshold': contact_threshold,
+        })
+
+    # Create DataFrame
+    df = pd.DataFrame(results)
+
+    # Print summary
+    print(f"\nResults for {len(df)} trials:")
+    print(f"-" * 80)
+
+    if df['match'].notna().any():
+        n_match = df['match'].sum()
+        n_total = df['match'].notna().sum()
+        n_mismatch = n_total - n_match
+
+        print(f"  Matches:     {n_match}/{n_total} ({100*n_match/n_total:.1f}%)")
+        print(f"  Mismatches:  {n_mismatch}/{n_total} ({100*n_mismatch/n_total:.1f}%)")
+        print()
+
+        # Show success breakdown
+        n_actual_success = df['actual_success'].sum()
+        n_actual_failed = (~df['actual_success']).sum()
+        n_calc_success = df['calculated_success'].sum()
+        n_calc_failed = (~df['calculated_success']).sum()
+
+        print(f"  Actual:      {n_actual_success} success, {n_actual_failed} failed")
+        print(f"  Calculated:  {n_calc_success} success, {n_calc_failed} failed")
+        print()
+
+        # Show mismatches in detail
+        if n_mismatch > 0:
+            print(f"\n{'!'*80}")
+            print(f"MISMATCHES DETECTED ({n_mismatch} trials):")
+            print(f"{'!'*80}")
+            mismatches = df[df['match'] == False].copy()
+            for _, row in mismatches.iterrows():
+                print(f"\n  Trial {row['trial_number']}:")
+                print(f"    Actual: {'SUCCESS' if row['actual_success'] else 'FAILED'} (code={row['actual_success_code']})")
+                print(f"    Calculated: {'SUCCESS' if row['calculated_success'] else 'FAILED'}")
+                print(f"    Max fixation duration: {row['max_fixation_duration']:.3f}s (threshold: {min_fixation_duration}s)")
+                print(f"    {row['max_fixation_info']}")
+                print(f"    Contact threshold: {row['contact_threshold']:.4f}")
+        else:
+            print(f"\n{'✓'*80}")
+            print(f"ALL TRIALS MATCH! Calculated success matches actual success perfectly.")
+            print(f"{'✓'*80}")
+
+    print(f"\n{' '*80}")
+
+    return df
+
+
 def create_vstim_go_fixation_csv(folder_path: Path, results_dir: Optional[Path] = None,
                                    animal_id: Optional[str] = None, session_date: str = "",
                                    min_duration: float = FIXATION_MIN_DURATION,
@@ -4605,6 +4796,16 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
         print("No valid trials found, exiting")
         return pd.DataFrame()
 
+    # Validate trial success calculation from fixation data
+    validation_df = calculate_and_validate_trial_success(trials_all, eot_df, min_fixation_duration=0.65)
+
+    # Save validation results to CSV
+    if results_dir is not None:
+        validation_filename = f"{animal_id}_{date_str}_trial_success_validation.csv" if animal_id and date_str else "trial_success_validation.csv"
+        validation_filepath = results_dir / validation_filename
+        validation_df.to_csv(validation_filepath, index=False)
+        print(f"Saved validation results to: {validation_filepath}")
+
     # Plot trial success summary (uses ALL trials, independent of --include-failed-trials flag)
     print("\nGenerating trial success summary plot...")
     fig_success = plot_trial_success(eot_df, results_dir, animal_id, date_str)
@@ -4850,6 +5051,16 @@ def main(session_id: str, trial_min_duration: float = 0.01, trial_max_duration: 
     if len(trials_for_analysis) == 0:
         print("No valid trials found, exiting")
         return pd.DataFrame()
+
+    # Validate trial success calculation from fixation data
+    validation_df = calculate_and_validate_trial_success(trials_all, eot_df, min_fixation_duration=0.65)
+
+    # Save validation results to CSV
+    if results_dir is not None:
+        validation_filename = f"{animal_id}_{date_str}_trial_success_validation.csv" if animal_id and date_str else "trial_success_validation.csv"
+        validation_filepath = results_dir / validation_filename
+        validation_df.to_csv(validation_filepath, index=False)
+        print(f"Saved validation results to: {validation_filepath}")
 
     # Plot trial success summary (uses ALL trials, independent of --include-failed-trials flag)
     print("\nGenerating trial success summary plot...")
