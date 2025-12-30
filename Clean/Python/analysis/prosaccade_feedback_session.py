@@ -1058,7 +1058,8 @@ def calculate_trial_success_from_fixations(eye_x: np.ndarray, eye_y: np.ndarray,
 def calculate_chance_level(trials: list[dict], n_shuffles: int = 10000,
                            target_filter: Optional[callable] = None,
                            min_fixation_duration: float = 0.65,
-                           max_movement: float = 0.1) -> float:
+                           max_movement: float = 0.1,
+                           results_dir: Optional[Path] = None) -> float:
     """Calculate chance level success rate by shuffling target positions.
 
     Shuffles target positions randomly across trials and calculates what the
@@ -1153,62 +1154,70 @@ def calculate_chance_level(trials: list[dict], n_shuffles: int = 10000,
     n_valid = len(valid_trials)
     success_rates = []
 
-    # Open CSV file for writing trial data
-    csv_path = Path('chance_level_trials.csv')
-    with open(csv_path, 'w', newline='') as csvfile:
+    # Only write CSV for all trials (no filter applied)
+    write_csv = (target_filter is None and results_dir is not None)
+    csv_writer = None
+    csvfile = None
+
+    if write_csv:
+        csv_path = results_dir / 'chance_level_trials.csv'
+        csvfile = open(csv_path, 'w', newline='')
         csv_writer = csv.writer(csvfile)
         csv_writer.writerow(['trial_number', 'fixation_ended_on', 'actual_target', 'shuffled_target'])
 
-        for shuffle_idx in range(n_shuffles):
-            # Shuffle among ALL unique target positions, not just filtered ones
-            # Sample WITH replacement to match number of trials
-            random_indices = np.random.choice(n_unique_positions, size=n_valid, replace=True)
-            shuffled_targets = shuffle_pool_positions[random_indices]
-            shuffled_target_diameters = shuffle_pool_diameters[random_indices]
+    for shuffle_idx in range(n_shuffles):
+        # Shuffle among ALL unique target positions, not just filtered ones
+        # Sample WITH replacement to match number of trials
+        random_indices = np.random.choice(n_unique_positions, size=n_valid, replace=True)
+        shuffled_targets = shuffle_pool_positions[random_indices]
+        shuffled_target_diameters = shuffle_pool_diameters[random_indices]
 
-            # Calculate success for this shuffle
-            n_success = 0
-            for i in range(n_valid):
-                eye_x = valid_trials[i]['eye_x']
-                eye_y = valid_trials[i]['eye_y']
-                eye_times = valid_trials[i]['eye_times']
+        # Calculate success for this shuffle
+        n_success = 0
+        for i in range(n_valid):
+            eye_x = valid_trials[i]['eye_x']
+            eye_y = valid_trials[i]['eye_y']
+            eye_times = valid_trials[i]['eye_times']
 
-                # Get shuffled target for this trial
-                target_x, target_y = shuffled_targets[i]
-                target_radius = shuffled_target_diameters[i] / 2.0
-                cursor_radius = valid_trials[i]['cursor_diameter'] / 2.0
-                contact_threshold = target_radius + cursor_radius
+            # Get shuffled target for this trial
+            target_x, target_y = shuffled_targets[i]
+            target_radius = shuffled_target_diameters[i] / 2.0
+            cursor_radius = valid_trials[i]['cursor_diameter'] / 2.0
+            contact_threshold = target_radius + cursor_radius
 
-                # Use shared helper to determine trial success
-                success, _ = calculate_trial_success_from_fixations(
-                    eye_x, eye_y, eye_times,
-                    target_x, target_y, contact_threshold,
-                    min_fixation_duration, max_movement
-                )
+            # Use shared helper to determine trial success
+            success, _ = calculate_trial_success_from_fixations(
+                eye_x, eye_y, eye_times,
+                target_x, target_y, contact_threshold,
+                min_fixation_duration, max_movement
+            )
 
-                if success:
-                    n_success += 1
+            if success:
+                n_success += 1
 
-                # Only write to CSV for the first shuffle
-                if shuffle_idx == 0:
-                    # Determine where fixation ended (left or right)
-                    # Use the last eye position as fixation end point
-                    fixation_x = eye_x[-1]
-                    fixation_side = 'left' if fixation_x < 0 else 'right'
+            # Only write to CSV for the first shuffle and when enabled
+            if write_csv and shuffle_idx == 0:
+                # Determine where fixation ended (left or right)
+                # Use the last eye position as fixation end point
+                fixation_x = eye_x[-1]
+                fixation_side = 'left' if fixation_x < 0 else 'right'
 
-                    # Determine actual target side
-                    actual_target_x = valid_trials[i]['target_x']
-                    actual_target_side = 'left' if actual_target_x < 0 else 'right'
+                # Determine actual target side
+                actual_target_x = valid_trials[i]['target_x']
+                actual_target_side = 'left' if actual_target_x < 0 else 'right'
 
-                    # Determine shuffled target side
-                    shuffled_target_side = 'left' if target_x < 0 else 'right'
+                # Determine shuffled target side
+                shuffled_target_side = 'left' if target_x < 0 else 'right'
 
-                    # Write trial data
-                    csv_writer.writerow([i + 1, fixation_side, actual_target_side, shuffled_target_side])
+                # Write trial data
+                csv_writer.writerow([i + 1, fixation_side, actual_target_side, shuffled_target_side])
 
-            # Calculate success rate for this shuffle
-            success_rate = n_success / n_valid if n_valid > 0 else 0.0
-            success_rates.append(success_rate)
+        # Calculate success rate for this shuffle
+        success_rate = n_success / n_valid if n_valid > 0 else 0.0
+        success_rates.append(success_rate)
+
+    if csvfile:
+        csvfile.close()
 
     # Return average success rate across all shuffles
     return np.mean(success_rates)
@@ -1260,7 +1269,7 @@ def plot_trial_success(eot_df: pd.DataFrame, results_dir: Optional[Path] = None,
     chance_level = None
     if trials is not None and len(trials) > 0:
         print("  Calculating chance level (1000 shuffles)...")
-        chance_level = calculate_chance_level(trials, n_shuffles=1000)
+        chance_level = calculate_chance_level(trials, n_shuffles=1000, results_dir=results_dir)
         print(f"  Chance level: {100*chance_level:.1f}%")
 
     # Create figure with 2 subplots
@@ -1886,12 +1895,14 @@ def compare_left_right_performance(trials: list[dict], left_x: float = -0.7, rig
     # Calculate chance levels for left and right separately
     print("  Calculating chance level for left targets (1000 shuffles)...")
     left_chance = calculate_chance_level(trials, n_shuffles=1000,
-                                         target_filter=lambda t: abs(t['target_x'] - left_x) < tolerance)
+                                         target_filter=lambda t: abs(t['target_x'] - left_x) < tolerance,
+                                         results_dir=results_dir)
     print(f"  Left chance level: {100*left_chance:.1f}%")
 
     print("  Calculating chance level for right targets (1000 shuffles)...")
     right_chance = calculate_chance_level(trials, n_shuffles=1000,
-                                          target_filter=lambda t: abs(t['target_x'] - right_x) < tolerance)
+                                          target_filter=lambda t: abs(t['target_x'] - right_x) < tolerance,
+                                          results_dir=results_dir)
     print(f"  Right chance level: {100*right_chance:.1f}%")
 
     # Create comparison plot
