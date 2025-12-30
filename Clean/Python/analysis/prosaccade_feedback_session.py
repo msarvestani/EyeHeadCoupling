@@ -3790,20 +3790,30 @@ def calculate_chance_performance(trials: list[dict], eye_df: pd.DataFrame,
         # Detect fixations
         fixations = detect_fixations(eye_x, eye_y, eye_times)
 
-        # Check if any fixation ends on target
+        # Apply trial rules: first fixation >= min_duration determines outcome
+        # - If it ends ON target → success
+        # - If it ends OFF target → failure (trial would have ended)
+        # - Fixations < min_duration are ignored (don't end trial)
         period_success = False
         for start_idx, end_idx, duration in fixations:
-            # Get eye positions for this fixation
-            fix_x = eye_x[start_idx:end_idx]
-            fix_y = eye_y[start_idx:end_idx]
+            # Only fixations >= min_duration matter (shorter ones don't end trial)
+            if duration >= min_fixation_duration:
+                # Get eye positions for this fixation
+                fix_x = eye_x[start_idx:end_idx]
+                fix_y = eye_y[start_idx:end_idx]
 
-            # Calculate distances from target
-            fix_distances = np.sqrt((fix_x - target_x)**2 + (fix_y - target_y)**2)
+                # Calculate distances from target
+                fix_distances = np.sqrt((fix_x - target_x)**2 + (fix_y - target_y)**2)
 
-            # Check if fixation ends on target
-            if fix_distances[-1] <= contact_threshold:
-                # Success! Fixation ends on target with duration >= min_fixation_duration
-                period_success = True
+                # Check if fixation ends on target
+                if fix_distances[-1] <= contact_threshold:
+                    # Success! Fixation ends on target
+                    period_success = True
+                else:
+                    # Failure! Fixation ends off target - trial would have ended
+                    period_success = False
+
+                # First qualifying fixation determines outcome - stop here
                 break
 
         success_per_period.append(1 if period_success else 0)
