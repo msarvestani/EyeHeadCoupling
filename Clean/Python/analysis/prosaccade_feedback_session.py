@@ -1058,6 +1058,11 @@ def calculate_chance_level(trials: list[dict], n_shuffles: int = 10000,
     success rate would be if targets were at those shuffled positions, using
     the actual fixation-based success criterion.
 
+    For subset analysis (e.g., left targets only):
+    - Filters trials to get specific eye trajectories (e.g., from left-target trials)
+    - But shuffles among ALL target positions from the full dataset
+    - This asks: "For these specific trials, what if targets were randomly placed anywhere?"
+
     Success criterion (same as actual trials):
     - Detects fixations when frame-to-frame movement < max_movement
     - A fixation counts if it ENDS on the shuffled target
@@ -1070,7 +1075,8 @@ def calculate_chance_level(trials: list[dict], n_shuffles: int = 10000,
     n_shuffles : int
         Number of random shuffles to perform (default: 10000)
     target_filter : callable, optional
-        Optional function to filter which trials to include (e.g., left vs right)
+        Optional function to filter which trials' eye trajectories to use.
+        Note: Shuffles among ALL target positions regardless of filter.
     min_fixation_duration : float
         Minimum fixation duration required for success (default: 0.65 seconds)
     max_movement : float
@@ -1084,49 +1090,66 @@ def calculate_chance_level(trials: list[dict], n_shuffles: int = 10000,
     if not trials or len(trials) == 0:
         return 0.0
 
-    # Apply filter if provided
+    # IMPORTANT: Extract ALL target positions BEFORE filtering
+    # This ensures we shuffle among all possible positions, not just the filtered subset
+    all_target_positions = np.array([(t['target_x'], t['target_y']) for t in trials])
+    all_target_diameters = np.array([t['target_diameter'] for t in trials])
+    all_cursor_diameters = np.array([t.get('cursor_diameter', 0.2) for t in trials])
+
+    # Remove any duplicate positions and their associated sizes for shuffling pool
+    # (we only need unique positions to shuffle from)
+    unique_positions = []
+    unique_diameters = []
+    unique_cursor_diams = []
+    seen = set()
+    for i, (tx, ty) in enumerate(all_target_positions):
+        key = (round(tx, 3), round(ty, 3))
+        if key not in seen:
+            seen.add(key)
+            unique_positions.append((tx, ty))
+            unique_diameters.append(all_target_diameters[i])
+            unique_cursor_diams.append(all_cursor_diameters[i])
+
+    shuffle_pool_positions = np.array(unique_positions)
+    shuffle_pool_diameters = np.array(unique_diameters)
+    n_unique_positions = len(shuffle_pool_positions)
+
+    # NOW apply filter to get specific trials (eye trajectories) to test
+    filtered_trials = trials
     if target_filter is not None:
-        trials = [t for t in trials if target_filter(t)]
+        filtered_trials = [t for t in trials if target_filter(t)]
 
-    if len(trials) == 0:
+    if len(filtered_trials) == 0:
         return 0.0
-
-    # Extract data from trials
-    target_positions = np.array([(t['target_x'], t['target_y']) for t in trials])
-    target_diameters = np.array([t['target_diameter'] for t in trials])
-    cursor_diameters = np.array([t.get('cursor_diameter', 0.2) for t in trials])
 
     # Filter out trials without eye data
     valid_trials = []
-    valid_indices = []
-    for i, trial in enumerate(trials):
+    for trial in filtered_trials:
         if trial.get('has_eye_data', False):
             eye_x = np.array(trial.get('eye_x', []))
             eye_y = np.array(trial.get('eye_y', []))
             eye_times = np.array(trial.get('eye_times', []))
+            cursor_diam = trial.get('cursor_diameter', 0.2)
             if len(eye_x) > 0 and len(eye_times) > 0:
                 valid_trials.append({
                     'eye_x': eye_x,
                     'eye_y': eye_y,
-                    'eye_times': eye_times
+                    'eye_times': eye_times,
+                    'cursor_diameter': cursor_diam
                 })
-                valid_indices.append(i)
 
     if len(valid_trials) == 0:
         return 0.0
 
     n_valid = len(valid_trials)
-    valid_target_positions = target_positions[valid_indices]
-    valid_target_diameters = target_diameters[valid_indices]
-    valid_cursor_diameters = cursor_diameters[valid_indices]
-
     success_rates = []
 
     for shuffle_idx in range(n_shuffles):
-        # Shuffle target positions
-        shuffled_indices = np.random.permutation(n_valid)
-        shuffled_targets = valid_target_positions[shuffled_indices]
-        shuffled_target_diameters = valid_target_diameters[shuffled_indices]
+        # Shuffle among ALL unique target positions, not just filtered ones
+        # Sample WITH replacement to match number of trials
+        random_indices = np.random.choice(n_unique_positions, size=n_valid, replace=True)
+        shuffled_targets = shuffle_pool_positions[random_indices]
+        shuffled_target_diameters = shuffle_pool_diameters[random_indices]
 
         # Calculate success for this shuffle
         n_success = 0
@@ -1138,7 +1161,7 @@ def calculate_chance_level(trials: list[dict], n_shuffles: int = 10000,
             # Get shuffled target for this trial
             target_x, target_y = shuffled_targets[i]
             target_radius = shuffled_target_diameters[i] / 2.0
-            cursor_radius = valid_cursor_diameters[i] / 2.0
+            cursor_radius = valid_trials[i]['cursor_diameter'] / 2.0
             contact_threshold = target_radius + cursor_radius
 
             # Use shared helper to determine trial success
