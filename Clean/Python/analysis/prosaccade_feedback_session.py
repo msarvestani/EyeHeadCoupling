@@ -1145,7 +1145,8 @@ def calculate_chance_level(trials: list[dict], n_shuffles: int = 10000,
                     'eye_times': eye_times,
                     'cursor_diameter': cursor_diam,
                     'target_x': trial['target_x'],
-                    'target_y': trial['target_y']
+                    'target_y': trial['target_y'],
+                    'target_diameter': trial['target_diameter']
                 })
 
     if len(valid_trials) == 0:
@@ -1197,19 +1198,23 @@ def calculate_chance_level(trials: list[dict], n_shuffles: int = 10000,
 
             # Only write to CSV for the first shuffle and when enabled
             if write_csv and shuffle_idx == 0:
-                # Determine actual target side
+                # Determine actual target side and contact threshold
                 actual_target_x = valid_trials[i]['target_x']
                 actual_target_y = valid_trials[i]['target_y']
+                actual_target_diameter = valid_trials[i]['target_diameter']
                 actual_target_side = 'left' if actual_target_x < 0 else 'right'
+
+                actual_target_radius = actual_target_diameter / 2.0
+                actual_contact_threshold = actual_target_radius + cursor_radius
 
                 # Determine shuffled target side
                 shuffled_target_side = 'left' if target_x < 0 else 'right'
 
                 # Determine where fixation ended by checking if trial would be successful
-                # with the actual target (not the shuffled one)
+                # with the actual target (using actual target's contact threshold)
                 actual_success, _ = calculate_trial_success_from_fixations(
                     eye_x, eye_y, eye_times,
-                    actual_target_x, actual_target_y, contact_threshold,
+                    actual_target_x, actual_target_y, actual_contact_threshold,
                     min_fixation_duration, max_movement
                 )
 
@@ -1219,17 +1224,22 @@ def calculate_chance_level(trials: list[dict], n_shuffles: int = 10000,
                     fixation_side = actual_target_side
                 else:
                     # Check if fixation ended on the opposite side
-                    # Find the opposite target position from the shuffle pool
+                    # Find the opposite target position and diameter from the shuffle pool
                     opposite_side = 'right' if actual_target_side == 'left' else 'left'
-                    opposite_targets = [(tx, ty) for tx, ty in shuffle_pool_positions
+                    opposite_indices = [idx for idx, (tx, ty) in enumerate(shuffle_pool_positions)
                                        if (opposite_side == 'left' and tx < 0) or (opposite_side == 'right' and tx >= 0)]
 
-                    if opposite_targets:
+                    if opposite_indices:
                         # Use the first opposite target position
-                        opp_x, opp_y = opposite_targets[0]
+                        opp_idx = opposite_indices[0]
+                        opp_x, opp_y = shuffle_pool_positions[opp_idx]
+                        opp_diameter = shuffle_pool_diameters[opp_idx]
+                        opp_radius = opp_diameter / 2.0
+                        opp_contact_threshold = opp_radius + cursor_radius
+
                         opp_success, _ = calculate_trial_success_from_fixations(
                             eye_x, eye_y, eye_times,
-                            opp_x, opp_y, contact_threshold,
+                            opp_x, opp_y, opp_contact_threshold,
                             min_fixation_duration, max_movement
                         )
                         fixation_side = opposite_side if opp_success else actual_target_side
