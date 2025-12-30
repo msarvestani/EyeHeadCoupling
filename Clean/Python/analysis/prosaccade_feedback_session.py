@@ -1171,40 +1171,29 @@ def calculate_chance_level(trials: list[dict], n_shuffles: int = 10000,
         # Sample WITH replacement to match number of trials
         random_indices = np.random.choice(n_unique_positions, size=n_valid, replace=True)
         shuffled_targets = shuffle_pool_positions[random_indices]
-        shuffled_target_diameters = shuffle_pool_diameters[random_indices]
 
-        # Calculate success for this shuffle
+        # Calculate success for this shuffle by comparing target positions
         n_success = 0
         for i in range(n_valid):
-            eye_x = valid_trials[i]['eye_x']
-            eye_y = valid_trials[i]['eye_y']
-            eye_times = valid_trials[i]['eye_times']
+            # Get actual and shuffled target positions
+            actual_target_x = valid_trials[i]['target_x']
+            actual_target_y = valid_trials[i]['target_y']
+            shuffled_x, shuffled_y = shuffled_targets[i]
 
-            # Get shuffled target for this trial
-            target_x, target_y = shuffled_targets[i]
-            target_radius = shuffled_target_diameters[i] / 2.0
-            cursor_radius = valid_trials[i]['cursor_diameter'] / 2.0
-            contact_threshold = target_radius + cursor_radius
+            # Determine sides
+            actual_target_side = 'left' if actual_target_x < 0 else 'right'
+            shuffled_target_side = 'left' if shuffled_x < 0 else 'right'
 
-            # Use shared helper to determine trial success
-            success, _ = calculate_trial_success_from_fixations(
-                eye_x, eye_y, eye_times,
-                target_x, target_y, contact_threshold,
-                min_fixation_duration, max_movement
-            )
-
-            if success:
+            # Success if shuffled target matches actual target position
+            if actual_target_side == shuffled_target_side:
                 n_success += 1
 
             # Only write to CSV for the first shuffle and when enabled
             if write_csv and shuffle_idx == 0:
-                # Determine actual target side
-                actual_target_x = valid_trials[i]['target_x']
-                actual_target_y = valid_trials[i]['target_y']
-                actual_target_side = 'left' if actual_target_x < 0 else 'right'
-
-                # Determine shuffled target side
-                shuffled_target_side = 'left' if target_x < 0 else 'right'
+                eye_x = valid_trials[i]['eye_x']
+                eye_y = valid_trials[i]['eye_y']
+                eye_times = valid_trials[i]['eye_times']
+                cursor_radius = valid_trials[i]['cursor_diameter'] / 2.0
 
                 # Determine where the last fixation ended by detecting fixations
                 fixations = detect_fixations(eye_x, eye_y, eye_times,
