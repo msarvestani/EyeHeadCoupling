@@ -914,8 +914,254 @@ def plot_time_to_target(trials: list[dict], results_dir: Optional[Path] = None,
     return fig
 
 
+def detect_fixations(eye_x: np.ndarray, eye_y: np.ndarray, eye_times: np.ndarray,
+                     min_fixation_duration: float = 0.65,
+                     max_movement: float = 0.1) -> list[tuple]:
+    """Detect fixation windows based on frame-to-frame movement velocity.
+
+    A fixation is a period where consecutive frame-to-frame movements are below
+    the max_movement threshold and the total duration meets the minimum.
+
+    Parameters
+    ----------
+    eye_x : np.ndarray
+        X positions of eye trajectory
+    eye_y : np.ndarray
+        Y positions of eye trajectory
+    eye_times : np.ndarray
+        Timestamps for each position
+    min_fixation_duration : float
+        Minimum duration (seconds) for a valid fixation (default: 0.65)
+    max_movement : float
+        Maximum frame-to-frame movement for fixation (default: 0.1 units)
+
+    Returns
+    -------
+    list of tuples
+        Each tuple is (start_idx, end_idx, duration, span) where:
+        - start_idx: Starting index in the arrays
+        - end_idx: Ending index (exclusive)
+        - duration: Total time from start to end
+        - span: Spatial extent of the fixation
+    """
+    if len(eye_x) < 2:
+        return []
+
+    n = len(eye_x)
+    fixations = []
+    i = 0
+
+    while i < n:
+        # Try to extend a fixation starting at point i
+        j = i + 1
+
+        # Extend while frame-to-frame movement is below threshold
+        while j < n:
+            # Calculate movement from point j-1 to point j
+            dx = eye_x[j] - eye_x[j-1]
+            dy = eye_y[j] - eye_y[j-1]
+            movement = np.sqrt(dx**2 + dy**2)
+
+            if movement < max_movement:
+                j += 1  # Include point j in the fixation
+            else:
+                break  # Movement too large, stop before point j
+
+        # Now we have a potential fixation from index i to j (exclusive end)
+        # This includes points [i, i+1, ..., j-1]
+
+        if j > i + 1:  # At least 2 points
+            duration = eye_times[j-1] - eye_times[i]
+            if duration >= min_fixation_duration:
+                # Valid fixation! Calculate span for informational purposes
+                fix_x = eye_x[i:j]
+                fix_y = eye_y[i:j]
+                x_range = np.max(fix_x) - np.min(fix_x)
+                y_range = np.max(fix_y) - np.min(fix_y)
+                span = np.sqrt(x_range**2 + y_range**2)
+                fixations.append((i, j, duration, span))
+                i = j  # Start next search after this fixation
+            else:
+                i += 1  # Duration too short, try next starting point
+        else:
+            i += 1  # No valid extension, try next starting point
+
+    return fixations
+
+
+def calculate_trial_success_from_fixations(eye_x: np.ndarray, eye_y: np.ndarray,
+                                          eye_times: np.ndarray,
+                                          target_x: float, target_y: float,
+                                          contact_threshold: float,
+                                          min_fixation_duration: float = 0.65,
+                                          max_movement: float = 0.1) -> tuple[bool, float]:
+    """Determine trial success based on fixations ending on target.
+
+    Success criterion:
+    - Detect fixations using frame-to-frame movement threshold
+    - Check if any fixation ENDS on target (last point within contact_threshold)
+    - If yes, use the TOTAL duration of that fixation
+    - Success if max fixation duration >= min_fixation_duration
+
+    Parameters
+    ----------
+    eye_x, eye_y, eye_times : np.ndarray
+        Eye trajectory data
+    target_x, target_y : float
+        Target position
+    contact_threshold : float
+        Distance threshold for being "on target" (target_radius + cursor_radius)
+    min_fixation_duration : float
+        Minimum fixation duration for success (default: 0.65s)
+    max_movement : float
+        Maximum movement for fixation detection (default: 0.1 units)
+
+    Returns
+    -------
+    tuple of (success, max_fixation_duration)
+        success : bool
+            Whether trial succeeded
+        max_fixation_duration : float
+            Duration of longest fixation ending on target (0.0 if none)
+    """
+    # Detect all fixations
+    fixations = detect_fixations(eye_x, eye_y, eye_times,
+                                 min_fixation_duration, max_movement)
+
+    # Check each fixation to see if it ENDS on target
+    max_fixation_duration = 0.0
+
+    for start_idx, end_idx, duration, span in fixations:
+        # Check if fixation ends on target (last point within contact threshold)
+        final_x = eye_x[end_idx - 1]
+        final_y = eye_y[end_idx - 1]
+        dist = np.sqrt((final_x - target_x)**2 + (final_y - target_y)**2)
+
+        if dist <= contact_threshold:
+            # Fixation ends on target, use total duration
+            if duration > max_fixation_duration:
+                max_fixation_duration = duration
+
+    # Success if we found a fixation ending on target with sufficient duration
+    success = (max_fixation_duration >= min_fixation_duration)
+
+    return success, max_fixation_duration
+
+
+def calculate_chance_level(trials: list[dict], n_shuffles: int = 10000,
+                           target_filter: Optional[callable] = None,
+                           min_fixation_duration: float = 0.65,
+                           max_movement: float = 0.1) -> float:
+    """Calculate chance level success rate by shuffling target positions.
+
+    Shuffles target positions randomly across trials and calculates what the
+    success rate would be if targets were at those shuffled positions, using
+    the actual fixation-based success criterion.
+
+    Success criterion (same as actual trials):
+    - Detects fixations when frame-to-frame movement < max_movement
+    - A fixation counts if it ENDS on the shuffled target
+    - Success if any fixation ending on target has duration >= min_fixation_duration
+
+    Parameters
+    ----------
+    trials : list of dict
+        List of trial data dictionaries with eye trajectory and target information
+    n_shuffles : int
+        Number of random shuffles to perform (default: 10000)
+    target_filter : callable, optional
+        Optional function to filter which trials to include (e.g., left vs right)
+    min_fixation_duration : float
+        Minimum fixation duration required for success (default: 0.65 seconds)
+    max_movement : float
+        Maximum frame-to-frame movement for fixation detection (default: 0.1 units)
+
+    Returns
+    -------
+    float
+        Average success rate across all shuffles (as fraction, not percentage)
+    """
+    if not trials or len(trials) == 0:
+        return 0.0
+
+    # Apply filter if provided
+    if target_filter is not None:
+        trials = [t for t in trials if target_filter(t)]
+
+    if len(trials) == 0:
+        return 0.0
+
+    # Extract data from trials
+    target_positions = np.array([(t['target_x'], t['target_y']) for t in trials])
+    target_diameters = np.array([t['target_diameter'] for t in trials])
+    cursor_diameters = np.array([t.get('cursor_diameter', 0.2) for t in trials])
+
+    # Filter out trials without eye data
+    valid_trials = []
+    valid_indices = []
+    for i, trial in enumerate(trials):
+        if trial.get('has_eye_data', False):
+            eye_x = np.array(trial.get('eye_x', []))
+            eye_y = np.array(trial.get('eye_y', []))
+            eye_times = np.array(trial.get('eye_times', []))
+            if len(eye_x) > 0 and len(eye_times) > 0:
+                valid_trials.append({
+                    'eye_x': eye_x,
+                    'eye_y': eye_y,
+                    'eye_times': eye_times
+                })
+                valid_indices.append(i)
+
+    if len(valid_trials) == 0:
+        return 0.0
+
+    n_valid = len(valid_trials)
+    valid_target_positions = target_positions[valid_indices]
+    valid_target_diameters = target_diameters[valid_indices]
+    valid_cursor_diameters = cursor_diameters[valid_indices]
+
+    success_rates = []
+
+    for shuffle_idx in range(n_shuffles):
+        # Shuffle target positions
+        shuffled_indices = np.random.permutation(n_valid)
+        shuffled_targets = valid_target_positions[shuffled_indices]
+        shuffled_target_diameters = valid_target_diameters[shuffled_indices]
+
+        # Calculate success for this shuffle
+        n_success = 0
+        for i in range(n_valid):
+            eye_x = valid_trials[i]['eye_x']
+            eye_y = valid_trials[i]['eye_y']
+            eye_times = valid_trials[i]['eye_times']
+
+            # Get shuffled target for this trial
+            target_x, target_y = shuffled_targets[i]
+            target_radius = shuffled_target_diameters[i] / 2.0
+            cursor_radius = valid_cursor_diameters[i] / 2.0
+            contact_threshold = target_radius + cursor_radius
+
+            # Use shared helper to determine trial success
+            success, _ = calculate_trial_success_from_fixations(
+                eye_x, eye_y, eye_times,
+                target_x, target_y, contact_threshold,
+                min_fixation_duration, max_movement
+            )
+
+            if success:
+                n_success += 1
+
+        # Calculate success rate for this shuffle
+        success_rate = n_success / n_valid if n_valid > 0 else 0.0
+        success_rates.append(success_rate)
+
+    # Return average success rate across all shuffles
+    return np.mean(success_rates)
+
+
 def plot_trial_success(eot_df: pd.DataFrame, results_dir: Optional[Path] = None,
-                       animal_id: Optional[str] = None, session_date: str = "") -> plt.Figure:
+                       animal_id: Optional[str] = None, session_date: str = "",
+                       trials: Optional[list[dict]] = None) -> plt.Figure:
     """Plot trial success vs failure summary, independent of --include-failed-trials flag.
 
     Creates a figure with:
@@ -955,23 +1201,41 @@ def plot_trial_success(eot_df: pd.DataFrame, results_dir: Optional[Path] = None,
     pct_success = 100 * n_success / n_trials if n_trials > 0 else 0
     pct_failed = 100 * n_failed / n_trials if n_trials > 0 else 0
 
+    # Calculate chance level if trials data is provided
+    chance_level = None
+    if trials is not None and len(trials) > 0:
+        print("  Calculating chance level (10,000 shuffles)...")
+        chance_level = calculate_chance_level(trials, n_shuffles=10000)
+        print(f"  Chance level: {100*chance_level:.1f}%")
+
     # Create figure with 2 subplots
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8), height_ratios=[1, 1.5])
 
     # --- Top plot: Bar chart showing fraction of success vs failure ---
-    categories = ['Success', 'Failed']
-    counts = [n_success, n_failed]
-    percentages = [pct_success, pct_failed]
-    colors = ['forestgreen', 'firebrick']
+    if chance_level is not None:
+        categories = ['Success', 'Failed', 'Chance']
+        counts = [n_success, n_failed, chance_level * n_trials]
+        percentages = [pct_success, pct_failed, 100 * chance_level]
+        colors = ['forestgreen', 'firebrick', 'gray']
+    else:
+        categories = ['Success', 'Failed']
+        counts = [n_success, n_failed]
+        percentages = [pct_success, pct_failed]
+        colors = ['forestgreen', 'firebrick']
 
     bars = ax1.bar(categories, counts, color=colors, edgecolor='black', linewidth=1.5)
 
     # Add count and percentage labels on bars
     for bar, count, pct in zip(bars, counts, percentages):
         height = bar.get_height()
-        ax1.text(bar.get_x() + bar.get_width()/2., height,
-                f'{count}\n({pct:.1f}%)',
-                ha='center', va='bottom', fontsize=12, fontweight='bold')
+        if chance_level is not None and bar == bars[-1]:  # Chance bar
+            ax1.text(bar.get_x() + bar.get_width()/2., height,
+                    f'{pct:.1f}%',
+                    ha='center', va='bottom', fontsize=12, fontweight='bold')
+        else:
+            ax1.text(bar.get_x() + bar.get_width()/2., height,
+                    f'{int(count)}\n({pct:.1f}%)',
+                    ha='center', va='bottom', fontsize=12, fontweight='bold')
 
     ax1.set_ylabel('Number of Trials', fontsize=12)
     title = 'Trial Success Rate (All Trials)'
@@ -1564,6 +1828,17 @@ def compare_left_right_performance(trials: list[dict], left_x: float = -0.7, rig
     ]
     success_odds_ratio, success_p = scipy_stats.fisher_exact(contingency_table)
 
+    # Calculate chance levels for left and right separately
+    print("  Calculating chance level for left targets (10,000 shuffles)...")
+    left_chance = calculate_chance_level(trials, n_shuffles=10000,
+                                         target_filter=lambda t: abs(t['target_x'] - left_x) < tolerance)
+    print(f"  Left chance level: {100*left_chance:.1f}%")
+
+    print("  Calculating chance level for right targets (10,000 shuffles)...")
+    right_chance = calculate_chance_level(trials, n_shuffles=10000,
+                                          target_filter=lambda t: abs(t['target_x'] - right_x) < tolerance)
+    print(f"  Right chance level: {100*right_chance:.1f}%")
+
     # Create comparison plot
     fig, axes = plt.subplots(2, 3, figsize=(18, 10))
 
@@ -1620,37 +1895,44 @@ def compare_left_right_performance(trials: list[dict], left_x: float = -0.7, rig
 
     # Plot 4: Success/Failure Rates
     ax = axes[0, 2]
-    # Bar chart showing success and failure rates
-    x_pos = np.array([0.8, 1.2, 1.8, 2.2])
-    success_counts = [left_metrics['successes'], left_metrics['failures'],
-                     right_metrics['successes'], right_metrics['failures']]
-    colors = ['forestgreen', 'firebrick', 'forestgreen', 'firebrick']
-    bars = ax.bar(x_pos, success_counts, width=0.35, color=colors, edgecolor='black', linewidth=1.5)
+    # Bar chart showing success and failure rates, plus chance levels
+    x_pos = np.array([0.7, 1.0, 1.3, 1.7, 2.0, 2.3])
+    success_counts = [left_metrics['successes'], left_metrics['failures'], left_chance * n_left,
+                     right_metrics['successes'], right_metrics['failures'], right_chance * n_right]
+    colors = ['forestgreen', 'firebrick', 'gray', 'forestgreen', 'firebrick', 'gray']
+    bars = ax.bar(x_pos, success_counts, width=0.25, color=colors, edgecolor='black', linewidth=1.5)
 
     # Add count labels on bars
-    for bar, count in zip(bars, success_counts):
+    for i, (bar, count) in enumerate(zip(bars, success_counts)):
         height = bar.get_height()
-        ax.text(bar.get_x() + bar.get_width()/2., height,
-                f'{count}',
-                ha='center', va='bottom', fontsize=10, fontweight='bold')
+        # For chance bars, just show percentage
+        if i == 2 or i == 5:
+            pct = 100 * left_chance if i == 2 else 100 * right_chance
+            ax.text(bar.get_x() + bar.get_width()/2., height,
+                    f'{pct:.1f}%',
+                    ha='center', va='bottom', fontsize=9, fontweight='bold')
+        else:
+            ax.text(bar.get_x() + bar.get_width()/2., height,
+                    f'{int(count)}',
+                    ha='center', va='bottom', fontsize=9, fontweight='bold')
 
-    # Add percentage labels
+    # Add overall percentage labels for actual performance
     left_success_pct = 100 * left_metrics['success_rate']
     right_success_pct = 100 * right_metrics['success_rate']
-    ax.text(1.0, max(success_counts) * 0.5, f'{left_success_pct:.1f}%\nsuccess',
-            ha='center', va='center', fontsize=11, fontweight='bold',
+    ax.text(1.0, max(success_counts) * 0.4, f'{left_success_pct:.1f}%\nsuccess',
+            ha='center', va='center', fontsize=10, fontweight='bold',
             bbox=dict(boxstyle='round', facecolor='lightgreen', alpha=0.7))
-    ax.text(2.0, max(success_counts) * 0.5, f'{right_success_pct:.1f}%\nsuccess',
-            ha='center', va='center', fontsize=11, fontweight='bold',
+    ax.text(2.0, max(success_counts) * 0.4, f'{right_success_pct:.1f}%\nsuccess',
+            ha='center', va='center', fontsize=10, fontweight='bold',
             bbox=dict(boxstyle='round', facecolor='lightgreen', alpha=0.7))
 
     ax.set_xticks([1.0, 2.0])
     ax.set_xticklabels(['Left', 'Right'])
     ax.set_ylabel('Trial Count', fontsize=12)
     ax.set_title(f'Success/Failure Rates\np = {success_p:.4f}', fontsize=12, fontweight='bold')
-    ax.set_ylim(0, max(success_counts) * 1.25)
+    ax.set_ylim(0, max(success_counts) * 1.3)
     ax.grid(True, alpha=0.3, axis='y')
-    ax.legend([bars[0], bars[1]], ['Success', 'Failure'], loc='upper right', fontsize=9)
+    ax.legend([bars[0], bars[1], bars[2]], ['Success', 'Failure', 'Chance'], loc='upper right', fontsize=9)
 
     # Plot 5: Summary statistics table
     ax = axes[1, 2]
@@ -2343,59 +2625,6 @@ def interactive_fixation_viewer(trials: list[dict], animal_id: Optional[str] = N
     fig, ax = plt.subplots(figsize=(12, 10))
     current_trial_idx = [0]  # Use list to allow modification in nested function
 
-    def detect_fixations(eye_x, eye_y, eye_times):
-        """Detect fixation windows based on frame-to-frame movement velocity.
-
-        A fixation is a continuous segment where every consecutive frame-to-frame
-        movement is < max_movement, lasting for at least min_duration.
-
-        Returns list of tuples: (start_idx, end_idx, duration, span)
-        where span is calculated for informational purposes but NOT used for detection.
-        """
-        if len(eye_x) < 2:
-            return []
-
-        n = len(eye_x)
-        fixations = []
-
-        i = 0
-        while i < n:
-            # Try to extend a fixation starting at point i
-            j = i + 1
-
-            # Extend while frame-to-frame movement is below threshold
-            while j < n:
-                # Calculate movement from point j-1 to point j
-                dx = eye_x[j] - eye_x[j-1]
-                dy = eye_y[j] - eye_y[j-1]
-                movement = np.sqrt(dx**2 + dy**2)
-
-                if movement < max_movement:
-                    j += 1  # Include point j in the fixation
-                else:
-                    break  # Movement too large, stop before point j
-
-            # Now we have a potential fixation from index i to j (exclusive end)
-            # This includes points [i, i+1, ..., j-1]
-
-            if j > i + 1:  # At least 2 points
-                duration = eye_times[j-1] - eye_times[i]
-                if duration >= min_duration:
-                    # Valid fixation! Calculate span for informational purposes
-                    fix_x = eye_x[i:j]
-                    fix_y = eye_y[i:j]
-                    x_range = np.max(fix_x) - np.min(fix_x)
-                    y_range = np.max(fix_y) - np.min(fix_y)
-                    span = np.sqrt(x_range**2 + y_range**2)
-                    fixations.append((i, j, duration, span))
-                    i = j  # Start next search after this fixation
-                else:
-                    i += 1  # Duration too short, try next starting point
-            else:
-                i += 1  # No valid extension, try next starting point
-
-        return fixations
-
     def plot_trial(idx):
         ax.clear()
         trial = trials_with_data[idx]
@@ -2415,8 +2644,8 @@ def interactive_fixation_viewer(trials: list[dict], animal_id: Optional[str] = N
         is_failed = trial.get('trial_failed', False)
         target_visible = trial.get('target_visible', 1)
 
-        # Detect fixations
-        fixations = detect_fixations(eye_x, eye_y, eye_times)
+        # Detect fixations (uses shared module-level function)
+        fixations = detect_fixations(eye_x, eye_y, eye_times, min_duration, max_movement)
 
         # Plot full trajectory (lighter)
         if is_failed:
@@ -2802,57 +3031,6 @@ def calculate_and_validate_trial_success(trials: list[dict], eot_df: pd.DataFram
     print(f"  (If fixation ends on target, count TOTAL fixation duration)")
     print()
 
-    def detect_fixations(eye_x, eye_y, eye_times):
-        """Detect fixation windows based on frame-to-frame movement velocity.
-
-        Same algorithm as interactive_fixation_viewer.
-
-        Returns list of tuples: (start_idx, end_idx, duration, span)
-        """
-        if len(eye_x) < 2:
-            return []
-
-        n = len(eye_x)
-        fixations = []
-
-        i = 0
-        while i < n:
-            # Try to extend a fixation starting at point i
-            j = i + 1
-
-            # Extend while frame-to-frame movement is below threshold
-            while j < n:
-                # Calculate movement from point j-1 to point j
-                dx = eye_x[j] - eye_x[j-1]
-                dy = eye_y[j] - eye_y[j-1]
-                movement = np.sqrt(dx**2 + dy**2)
-
-                if movement < max_movement:
-                    j += 1  # Include point j in the fixation
-                else:
-                    break  # Movement too large, stop before point j
-
-            # Now we have a potential fixation from index i to j (exclusive end)
-            # This includes points [i, i+1, ..., j-1]
-
-            if j > i + 1:  # At least 2 points
-                duration = eye_times[j-1] - eye_times[i]
-                if duration >= min_fixation_duration:
-                    # Valid fixation! Calculate span for informational purposes
-                    fix_x = eye_x[i:j]
-                    fix_y = eye_y[i:j]
-                    x_range = np.max(fix_x) - np.min(fix_x)
-                    y_range = np.max(fix_y) - np.min(fix_y)
-                    span = np.sqrt(x_range**2 + y_range**2)
-                    fixations.append((i, j, duration, span))
-                    i = j  # Start next search after this fixation
-                else:
-                    i += 1  # Duration too short, try next starting point
-            else:
-                i += 1  # No valid extension, try next starting point
-
-        return fixations
-
     results = []
 
     # Debug: Print info about first few trials
@@ -2922,8 +3100,8 @@ def calculate_and_validate_trial_success(trials: list[dict], eot_df: pd.DataFram
         contact_threshold = target_radius + cursor_radius
 
 
-        # Step 1: Detect all fixations using frame-to-frame movement
-        fixations = detect_fixations(eye_x, eye_y, eye_times)
+        # Step 1: Detect all fixations using frame-to-frame movement (uses shared function)
+        fixations = detect_fixations(eye_x, eye_y, eye_times, min_fixation_duration, max_movement)
 
         # Step 2: For each fixation, check if it ENDS on target
         # The key insight: a fixation can start off-target, but if it ends on-target,
@@ -3549,7 +3727,7 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
 
     # Plot trial success summary (uses ALL trials, independent of --include-failed-trials flag)
     print("\nGenerating trial success summary plot...")
-    fig_success = plot_trial_success(eot_df, results_dir, animal_id, date_str)
+    fig_success = plot_trial_success(eot_df, results_dir, animal_id, date_str, trials=trials_all)
     if fig_success is not None:
         if show_plots:
             plt.show()
@@ -3783,7 +3961,7 @@ def main(session_id: str, trial_min_duration: float = 0.01, trial_max_duration: 
 
     # Plot trial success summary (uses ALL trials, independent of --include-failed-trials flag)
     print("\nGenerating trial success summary plot...")
-    fig_success = plot_trial_success(eot_df, results_dir, animal_id, date_str)
+    fig_success = plot_trial_success(eot_df, results_dir, animal_id, date_str, trials=trials_all)
     if fig_success is not None:
         plt.show()
         plt.close(fig_success)
