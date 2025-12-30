@@ -1233,8 +1233,8 @@ def plot_trial_success(eot_df: pd.DataFrame, results_dir: Optional[Path] = None,
     # Calculate chance level if trials data is provided
     chance_level = None
     if trials is not None and len(trials) > 0:
-        print("  Calculating chance level (10,000 shuffles)...")
-        chance_level = calculate_chance_level(trials, n_shuffles=10000)
+        print("  Calculating chance level (1000 shuffles)...")
+        chance_level = calculate_chance_level(trials, n_shuffles=1000)
         print(f"  Chance level: {100*chance_level:.1f}%")
 
     # Create figure with 2 subplots
@@ -1858,13 +1858,13 @@ def compare_left_right_performance(trials: list[dict], left_x: float = -0.7, rig
     success_odds_ratio, success_p = scipy_stats.fisher_exact(contingency_table)
 
     # Calculate chance levels for left and right separately
-    print("  Calculating chance level for left targets (10,000 shuffles)...")
-    left_chance = calculate_chance_level(trials, n_shuffles=10000,
+    print("  Calculating chance level for left targets (1000 shuffles)...")
+    left_chance = calculate_chance_level(trials, n_shuffles=1000,
                                          target_filter=lambda t: abs(t['target_x'] - left_x) < tolerance)
     print(f"  Left chance level: {100*left_chance:.1f}%")
 
-    print("  Calculating chance level for right targets (10,000 shuffles)...")
-    right_chance = calculate_chance_level(trials, n_shuffles=10000,
+    print("  Calculating chance level for right targets (1000 shuffles)...")
+    right_chance = calculate_chance_level(trials, n_shuffles=1000,
                                           target_filter=lambda t: abs(t['target_x'] - right_x) < tolerance)
     print(f"  Right chance level: {100*right_chance:.1f}%")
 
