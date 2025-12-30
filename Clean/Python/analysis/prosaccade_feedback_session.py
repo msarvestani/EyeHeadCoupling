@@ -3779,6 +3779,13 @@ def calculate_chance_performance(trials: list[dict], eye_df: pd.DataFrame,
     n_intertrial_success = 0
     success_per_period = []  # For bootstrap CI
 
+    # Track details for debugging
+    n_periods_with_no_fixations = 0
+    n_periods_with_only_short_fixations = 0
+
+    print(f"Analyzing {n_intertrial} inter-trial periods...")
+    print(f"Showing first 10 periods in detail:\n")
+
     for idx, itp in enumerate(inter_trial_periods):
         eye_x = itp['eye_x']
         eye_y = itp['eye_y']
@@ -3795,26 +3802,58 @@ def calculate_chance_performance(trials: list[dict], eye_df: pd.DataFrame,
         # - If it ends OFF target → failure (trial would have ended)
         # - Fixations < min_duration are ignored (don't end trial)
         period_success = False
-        for start_idx, end_idx, duration in fixations:
+        qualifying_fixation_found = False
+
+        # Debug info for first 10 periods
+        if idx < 10:
+            print(f"Period {idx+1} (between trials {itp['trial_before']}-{itp['trial_after']}, duration={itp['duration']:.2f}s):")
+            print(f"  Target: ({target_x:.2f}, {target_y:.2f}), radius={itp['target_radius']:.3f}, contact_threshold={contact_threshold:.3f}")
+            print(f"  Found {len(fixations)} fixations")
+
+        for fix_idx, (start_idx, end_idx, duration) in enumerate(fixations):
+            # Get eye positions for this fixation
+            fix_x = eye_x[start_idx:end_idx]
+            fix_y = eye_y[start_idx:end_idx]
+
+            # Calculate distances from target
+            fix_distances = np.sqrt((fix_x - target_x)**2 + (fix_y - target_y)**2)
+            end_distance = fix_distances[-1]
+
+            if idx < 10:
+                on_target = "ON TARGET" if end_distance <= contact_threshold else "off target"
+                qualifier = " [QUALIFIES]" if duration >= min_fixation_duration else ""
+                print(f"    Fix {fix_idx+1}: dur={duration:.3f}s, ends at dist={end_distance:.3f} ({on_target}){qualifier}")
+
             # Only fixations >= min_duration matter (shorter ones don't end trial)
             if duration >= min_fixation_duration:
-                # Get eye positions for this fixation
-                fix_x = eye_x[start_idx:end_idx]
-                fix_y = eye_y[start_idx:end_idx]
-
-                # Calculate distances from target
-                fix_distances = np.sqrt((fix_x - target_x)**2 + (fix_y - target_y)**2)
+                qualifying_fixation_found = True
 
                 # Check if fixation ends on target
-                if fix_distances[-1] <= contact_threshold:
+                if end_distance <= contact_threshold:
                     # Success! Fixation ends on target
                     period_success = True
+                    if idx < 10:
+                        print(f"    → OUTCOME: SUCCESS (first qualifying fixation ends on target)")
                 else:
                     # Failure! Fixation ends off target - trial would have ended
                     period_success = False
+                    if idx < 10:
+                        print(f"    → OUTCOME: FAILURE (first qualifying fixation ends off target)")
 
                 # First qualifying fixation determines outcome - stop here
                 break
+
+        if not fixations:
+            n_periods_with_no_fixations += 1
+            if idx < 10:
+                print(f"    → OUTCOME: No fixations detected")
+        elif not qualifying_fixation_found:
+            n_periods_with_only_short_fixations += 1
+            if idx < 10:
+                print(f"    → OUTCOME: No qualifying fixations (all < {min_fixation_duration}s)")
+
+        if idx < 10:
+            print()
 
         success_per_period.append(1 if period_success else 0)
         if period_success:
@@ -3822,8 +3861,16 @@ def calculate_chance_performance(trials: list[dict], eye_df: pd.DataFrame,
 
     # Calculate inter-trial success rate
     intertrial_success_rate = n_intertrial_success / n_intertrial
+    n_intertrial_failure = n_intertrial - n_intertrial_success - n_periods_with_no_fixations - n_periods_with_only_short_fixations
 
-    print(f"Inter-trial successes: {n_intertrial_success}/{n_intertrial} ({100*intertrial_success_rate:.1f}%)")
+    print(f"Summary of {n_intertrial} inter-trial periods:")
+    print(f"-" * 80)
+    print(f"  Successes (first fix ≥{min_fixation_duration}s ends on target): {n_intertrial_success} ({100*n_intertrial_success/n_intertrial:.1f}%)")
+    print(f"  Failures (first fix ≥{min_fixation_duration}s ends off target): {n_intertrial_failure} ({100*n_intertrial_failure/n_intertrial:.1f}%)")
+    print(f"  No fixations detected: {n_periods_with_no_fixations} ({100*n_periods_with_no_fixations/n_intertrial:.1f}%)")
+    print(f"  Only short fixations (<{min_fixation_duration}s): {n_periods_with_only_short_fixations} ({100*n_periods_with_only_short_fixations/n_intertrial:.1f}%)")
+    print()
+    print(f"Overall chance success rate: {n_intertrial_success}/{n_intertrial} ({100*intertrial_success_rate:.1f}%)")
     print()
 
     # Bootstrap confidence intervals
