@@ -1937,11 +1937,18 @@ def compare_left_right_performance(trials: list[dict], left_x: float = -0.7, rig
         path_lengths = [t['path_length'] for t in trial_list]
         efficiencies = [t['path_efficiency'] for t in trial_list]
         dir_errors = [t['initial_direction_error'] for t in trial_list if not np.isnan(t['initial_direction_error'])]
+        # Count successes and failures
+        successes = sum(1 for t in trial_list if not t.get('trial_failed', False))
+        failures = sum(1 for t in trial_list if t.get('trial_failed', False))
+        success_rate = successes / len(trial_list) if len(trial_list) > 0 else 0
         return {
             'durations': durations,
             'path_lengths': path_lengths,
             'efficiencies': efficiencies,
-            'dir_errors': dir_errors
+            'dir_errors': dir_errors,
+            'successes': successes,
+            'failures': failures,
+            'success_rate': success_rate
         }
 
     left_metrics = extract_metrics(left_trials)
@@ -1958,8 +1965,16 @@ def compare_left_right_performance(trials: list[dict], left_x: float = -0.7, rig
         left_metrics['efficiencies'], right_metrics['efficiencies'], alternative='two-sided'
     )
 
+    # Fisher's exact test for success rates
+    # Create contingency table: [[left_success, left_fail], [right_success, right_fail]]
+    contingency_table = [
+        [left_metrics['successes'], left_metrics['failures']],
+        [right_metrics['successes'], right_metrics['failures']]
+    ]
+    success_odds_ratio, success_p = scipy_stats.fisher_exact(contingency_table)
+
     # Create comparison plot
-    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    fig, axes = plt.subplots(2, 3, figsize=(18, 10))
 
     # Plot 1: Time to Target
     ax = axes[0, 0]
@@ -2012,8 +2027,42 @@ def compare_left_right_performance(trials: list[dict], left_x: float = -0.7, rig
     ax.plot(1, np.mean(left_metrics['efficiencies']), 'ro', markersize=10, label='Mean')
     ax.plot(2, np.mean(right_metrics['efficiencies']), 'ro', markersize=10)
 
-    # Plot 4: Summary statistics table
-    ax = axes[1, 1]
+    # Plot 4: Success/Failure Rates
+    ax = axes[0, 2]
+    # Bar chart showing success and failure rates
+    x_pos = np.array([0.8, 1.2, 1.8, 2.2])
+    success_counts = [left_metrics['successes'], left_metrics['failures'],
+                     right_metrics['successes'], right_metrics['failures']]
+    colors = ['forestgreen', 'firebrick', 'forestgreen', 'firebrick']
+    bars = ax.bar(x_pos, success_counts, width=0.35, color=colors, edgecolor='black', linewidth=1.5)
+
+    # Add count labels on bars
+    for bar, count in zip(bars, success_counts):
+        height = bar.get_height()
+        ax.text(bar.get_x() + bar.get_width()/2., height,
+                f'{count}',
+                ha='center', va='bottom', fontsize=10, fontweight='bold')
+
+    # Add percentage labels
+    left_success_pct = 100 * left_metrics['success_rate']
+    right_success_pct = 100 * right_metrics['success_rate']
+    ax.text(1.0, max(success_counts) * 0.5, f'{left_success_pct:.1f}%\nsuccess',
+            ha='center', va='center', fontsize=11, fontweight='bold',
+            bbox=dict(boxstyle='round', facecolor='lightgreen', alpha=0.7))
+    ax.text(2.0, max(success_counts) * 0.5, f'{right_success_pct:.1f}%\nsuccess',
+            ha='center', va='center', fontsize=11, fontweight='bold',
+            bbox=dict(boxstyle='round', facecolor='lightgreen', alpha=0.7))
+
+    ax.set_xticks([1.0, 2.0])
+    ax.set_xticklabels(['Left', 'Right'])
+    ax.set_ylabel('Trial Count', fontsize=12)
+    ax.set_title(f'Success/Failure Rates\np = {success_p:.4f}', fontsize=12, fontweight='bold')
+    ax.set_ylim(0, max(success_counts) * 1.25)
+    ax.grid(True, alpha=0.3, axis='y')
+    ax.legend([bars[0], bars[1]], ['Success', 'Failure'], loc='upper right', fontsize=9)
+
+    # Plot 5: Summary statistics table
+    ax = axes[1, 2]
     ax.axis('off')
 
     # Create table data
@@ -2032,6 +2081,10 @@ def compare_left_right_performance(trials: list[dict], left_x: float = -0.7, rig
          f'{np.mean(left_metrics["efficiencies"]):.3f}±{np.std(left_metrics["efficiencies"]):.3f}',
          f'{np.mean(right_metrics["efficiencies"]):.3f}±{np.std(right_metrics["efficiencies"]):.3f}',
          f'{eff_p:.4f}'],
+        ['Success Rate',
+         f'{100*left_metrics["success_rate"]:.1f}% ({left_metrics["successes"]}/{n_left})',
+         f'{100*right_metrics["success_rate"]:.1f}% ({right_metrics["successes"]}/{n_right})',
+         f'{success_p:.4f}'],
     ]
 
     table = ax.table(cellText=table_data, cellLoc='center', loc='center',
@@ -2046,12 +2099,12 @@ def compare_left_right_performance(trials: list[dict], left_x: float = -0.7, rig
         table[(0, i)].set_text_props(weight='bold', color='white')
 
     # Highlight significant p-values
-    for i, p_val in enumerate([duration_p, length_p, eff_p], start=2):
+    for i, p_val in enumerate([duration_p, length_p, eff_p, success_p], start=2):
         if p_val < 0.05:
             table[(i, 3)].set_facecolor('#ffcccc')
             table[(i, 3)].set_text_props(weight='bold')
 
-    ax.set_title('Summary Statistics\n(Mann-Whitney U Test)', fontsize=12, fontweight='bold')
+    ax.set_title('Summary Statistics\n(Mann-Whitney U & Fisher Exact)', fontsize=12, fontweight='bold')
 
     # Overall title
     title = 'Left vs Right Target Performance'
@@ -2081,7 +2134,8 @@ def compare_left_right_performance(trials: list[dict], left_x: float = -0.7, rig
         'p_values': {
             'duration': duration_p,
             'path_length': length_p,
-            'path_efficiency': eff_p
+            'path_efficiency': eff_p,
+            'success_rate': success_p
         }
     }
 
@@ -2089,6 +2143,7 @@ def compare_left_right_performance(trials: list[dict], left_x: float = -0.7, rig
     print(f"\n  Duration: Left={np.mean(left_metrics['durations']):.2f}s, Right={np.mean(right_metrics['durations']):.2f}s, p={duration_p:.4f}")
     print(f"  Path Length: Left={np.mean(left_metrics['path_lengths']):.3f}, Right={np.mean(right_metrics['path_lengths']):.3f}, p={length_p:.4f}")
     print(f"  Path Efficiency: Left={np.mean(left_metrics['efficiencies']):.3f}, Right={np.mean(right_metrics['efficiencies']):.3f}, p={eff_p:.4f}")
+    print(f"  Success Rate: Left={100*left_metrics['success_rate']:.1f}% ({left_metrics['successes']}/{n_left}), Right={100*right_metrics['success_rate']:.1f}% ({right_metrics['successes']}/{n_right}), p={success_p:.4f}")
 
     if duration_p < 0.05:
         print(f"  *** Significant difference in duration (p < 0.05)")
@@ -2096,6 +2151,8 @@ def compare_left_right_performance(trials: list[dict], left_x: float = -0.7, rig
         print(f"  *** Significant difference in path length (p < 0.05)")
     if eff_p < 0.05:
         print(f"  *** Significant difference in efficiency (p < 0.05)")
+    if success_p < 0.05:
+        print(f"  *** Significant difference in success rate (p < 0.05)")
 
     return fig, stats_dict
 
@@ -5267,14 +5324,14 @@ def main(session_id: str, trial_min_duration: float = 0.01, trial_max_duration: 
     # plt.show()
     # plt.close(fig_path)
 
-    # print("\nRunning left vs right target comparison...")
-    # fig_lr, lr_stats = compare_left_right_performance(trials_for_analysis, left_x=-0.7, right_x=0.7,
-    #                                                    results_dir=results_dir,
-    #                                                    animal_id=animal_id,
-    #                                                    session_date=date_str)
-    # if fig_lr is not None:
-    #     plt.show()
-    #     plt.close(fig_lr)
+    print("\nRunning left vs right target comparison...")
+    fig_lr, lr_stats = compare_left_right_performance(trials_for_analysis, left_x=-0.7, right_x=0.7,
+                                                       results_dir=results_dir,
+                                                       animal_id=animal_id,
+                                                       session_date=date_str)
+    if fig_lr is not None:
+        plt.show()
+        plt.close(fig_lr)
 
     # print("\nRunning visible vs invisible target comparison...")
     # fig_vis, vis_stats = compare_visible_invisible_performance(trials_for_analysis, results_dir=results_dir,
