@@ -914,8 +914,90 @@ def plot_time_to_target(trials: list[dict], results_dir: Optional[Path] = None,
     return fig
 
 
+def calculate_chance_level(trials: list[dict], n_shuffles: int = 10000,
+                           target_filter: Optional[callable] = None) -> float:
+    """Calculate chance level success rate by shuffling target positions.
+
+    Shuffles target positions randomly across trials and calculates what the
+    success rate would be if targets were at those shuffled positions.
+    Repeats this n_shuffles times and returns the average success rate.
+
+    Parameters
+    ----------
+    trials : list of dict
+        List of trial data dictionaries with 'target_x', 'target_y',
+        'final_eye_x', 'final_eye_y', 'target_diameter', 'cursor_diameter'
+    n_shuffles : int
+        Number of random shuffles to perform (default: 10000)
+    target_filter : callable, optional
+        Optional function to filter which trials to include (e.g., left vs right)
+
+    Returns
+    -------
+    float
+        Average success rate across all shuffles (as fraction, not percentage)
+    """
+    if not trials or len(trials) == 0:
+        return 0.0
+
+    # Apply filter if provided
+    if target_filter is not None:
+        trials = [t for t in trials if target_filter(t)]
+
+    if len(trials) == 0:
+        return 0.0
+
+    # Extract data from trials
+    target_positions = np.array([(t['target_x'], t['target_y']) for t in trials])
+    final_eye_positions = np.array([(t['final_eye_x'], t['final_eye_y']) for t in trials])
+    target_diameters = np.array([t['target_diameter'] for t in trials])
+    cursor_diameters = np.array([t['cursor_diameter'] for t in trials])
+
+    # Check for NaN values in final eye positions
+    valid_mask = ~(np.isnan(final_eye_positions[:, 0]) | np.isnan(final_eye_positions[:, 1]))
+
+    if not np.any(valid_mask):
+        return 0.0
+
+    n_trials = len(trials)
+    success_rates = []
+
+    for _ in range(n_shuffles):
+        # Shuffle target positions
+        shuffled_indices = np.random.permutation(n_trials)
+        shuffled_targets = target_positions[shuffled_indices]
+        shuffled_target_diameters = target_diameters[shuffled_indices]
+
+        # Calculate success for this shuffle
+        n_success = 0
+        for i in range(n_trials):
+            if not valid_mask[i]:
+                continue
+
+            # Calculate distance from final eye position to shuffled target
+            dist = np.sqrt((final_eye_positions[i, 0] - shuffled_targets[i, 0])**2 +
+                          (final_eye_positions[i, 1] - shuffled_targets[i, 1])**2)
+
+            # Contact threshold = target_radius + cursor_radius
+            target_radius = shuffled_target_diameters[i] / 2.0
+            cursor_radius = cursor_diameters[i] / 2.0
+            contact_threshold = target_radius + cursor_radius
+
+            # Check if eye hit the shuffled target
+            if dist <= contact_threshold:
+                n_success += 1
+
+        # Calculate success rate for this shuffle (only count valid trials)
+        success_rate = n_success / np.sum(valid_mask) if np.sum(valid_mask) > 0 else 0.0
+        success_rates.append(success_rate)
+
+    # Return average success rate across all shuffles
+    return np.mean(success_rates)
+
+
 def plot_trial_success(eot_df: pd.DataFrame, results_dir: Optional[Path] = None,
-                       animal_id: Optional[str] = None, session_date: str = "") -> plt.Figure:
+                       animal_id: Optional[str] = None, session_date: str = "",
+                       trials: Optional[list[dict]] = None) -> plt.Figure:
     """Plot trial success vs failure summary, independent of --include-failed-trials flag.
 
     Creates a figure with:
@@ -955,23 +1037,41 @@ def plot_trial_success(eot_df: pd.DataFrame, results_dir: Optional[Path] = None,
     pct_success = 100 * n_success / n_trials if n_trials > 0 else 0
     pct_failed = 100 * n_failed / n_trials if n_trials > 0 else 0
 
+    # Calculate chance level if trials data is provided
+    chance_level = None
+    if trials is not None and len(trials) > 0:
+        print("  Calculating chance level (10,000 shuffles)...")
+        chance_level = calculate_chance_level(trials, n_shuffles=10000)
+        print(f"  Chance level: {100*chance_level:.1f}%")
+
     # Create figure with 2 subplots
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8), height_ratios=[1, 1.5])
 
     # --- Top plot: Bar chart showing fraction of success vs failure ---
-    categories = ['Success', 'Failed']
-    counts = [n_success, n_failed]
-    percentages = [pct_success, pct_failed]
-    colors = ['forestgreen', 'firebrick']
+    if chance_level is not None:
+        categories = ['Success', 'Failed', 'Chance']
+        counts = [n_success, n_failed, chance_level * n_trials]
+        percentages = [pct_success, pct_failed, 100 * chance_level]
+        colors = ['forestgreen', 'firebrick', 'gray']
+    else:
+        categories = ['Success', 'Failed']
+        counts = [n_success, n_failed]
+        percentages = [pct_success, pct_failed]
+        colors = ['forestgreen', 'firebrick']
 
     bars = ax1.bar(categories, counts, color=colors, edgecolor='black', linewidth=1.5)
 
     # Add count and percentage labels on bars
     for bar, count, pct in zip(bars, counts, percentages):
         height = bar.get_height()
-        ax1.text(bar.get_x() + bar.get_width()/2., height,
-                f'{count}\n({pct:.1f}%)',
-                ha='center', va='bottom', fontsize=12, fontweight='bold')
+        if chance_level is not None and bar == bars[-1]:  # Chance bar
+            ax1.text(bar.get_x() + bar.get_width()/2., height,
+                    f'{pct:.1f}%',
+                    ha='center', va='bottom', fontsize=12, fontweight='bold')
+        else:
+            ax1.text(bar.get_x() + bar.get_width()/2., height,
+                    f'{int(count)}\n({pct:.1f}%)',
+                    ha='center', va='bottom', fontsize=12, fontweight='bold')
 
     ax1.set_ylabel('Number of Trials', fontsize=12)
     title = 'Trial Success Rate (All Trials)'
@@ -1564,6 +1664,17 @@ def compare_left_right_performance(trials: list[dict], left_x: float = -0.7, rig
     ]
     success_odds_ratio, success_p = scipy_stats.fisher_exact(contingency_table)
 
+    # Calculate chance levels for left and right separately
+    print("  Calculating chance level for left targets (10,000 shuffles)...")
+    left_chance = calculate_chance_level(trials, n_shuffles=10000,
+                                         target_filter=lambda t: abs(t['target_x'] - left_x) < tolerance)
+    print(f"  Left chance level: {100*left_chance:.1f}%")
+
+    print("  Calculating chance level for right targets (10,000 shuffles)...")
+    right_chance = calculate_chance_level(trials, n_shuffles=10000,
+                                          target_filter=lambda t: abs(t['target_x'] - right_x) < tolerance)
+    print(f"  Right chance level: {100*right_chance:.1f}%")
+
     # Create comparison plot
     fig, axes = plt.subplots(2, 3, figsize=(18, 10))
 
@@ -1620,37 +1731,44 @@ def compare_left_right_performance(trials: list[dict], left_x: float = -0.7, rig
 
     # Plot 4: Success/Failure Rates
     ax = axes[0, 2]
-    # Bar chart showing success and failure rates
-    x_pos = np.array([0.8, 1.2, 1.8, 2.2])
-    success_counts = [left_metrics['successes'], left_metrics['failures'],
-                     right_metrics['successes'], right_metrics['failures']]
-    colors = ['forestgreen', 'firebrick', 'forestgreen', 'firebrick']
-    bars = ax.bar(x_pos, success_counts, width=0.35, color=colors, edgecolor='black', linewidth=1.5)
+    # Bar chart showing success and failure rates, plus chance levels
+    x_pos = np.array([0.7, 1.0, 1.3, 1.7, 2.0, 2.3])
+    success_counts = [left_metrics['successes'], left_metrics['failures'], left_chance * n_left,
+                     right_metrics['successes'], right_metrics['failures'], right_chance * n_right]
+    colors = ['forestgreen', 'firebrick', 'gray', 'forestgreen', 'firebrick', 'gray']
+    bars = ax.bar(x_pos, success_counts, width=0.25, color=colors, edgecolor='black', linewidth=1.5)
 
     # Add count labels on bars
-    for bar, count in zip(bars, success_counts):
+    for i, (bar, count) in enumerate(zip(bars, success_counts)):
         height = bar.get_height()
-        ax.text(bar.get_x() + bar.get_width()/2., height,
-                f'{count}',
-                ha='center', va='bottom', fontsize=10, fontweight='bold')
+        # For chance bars, just show percentage
+        if i == 2 or i == 5:
+            pct = 100 * left_chance if i == 2 else 100 * right_chance
+            ax.text(bar.get_x() + bar.get_width()/2., height,
+                    f'{pct:.1f}%',
+                    ha='center', va='bottom', fontsize=9, fontweight='bold')
+        else:
+            ax.text(bar.get_x() + bar.get_width()/2., height,
+                    f'{int(count)}',
+                    ha='center', va='bottom', fontsize=9, fontweight='bold')
 
-    # Add percentage labels
+    # Add overall percentage labels for actual performance
     left_success_pct = 100 * left_metrics['success_rate']
     right_success_pct = 100 * right_metrics['success_rate']
-    ax.text(1.0, max(success_counts) * 0.5, f'{left_success_pct:.1f}%\nsuccess',
-            ha='center', va='center', fontsize=11, fontweight='bold',
+    ax.text(1.0, max(success_counts) * 0.4, f'{left_success_pct:.1f}%\nsuccess',
+            ha='center', va='center', fontsize=10, fontweight='bold',
             bbox=dict(boxstyle='round', facecolor='lightgreen', alpha=0.7))
-    ax.text(2.0, max(success_counts) * 0.5, f'{right_success_pct:.1f}%\nsuccess',
-            ha='center', va='center', fontsize=11, fontweight='bold',
+    ax.text(2.0, max(success_counts) * 0.4, f'{right_success_pct:.1f}%\nsuccess',
+            ha='center', va='center', fontsize=10, fontweight='bold',
             bbox=dict(boxstyle='round', facecolor='lightgreen', alpha=0.7))
 
     ax.set_xticks([1.0, 2.0])
     ax.set_xticklabels(['Left', 'Right'])
     ax.set_ylabel('Trial Count', fontsize=12)
     ax.set_title(f'Success/Failure Rates\np = {success_p:.4f}', fontsize=12, fontweight='bold')
-    ax.set_ylim(0, max(success_counts) * 1.25)
+    ax.set_ylim(0, max(success_counts) * 1.3)
     ax.grid(True, alpha=0.3, axis='y')
-    ax.legend([bars[0], bars[1]], ['Success', 'Failure'], loc='upper right', fontsize=9)
+    ax.legend([bars[0], bars[1], bars[2]], ['Success', 'Failure', 'Chance'], loc='upper right', fontsize=9)
 
     # Plot 5: Summary statistics table
     ax = axes[1, 2]
@@ -3549,7 +3667,7 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
 
     # Plot trial success summary (uses ALL trials, independent of --include-failed-trials flag)
     print("\nGenerating trial success summary plot...")
-    fig_success = plot_trial_success(eot_df, results_dir, animal_id, date_str)
+    fig_success = plot_trial_success(eot_df, results_dir, animal_id, date_str, trials=trials_all)
     if fig_success is not None:
         if show_plots:
             plt.show()
@@ -3783,7 +3901,7 @@ def main(session_id: str, trial_min_duration: float = 0.01, trial_max_duration: 
 
     # Plot trial success summary (uses ALL trials, independent of --include-failed-trials flag)
     print("\nGenerating trial success summary plot...")
-    fig_success = plot_trial_success(eot_df, results_dir, animal_id, date_str)
+    fig_success = plot_trial_success(eot_df, results_dir, animal_id, date_str, trials=trials_all)
     if fig_success is not None:
         plt.show()
         plt.close(fig_success)
