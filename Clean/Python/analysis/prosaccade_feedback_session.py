@@ -949,7 +949,7 @@ def plot_trial_success(eot_df: pd.DataFrame, results_dir: Optional[Path] = None,
     session_date : str, optional
         Session date for title
     chance_results : dict, optional
-        Results from calculate_chance_performance() to add chance level to plot
+        Results from chance performance calculation to add chance level to plot
 
     Returns
     -------
@@ -3843,6 +3843,240 @@ def calculate_chance_performance(trials: list[dict], eot_df: pd.DataFrame,
     }
 
 
+def calculate_chance_performance_from_intertrial(trials: list[dict], eye_df: pd.DataFrame,
+                                                   eot_df: pd.DataFrame,
+                                                   min_fixation_duration: float = 0.65,
+                                                   max_movement: float = 0.1) -> dict:
+    """Calculate chance-level performance using inter-trial eye movements.
+
+    For each inter-trial period (between trial i and trial i+1), extract the eye
+    position data and check if any fixations would have succeeded if the target
+    from trial i had been present.
+
+    Parameters
+    ----------
+    trials : list of dict
+        List of trial data dictionaries with start_time, end_time, target info
+    eye_df : pd.DataFrame
+        Full eye position dataframe with columns: timestamp, green_x, green_y, diameter
+    eot_df : pd.DataFrame
+        End-of-trial dataframe (for getting actual success rate)
+    min_fixation_duration : float
+        Minimum fixation duration for success (default: 0.65s)
+    max_movement : float
+        Maximum frame-to-frame movement for fixation detection (default: 0.1)
+
+    Returns
+    -------
+    dict
+        Dictionary with keys:
+        - 'n_shuffles': number of inter-trial periods analyzed
+        - 'shuffled_success_rates': array with single value (inter-trial success rate)
+        - 'mean_success_rate': inter-trial success rate
+        - 'ci_95': 95% confidence interval (using bootstrap)
+        - 'ci_99': 99% confidence interval (using bootstrap)
+        - 'actual_success_rate': actual success rate from task
+        - 'n_trials': number of inter-trial periods
+        - 'n_actual_success': number of actual trial successes
+    """
+    print(f"\n{'='*80}")
+    print(f"CHANCE PERFORMANCE CALCULATION (INTER-TRIAL ANALYSIS)")
+    print(f"{'='*80}")
+    print(f"Analyzing eye movements during inter-trial periods...")
+    print(f"Using target from previous trial for each inter-trial period")
+    print()
+
+    # Helper function to detect fixations (same as in validation)
+    def detect_fixations(eye_x, eye_y, eye_times):
+        if len(eye_x) < 2:
+            return []
+
+        n = len(eye_x)
+        fixations = []
+
+        i = 0
+        while i < n:
+            j = i + 1
+            while j < n:
+                dx = eye_x[j] - eye_x[j-1]
+                dy = eye_y[j] - eye_y[j-1]
+                movement = np.sqrt(dx**2 + dy**2)
+
+                if movement < max_movement:
+                    j += 1
+                else:
+                    break
+
+            if j > i + 1:
+                duration = eye_times[j-1] - eye_times[i]
+                if duration >= min_fixation_duration:
+                    fixations.append((i, j, duration))
+                    i = j
+                else:
+                    i += 1
+            else:
+                i += 1
+
+        return fixations
+
+    # Filter trials with timing data
+    valid_trials = [t for t in trials if t.get('has_eye_data', False)
+                   and 'end_time' in t and 'start_time' in t]
+
+    if len(valid_trials) < 2:
+        print("Not enough trials with timing data for inter-trial analysis!")
+        return None
+
+    # Get actual success rate from trials
+    n_actual_success = sum(1 for t in valid_trials
+                          if t.get('trial_number', 0) <= len(eot_df)
+                          and eot_df.iloc[t['trial_number']-1]['trial_success'] == 2)
+    actual_success_rate = n_actual_success / len(valid_trials)
+
+    print(f"Valid trials: {len(valid_trials)}")
+    print(f"Actual success rate: {n_actual_success}/{len(valid_trials)} ({100*actual_success_rate:.1f}%)")
+    print()
+
+    # Extract inter-trial periods
+    inter_trial_periods = []
+
+    for i in range(len(valid_trials) - 1):
+        trial_i = valid_trials[i]
+        trial_next = valid_trials[i + 1]
+
+        # Inter-trial period: from end of trial i to start of trial i+1
+        iti_start = trial_i['end_time']
+        iti_end = trial_next['start_time']
+
+        if iti_end <= iti_start:
+            continue  # Skip if no inter-trial period
+
+        # Extract eye data during this inter-trial period
+        iti_mask = (eye_df['timestamp'] > iti_start) & (eye_df['timestamp'] < iti_end)
+        iti_eye_data = eye_df[iti_mask].copy()
+
+        # Drop NA values
+        iti_eye_data = iti_eye_data.dropna(subset=['green_x', 'green_y', 'timestamp'])
+
+        if len(iti_eye_data) < 2:
+            continue  # Need at least 2 points for fixation detection
+
+        # Use target from trial i (the previous trial)
+        inter_trial_periods.append({
+            'eye_x': iti_eye_data['green_x'].values,
+            'eye_y': iti_eye_data['green_y'].values,
+            'eye_times': iti_eye_data['timestamp'].values,
+            'target_x': trial_i['target_x'],
+            'target_y': trial_i['target_y'],
+            'target_radius': trial_i['target_diameter'] / 2.0,
+            'cursor_radius': trial_i.get('cursor_diameter', 0.2) / 2.0,
+            'duration': iti_end - iti_start,
+            'trial_before': trial_i['trial_number'],
+            'trial_after': trial_next['trial_number'],
+        })
+
+    n_intertrial = len(inter_trial_periods)
+    print(f"Found {n_intertrial} inter-trial periods with eye data")
+
+    if n_intertrial == 0:
+        print("No inter-trial periods with sufficient eye data!")
+        return None
+
+    # Calculate total duration of inter-trial data
+    total_iti_duration = sum(itp['duration'] for itp in inter_trial_periods)
+    print(f"Total inter-trial duration: {total_iti_duration:.1f}s")
+    print(f"Mean inter-trial duration: {total_iti_duration/n_intertrial:.2f}s")
+    print()
+
+    # Check each inter-trial period for success
+    n_intertrial_success = 0
+    success_per_period = []  # For bootstrap CI
+
+    for idx, itp in enumerate(inter_trial_periods):
+        eye_x = itp['eye_x']
+        eye_y = itp['eye_y']
+        eye_times = itp['eye_times']
+        target_x = itp['target_x']
+        target_y = itp['target_y']
+        contact_threshold = itp['target_radius'] + itp['cursor_radius']
+
+        # Detect fixations
+        fixations = detect_fixations(eye_x, eye_y, eye_times)
+
+        # Check if any fixation ends on target
+        period_success = False
+        for start_idx, end_idx, duration in fixations:
+            # Get eye positions for this fixation
+            fix_x = eye_x[start_idx:end_idx]
+            fix_y = eye_y[start_idx:end_idx]
+
+            # Calculate distances from target
+            fix_distances = np.sqrt((fix_x - target_x)**2 + (fix_y - target_y)**2)
+
+            # Check if fixation ends on target
+            if fix_distances[-1] <= contact_threshold:
+                # Success! Fixation ends on target with duration >= min_fixation_duration
+                period_success = True
+                break
+
+        success_per_period.append(1 if period_success else 0)
+        if period_success:
+            n_intertrial_success += 1
+
+    # Calculate inter-trial success rate
+    intertrial_success_rate = n_intertrial_success / n_intertrial
+
+    print(f"Inter-trial successes: {n_intertrial_success}/{n_intertrial} ({100*intertrial_success_rate:.1f}%)")
+    print()
+
+    # Bootstrap confidence intervals
+    n_bootstrap = 1000
+    bootstrap_rates = []
+    success_array = np.array(success_per_period)
+
+    print(f"Computing bootstrap 95% and 99% confidence intervals ({n_bootstrap} iterations)...")
+    for _ in range(n_bootstrap):
+        # Resample with replacement
+        resampled = np.random.choice(success_array, size=len(success_array), replace=True)
+        bootstrap_rates.append(np.mean(resampled))
+
+    bootstrap_rates = np.array(bootstrap_rates)
+    ci_95 = np.percentile(bootstrap_rates, [2.5, 97.5])
+    ci_99 = np.percentile(bootstrap_rates, [0.5, 99.5])
+
+    print()
+    print(f"Inter-trial chance performance:")
+    print(f"-" * 80)
+    print(f"  Chance success rate: {100*intertrial_success_rate:.2f}%")
+    print(f"  95% CI: [{100*ci_95[0]:.2f}%, {100*ci_95[1]:.2f}%]")
+    print(f"  99% CI: [{100*ci_99[0]:.2f}%, {100*ci_99[1]:.2f}%]")
+    print()
+    print(f"  Actual success rate: {100*actual_success_rate:.2f}%")
+
+    if actual_success_rate > ci_99[1]:
+        print(f"  *** Actual performance is SIGNIFICANTLY ABOVE CHANCE (p < 0.01) ***")
+    elif actual_success_rate > ci_95[1]:
+        print(f"  ** Actual performance is significantly above chance (p < 0.05) **")
+    elif actual_success_rate < ci_95[0]:
+        print(f"  Actual performance is below chance level")
+    else:
+        print(f"  Actual performance is within chance range")
+
+    print(f"\n{' '*80}")
+
+    # Return in same format as calculate_chance_performance for compatibility
+    return {
+        'n_shuffles': n_intertrial,  # Number of inter-trial periods analyzed
+        'shuffled_success_rates': bootstrap_rates,  # Bootstrap distribution
+        'mean_success_rate': intertrial_success_rate,
+        'ci_95': ci_95,
+        'ci_99': ci_99,
+        'actual_success_rate': actual_success_rate,
+        'n_trials': n_intertrial,
+        'n_actual_success': n_actual_success,
+    }
+
+
 def create_vstim_go_fixation_csv(folder_path: Path, results_dir: Optional[Path] = None,
                                    animal_id: Optional[str] = None, session_date: str = "",
                                    min_duration: float = FIXATION_MIN_DURATION,
@@ -5211,16 +5445,16 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
         validation_df.to_csv(validation_filepath, index=False)
         print(f"Saved validation results to: {validation_filepath}")
 
-    # Calculate chance performance via shuffling
-    chance_results = calculate_chance_performance(trials_all, eot_df, n_shuffles=1000, random_seed=42)
+    # Calculate chance performance from inter-trial periods
+    chance_results = calculate_chance_performance_from_intertrial(trials_all, eye_df, eot_df)
 
     # Save chance performance results
     if results_dir is not None and chance_results is not None:
         chance_filename = f"{animal_id}_{date_str}_chance_performance.csv" if animal_id and date_str else "chance_performance.csv"
         chance_filepath = results_dir / chance_filename
-        # Save the shuffled success rates as a CSV
+        # Save the bootstrap distribution as a CSV
         chance_df = pd.DataFrame({
-            'shuffle_idx': range(chance_results['n_shuffles']),
+            'bootstrap_idx': range(len(chance_results['shuffled_success_rates'])),
             'success_rate': chance_results['shuffled_success_rates']
         })
         chance_df.to_csv(chance_filepath, index=False)
@@ -5230,13 +5464,13 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
         summary_filename = f"{animal_id}_{date_str}_chance_summary.txt" if animal_id and date_str else "chance_summary.txt"
         summary_filepath = results_dir / summary_filename
         with open(summary_filepath, 'w') as f:
-            f.write(f"Chance Performance Analysis\n")
+            f.write(f"Chance Performance Analysis (Inter-Trial Periods)\n")
             f.write(f"{'='*80}\n\n")
-            f.write(f"Number of shuffles: {chance_results['n_shuffles']}\n")
-            f.write(f"Valid trials: {chance_results['n_trials']}\n")
-            f.write(f"Actual successes: {chance_results['n_actual_success']}\n")
+            f.write(f"Number of inter-trial periods: {chance_results['n_trials']}\n")
+            f.write(f"Bootstrap iterations: {len(chance_results['shuffled_success_rates'])}\n")
+            f.write(f"Actual trial successes: {chance_results['n_actual_success']}\n")
             f.write(f"Actual success rate: {100*chance_results['actual_success_rate']:.2f}%\n\n")
-            f.write(f"Chance success rate: {100*chance_results['mean_success_rate']:.2f}%\n")
+            f.write(f"Inter-trial success rate: {100*chance_results['mean_success_rate']:.2f}%\n")
             f.write(f"95% CI: [{100*chance_results['ci_95'][0]:.2f}%, {100*chance_results['ci_95'][1]:.2f}%]\n")
             f.write(f"99% CI: [{100*chance_results['ci_99'][0]:.2f}%, {100*chance_results['ci_99'][1]:.2f}%]\n\n")
             if chance_results['actual_success_rate'] > chance_results['ci_99'][1]:
@@ -5503,16 +5737,16 @@ def main(session_id: str, trial_min_duration: float = 0.01, trial_max_duration: 
         validation_df.to_csv(validation_filepath, index=False)
         print(f"Saved validation results to: {validation_filepath}")
 
-    # Calculate chance performance via shuffling
-    chance_results = calculate_chance_performance(trials_all, eot_df, n_shuffles=1000, random_seed=42)
+    # Calculate chance performance from inter-trial periods
+    chance_results = calculate_chance_performance_from_intertrial(trials_all, eye_df, eot_df)
 
     # Save chance performance results
     if results_dir is not None and chance_results is not None:
         chance_filename = f"{animal_id}_{date_str}_chance_performance.csv" if animal_id and date_str else "chance_performance.csv"
         chance_filepath = results_dir / chance_filename
-        # Save the shuffled success rates as a CSV
+        # Save the bootstrap distribution as a CSV
         chance_df = pd.DataFrame({
-            'shuffle_idx': range(chance_results['n_shuffles']),
+            'bootstrap_idx': range(len(chance_results['shuffled_success_rates'])),
             'success_rate': chance_results['shuffled_success_rates']
         })
         chance_df.to_csv(chance_filepath, index=False)
@@ -5522,13 +5756,13 @@ def main(session_id: str, trial_min_duration: float = 0.01, trial_max_duration: 
         summary_filename = f"{animal_id}_{date_str}_chance_summary.txt" if animal_id and date_str else "chance_summary.txt"
         summary_filepath = results_dir / summary_filename
         with open(summary_filepath, 'w') as f:
-            f.write(f"Chance Performance Analysis\n")
+            f.write(f"Chance Performance Analysis (Inter-Trial Periods)\n")
             f.write(f"{'='*80}\n\n")
-            f.write(f"Number of shuffles: {chance_results['n_shuffles']}\n")
-            f.write(f"Valid trials: {chance_results['n_trials']}\n")
-            f.write(f"Actual successes: {chance_results['n_actual_success']}\n")
+            f.write(f"Number of inter-trial periods: {chance_results['n_trials']}\n")
+            f.write(f"Bootstrap iterations: {len(chance_results['shuffled_success_rates'])}\n")
+            f.write(f"Actual trial successes: {chance_results['n_actual_success']}\n")
             f.write(f"Actual success rate: {100*chance_results['actual_success_rate']:.2f}%\n\n")
-            f.write(f"Chance success rate: {100*chance_results['mean_success_rate']:.2f}%\n")
+            f.write(f"Inter-trial success rate: {100*chance_results['mean_success_rate']:.2f}%\n")
             f.write(f"95% CI: [{100*chance_results['ci_95'][0]:.2f}%, {100*chance_results['ci_95'][1]:.2f}%]\n")
             f.write(f"99% CI: [{100*chance_results['ci_99'][0]:.2f}%, {100*chance_results['ci_99'][1]:.2f}%]\n\n")
             if chance_results['actual_success_rate'] > chance_results['ci_99'][1]:
