@@ -3758,24 +3758,28 @@ def calculate_chance_performance(trials: list[dict], eye_df: pd.DataFrame,
         if len(iti_eye_data) < 2:
             continue  # Need at least 2 points for fixation detection
 
-        # Use target from trial i (the previous trial)
+        # Randomly select a trial to use for target position
+        random_trial = np.random.choice(valid_trials)
+
         inter_trial_periods.append({
             'eye_x': iti_eye_data['green_x'].values,
             'eye_y': iti_eye_data['green_y'].values,
             'eye_times': iti_eye_data['timestamp'].values,
-            'target_x': trial_i['target_x'],
-            'target_y': trial_i['target_y'],
-            'target_radius': trial_i['target_diameter'] / 2.0,
-            'cursor_radius': trial_i.get('cursor_diameter', 0.2) / 2.0,
+            'target_x': random_trial['target_x'],
+            'target_y': random_trial['target_y'],
+            'target_radius': random_trial['target_diameter'] / 2.0,
+            'cursor_radius': random_trial.get('cursor_diameter', 0.2) / 2.0,
             'duration': iti_end - iti_start,
             'trial_before': trial_num,
             'trial_after': trial_next['trial_number'],
             'trial_before_failed': True,
+            'random_target_from_trial': random_trial['trial_number'],
         })
 
     n_intertrial = len(inter_trial_periods)
     print(f"Skipped {n_skipped_after_success} inter-trial periods after successful trials")
     print(f"Found {n_intertrial} inter-trial periods after FAILED trials")
+    print(f"Using randomly selected trial targets for each inter-trial period")
 
     if n_intertrial == 0:
         print("No inter-trial periods with sufficient eye data after failed trials!")
