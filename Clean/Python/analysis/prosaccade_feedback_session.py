@@ -914,6 +914,140 @@ def plot_time_to_target(trials: list[dict], results_dir: Optional[Path] = None,
     return fig
 
 
+def detect_fixations(eye_x: np.ndarray, eye_y: np.ndarray, eye_times: np.ndarray,
+                     min_fixation_duration: float = 0.65,
+                     max_movement: float = 0.1) -> list[tuple]:
+    """Detect fixation windows based on frame-to-frame movement velocity.
+
+    A fixation is a period where consecutive frame-to-frame movements are below
+    the max_movement threshold and the total duration meets the minimum.
+
+    Parameters
+    ----------
+    eye_x : np.ndarray
+        X positions of eye trajectory
+    eye_y : np.ndarray
+        Y positions of eye trajectory
+    eye_times : np.ndarray
+        Timestamps for each position
+    min_fixation_duration : float
+        Minimum duration (seconds) for a valid fixation (default: 0.65)
+    max_movement : float
+        Maximum frame-to-frame movement for fixation (default: 0.1 units)
+
+    Returns
+    -------
+    list of tuples
+        Each tuple is (start_idx, end_idx, duration, span) where:
+        - start_idx: Starting index in the arrays
+        - end_idx: Ending index (exclusive)
+        - duration: Total time from start to end
+        - span: Spatial extent of the fixation
+    """
+    if len(eye_x) < 2:
+        return []
+
+    n = len(eye_x)
+    fixations = []
+    i = 0
+
+    while i < n:
+        # Try to extend a fixation starting at point i
+        j = i + 1
+
+        # Extend while frame-to-frame movement is below threshold
+        while j < n:
+            # Calculate movement from point j-1 to point j
+            dx = eye_x[j] - eye_x[j-1]
+            dy = eye_y[j] - eye_y[j-1]
+            movement = np.sqrt(dx**2 + dy**2)
+
+            if movement < max_movement:
+                j += 1  # Include point j in the fixation
+            else:
+                break  # Movement too large, stop before point j
+
+        # Now we have a potential fixation from index i to j (exclusive end)
+        # This includes points [i, i+1, ..., j-1]
+
+        if j > i + 1:  # At least 2 points
+            duration = eye_times[j-1] - eye_times[i]
+            if duration >= min_fixation_duration:
+                # Valid fixation! Calculate span for informational purposes
+                fix_x = eye_x[i:j]
+                fix_y = eye_y[i:j]
+                x_range = np.max(fix_x) - np.min(fix_x)
+                y_range = np.max(fix_y) - np.min(fix_y)
+                span = np.sqrt(x_range**2 + y_range**2)
+                fixations.append((i, j, duration, span))
+                i = j  # Start next search after this fixation
+            else:
+                i += 1  # Duration too short, try next starting point
+        else:
+            i += 1  # No valid extension, try next starting point
+
+    return fixations
+
+
+def calculate_trial_success_from_fixations(eye_x: np.ndarray, eye_y: np.ndarray,
+                                          eye_times: np.ndarray,
+                                          target_x: float, target_y: float,
+                                          contact_threshold: float,
+                                          min_fixation_duration: float = 0.65,
+                                          max_movement: float = 0.1) -> tuple[bool, float]:
+    """Determine trial success based on fixations ending on target.
+
+    Success criterion:
+    - Detect fixations using frame-to-frame movement threshold
+    - Check if any fixation ENDS on target (last point within contact_threshold)
+    - If yes, use the TOTAL duration of that fixation
+    - Success if max fixation duration >= min_fixation_duration
+
+    Parameters
+    ----------
+    eye_x, eye_y, eye_times : np.ndarray
+        Eye trajectory data
+    target_x, target_y : float
+        Target position
+    contact_threshold : float
+        Distance threshold for being "on target" (target_radius + cursor_radius)
+    min_fixation_duration : float
+        Minimum fixation duration for success (default: 0.65s)
+    max_movement : float
+        Maximum movement for fixation detection (default: 0.1 units)
+
+    Returns
+    -------
+    tuple of (success, max_fixation_duration)
+        success : bool
+            Whether trial succeeded
+        max_fixation_duration : float
+            Duration of longest fixation ending on target (0.0 if none)
+    """
+    # Detect all fixations
+    fixations = detect_fixations(eye_x, eye_y, eye_times,
+                                 min_fixation_duration, max_movement)
+
+    # Check each fixation to see if it ENDS on target
+    max_fixation_duration = 0.0
+
+    for start_idx, end_idx, duration, span in fixations:
+        # Check if fixation ends on target (last point within contact threshold)
+        final_x = eye_x[end_idx - 1]
+        final_y = eye_y[end_idx - 1]
+        dist = np.sqrt((final_x - target_x)**2 + (final_y - target_y)**2)
+
+        if dist <= contact_threshold:
+            # Fixation ends on target, use total duration
+            if duration > max_fixation_duration:
+                max_fixation_duration = duration
+
+    # Success if we found a fixation ending on target with sufficient duration
+    success = (max_fixation_duration >= min_fixation_duration)
+
+    return success, max_fixation_duration
+
+
 def calculate_chance_level(trials: list[dict], n_shuffles: int = 10000,
                            target_filter: Optional[callable] = None,
                            min_fixation_duration: float = 0.65,
@@ -986,40 +1120,6 @@ def calculate_chance_level(trials: list[dict], n_shuffles: int = 10000,
     valid_target_diameters = target_diameters[valid_indices]
     valid_cursor_diameters = cursor_diameters[valid_indices]
 
-    def detect_fixations(eye_x, eye_y, eye_times):
-        """Detect fixation windows based on frame-to-frame movement."""
-        if len(eye_x) < 2:
-            return []
-
-        n = len(eye_x)
-        fixations = []
-        i = 0
-
-        while i < n:
-            j = i + 1
-            # Extend while frame-to-frame movement is below threshold
-            while j < n:
-                dx = eye_x[j] - eye_x[j-1]
-                dy = eye_y[j] - eye_y[j-1]
-                movement = np.sqrt(dx**2 + dy**2)
-
-                if movement < max_movement:
-                    j += 1
-                else:
-                    break
-
-            if j > i + 1:  # At least 2 points
-                duration = eye_times[j-1] - eye_times[i]
-                if duration >= min_fixation_duration:
-                    fixations.append((i, j, duration))
-                    i = j
-                else:
-                    i += 1
-            else:
-                i += 1
-
-        return fixations
-
     success_rates = []
 
     for shuffle_idx in range(n_shuffles):
@@ -1041,24 +1141,14 @@ def calculate_chance_level(trials: list[dict], n_shuffles: int = 10000,
             cursor_radius = valid_cursor_diameters[i] / 2.0
             contact_threshold = target_radius + cursor_radius
 
-            # Detect fixations in the eye trajectory
-            fixations = detect_fixations(eye_x, eye_y, eye_times)
+            # Use shared helper to determine trial success
+            success, _ = calculate_trial_success_from_fixations(
+                eye_x, eye_y, eye_times,
+                target_x, target_y, contact_threshold,
+                min_fixation_duration, max_movement
+            )
 
-            # Check if any fixation ENDS on the shuffled target with sufficient duration
-            max_fixation_duration = 0.0
-            for start_idx, end_idx, duration in fixations:
-                # Check if fixation ends on shuffled target
-                final_x = eye_x[end_idx - 1]
-                final_y = eye_y[end_idx - 1]
-                dist = np.sqrt((final_x - target_x)**2 + (final_y - target_y)**2)
-
-                if dist <= contact_threshold:
-                    # Fixation ends on target, use total duration
-                    if duration > max_fixation_duration:
-                        max_fixation_duration = duration
-
-            # Success if we found a fixation ending on target with duration >= threshold
-            if max_fixation_duration >= min_fixation_duration:
+            if success:
                 n_success += 1
 
         # Calculate success rate for this shuffle
@@ -2535,59 +2625,6 @@ def interactive_fixation_viewer(trials: list[dict], animal_id: Optional[str] = N
     fig, ax = plt.subplots(figsize=(12, 10))
     current_trial_idx = [0]  # Use list to allow modification in nested function
 
-    def detect_fixations(eye_x, eye_y, eye_times):
-        """Detect fixation windows based on frame-to-frame movement velocity.
-
-        A fixation is a continuous segment where every consecutive frame-to-frame
-        movement is < max_movement, lasting for at least min_duration.
-
-        Returns list of tuples: (start_idx, end_idx, duration, span)
-        where span is calculated for informational purposes but NOT used for detection.
-        """
-        if len(eye_x) < 2:
-            return []
-
-        n = len(eye_x)
-        fixations = []
-
-        i = 0
-        while i < n:
-            # Try to extend a fixation starting at point i
-            j = i + 1
-
-            # Extend while frame-to-frame movement is below threshold
-            while j < n:
-                # Calculate movement from point j-1 to point j
-                dx = eye_x[j] - eye_x[j-1]
-                dy = eye_y[j] - eye_y[j-1]
-                movement = np.sqrt(dx**2 + dy**2)
-
-                if movement < max_movement:
-                    j += 1  # Include point j in the fixation
-                else:
-                    break  # Movement too large, stop before point j
-
-            # Now we have a potential fixation from index i to j (exclusive end)
-            # This includes points [i, i+1, ..., j-1]
-
-            if j > i + 1:  # At least 2 points
-                duration = eye_times[j-1] - eye_times[i]
-                if duration >= min_duration:
-                    # Valid fixation! Calculate span for informational purposes
-                    fix_x = eye_x[i:j]
-                    fix_y = eye_y[i:j]
-                    x_range = np.max(fix_x) - np.min(fix_x)
-                    y_range = np.max(fix_y) - np.min(fix_y)
-                    span = np.sqrt(x_range**2 + y_range**2)
-                    fixations.append((i, j, duration, span))
-                    i = j  # Start next search after this fixation
-                else:
-                    i += 1  # Duration too short, try next starting point
-            else:
-                i += 1  # No valid extension, try next starting point
-
-        return fixations
-
     def plot_trial(idx):
         ax.clear()
         trial = trials_with_data[idx]
@@ -2607,8 +2644,8 @@ def interactive_fixation_viewer(trials: list[dict], animal_id: Optional[str] = N
         is_failed = trial.get('trial_failed', False)
         target_visible = trial.get('target_visible', 1)
 
-        # Detect fixations
-        fixations = detect_fixations(eye_x, eye_y, eye_times)
+        # Detect fixations (uses shared module-level function)
+        fixations = detect_fixations(eye_x, eye_y, eye_times, min_duration, max_movement)
 
         # Plot full trajectory (lighter)
         if is_failed:
@@ -2994,57 +3031,6 @@ def calculate_and_validate_trial_success(trials: list[dict], eot_df: pd.DataFram
     print(f"  (If fixation ends on target, count TOTAL fixation duration)")
     print()
 
-    def detect_fixations(eye_x, eye_y, eye_times):
-        """Detect fixation windows based on frame-to-frame movement velocity.
-
-        Same algorithm as interactive_fixation_viewer.
-
-        Returns list of tuples: (start_idx, end_idx, duration, span)
-        """
-        if len(eye_x) < 2:
-            return []
-
-        n = len(eye_x)
-        fixations = []
-
-        i = 0
-        while i < n:
-            # Try to extend a fixation starting at point i
-            j = i + 1
-
-            # Extend while frame-to-frame movement is below threshold
-            while j < n:
-                # Calculate movement from point j-1 to point j
-                dx = eye_x[j] - eye_x[j-1]
-                dy = eye_y[j] - eye_y[j-1]
-                movement = np.sqrt(dx**2 + dy**2)
-
-                if movement < max_movement:
-                    j += 1  # Include point j in the fixation
-                else:
-                    break  # Movement too large, stop before point j
-
-            # Now we have a potential fixation from index i to j (exclusive end)
-            # This includes points [i, i+1, ..., j-1]
-
-            if j > i + 1:  # At least 2 points
-                duration = eye_times[j-1] - eye_times[i]
-                if duration >= min_fixation_duration:
-                    # Valid fixation! Calculate span for informational purposes
-                    fix_x = eye_x[i:j]
-                    fix_y = eye_y[i:j]
-                    x_range = np.max(fix_x) - np.min(fix_x)
-                    y_range = np.max(fix_y) - np.min(fix_y)
-                    span = np.sqrt(x_range**2 + y_range**2)
-                    fixations.append((i, j, duration, span))
-                    i = j  # Start next search after this fixation
-                else:
-                    i += 1  # Duration too short, try next starting point
-            else:
-                i += 1  # No valid extension, try next starting point
-
-        return fixations
-
     results = []
 
     # Debug: Print info about first few trials
@@ -3114,8 +3100,8 @@ def calculate_and_validate_trial_success(trials: list[dict], eot_df: pd.DataFram
         contact_threshold = target_radius + cursor_radius
 
 
-        # Step 1: Detect all fixations using frame-to-frame movement
-        fixations = detect_fixations(eye_x, eye_y, eye_times)
+        # Step 1: Detect all fixations using frame-to-frame movement (uses shared function)
+        fixations = detect_fixations(eye_x, eye_y, eye_times, min_fixation_duration, max_movement)
 
         # Step 2: For each fixation, check if it ENDS on target
         # The key insight: a fixation can start off-target, but if it ends on-target,
