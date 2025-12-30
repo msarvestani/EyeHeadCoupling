@@ -3633,47 +3633,50 @@ def calculate_and_validate_trial_success(trials: list[dict], eot_df: pd.DataFram
 def calculate_chance_performance(trials: list[dict], eye_df: pd.DataFrame,
                                  eot_df: pd.DataFrame,
                                  min_fixation_duration: float = 0.65,
-                                 max_movement: float = 0.1) -> dict:
-    """Calculate chance-level performance using inter-trial eye movements.
+                                 max_movement: float = 0.1,
+                                 n_shuffles: int = 1000) -> dict:
+    """Calculate chance-level performance by randomly assigning targets to trials.
 
-    For each inter-trial period (between trial i and trial i+1), extract the eye
-    position data and check if any fixations would have succeeded if the target
-    from trial i had been present.
+    For each trial, randomly picks one of the available targets as "correct" and
+    checks if the animal's fixation meets success criteria for that target.
+    Repeats this process n_shuffles times to build a null distribution.
 
     Parameters
     ----------
     trials : list of dict
-        List of trial data dictionaries with start_time, end_time, target info
+        List of trial data dictionaries with eye position and target info
     eye_df : pd.DataFrame
-        Full eye position dataframe with columns: timestamp, green_x, green_y, diameter
+        Full eye position dataframe (not used, kept for compatibility)
     eot_df : pd.DataFrame
         End-of-trial dataframe (for getting actual success rate)
     min_fixation_duration : float
         Minimum fixation duration for success (default: 0.65s)
     max_movement : float
         Maximum frame-to-frame movement for fixation detection (default: 0.1)
+    n_shuffles : int
+        Number of shuffle iterations (default: 1000)
 
     Returns
     -------
     dict
         Dictionary with keys:
-        - 'n_shuffles': number of inter-trial periods analyzed
-        - 'shuffled_success_rates': array with single value (inter-trial success rate)
-        - 'mean_success_rate': inter-trial success rate
-        - 'ci_95': 95% confidence interval (using bootstrap)
-        - 'ci_99': 99% confidence interval (using bootstrap)
+        - 'n_shuffles': number of shuffle iterations
+        - 'shuffled_success_rates': array of success rates from each shuffle
+        - 'mean_success_rate': mean chance success rate
+        - 'ci_95': 95% confidence interval
+        - 'ci_99': 99% confidence interval
         - 'actual_success_rate': actual success rate from task
-        - 'n_trials': number of inter-trial periods
-        - 'n_actual_success': number of actual trial successes
+        - 'n_trials': number of trials analyzed
+        - 'n_actual_success': number of actual successes
     """
     print(f"\n{'='*80}")
-    print(f"CHANCE PERFORMANCE CALCULATION (INTER-TRIAL ANALYSIS)")
+    print(f"CHANCE PERFORMANCE CALCULATION (RANDOM TARGET ASSIGNMENT)")
     print(f"{'='*80}")
-    print(f"Analyzing eye movements during inter-trial periods...")
-    print(f"Using target from previous trial for each inter-trial period")
+    print(f"Randomly assigning targets to trials and testing success criteria...")
+    print(f"Number of shuffles: {n_shuffles}")
     print()
 
-    # Helper function to detect fixations (same as in validation)
+    # Helper function to detect fixations
     def detect_fixations(eye_x, eye_y, eye_times):
         if len(eye_x) < 2:
             return []
@@ -3706,208 +3709,112 @@ def calculate_chance_performance(trials: list[dict], eye_df: pd.DataFrame,
 
         return fixations
 
-    # Filter trials with timing data
-    valid_trials = [t for t in trials if t.get('has_eye_data', False)
-                   and 'end_time' in t and 'start_time' in t]
+    # Filter trials with eye data
+    valid_trials = [t for t in trials if t.get('has_eye_data', False) and len(t.get('eye_x', [])) > 0]
 
-    if len(valid_trials) < 2:
-        print("Not enough trials with timing data for inter-trial analysis!")
+    if len(valid_trials) == 0:
+        print("No valid trials with eye data!")
         return None
 
-    # Get actual success rate from trials
+    print(f"Valid trials with eye data: {len(valid_trials)}")
+
+    # Get actual success rate
     n_actual_success = sum(1 for t in valid_trials
                           if t.get('trial_number', 0) <= len(eot_df)
                           and eot_df.iloc[t['trial_number']-1]['trial_success'] == 2)
     actual_success_rate = n_actual_success / len(valid_trials)
 
-    print(f"Valid trials: {len(valid_trials)}")
     print(f"Actual success rate: {n_actual_success}/{len(valid_trials)} ({100*actual_success_rate:.1f}%)")
     print()
 
-    # Extract inter-trial periods (only after FAILED trials)
-    inter_trial_periods = []
-    n_skipped_after_success = 0
+    # Collect all unique target positions from trials
+    target_positions = []
+    for trial in valid_trials:
+        target_pos = {
+            'x': trial['target_x'],
+            'y': trial['target_y'],
+            'radius': trial['target_diameter'] / 2.0,
+            'cursor_radius': trial.get('cursor_diameter', 0.2) / 2.0,
+        }
+        # Check if this position is already in list (avoid duplicates)
+        is_duplicate = False
+        for existing in target_positions:
+            if (abs(existing['x'] - target_pos['x']) < 0.001 and
+                abs(existing['y'] - target_pos['y']) < 0.001):
+                is_duplicate = True
+                break
+        if not is_duplicate:
+            target_positions.append(target_pos)
 
-    for i in range(len(valid_trials) - 1):
-        trial_i = valid_trials[i]
-        trial_next = valid_trials[i + 1]
+    print(f"Found {len(target_positions)} unique target positions:")
+    for i, tpos in enumerate(target_positions):
+        print(f"  Target {i+1}: ({tpos['x']:.2f}, {tpos['y']:.2f}), contact_threshold={tpos['radius'] + tpos['cursor_radius']:.3f}")
+    print()
 
-        # Check if trial i was a failure (not success)
-        trial_num = trial_i.get('trial_number', 0)
-        if trial_num > 0 and trial_num <= len(eot_df):
-            trial_success = eot_df.iloc[trial_num - 1]['trial_success']
-            if trial_success == 2:
-                # Skip inter-trial periods after successful trials
-                n_skipped_after_success += 1
+    # Run shuffles
+    shuffled_success_rates = []
+
+    print(f"Running {n_shuffles} shuffles...")
+    for shuffle_idx in range(n_shuffles):
+        if (shuffle_idx + 1) % 100 == 0:
+            print(f"  Shuffle {shuffle_idx + 1}/{n_shuffles}...", end='\r')
+
+        n_shuffle_success = 0
+
+        for trial in valid_trials:
+            # Get trial eye data
+            eye_x = np.array(trial['eye_x'])
+            eye_y = np.array(trial['eye_y'])
+            eye_times = np.array(trial['eye_times'])
+
+            if len(eye_x) < 2:
                 continue
 
-        # Inter-trial period: from end of trial i to start of trial i+1
-        iti_start = trial_i['end_time']
-        iti_end = trial_next['start_time']
+            # Randomly pick one of the target positions as "correct"
+            random_target = np.random.choice(target_positions)
+            target_x = random_target['x']
+            target_y = random_target['y']
+            contact_threshold = random_target['radius'] + random_target['cursor_radius']
 
-        if iti_end <= iti_start:
-            continue  # Skip if no inter-trial period
+            # Detect fixations
+            fixations = detect_fixations(eye_x, eye_y, eye_times)
 
-        # Extract eye data during this inter-trial period
-        iti_mask = (eye_df['timestamp'] > iti_start) & (eye_df['timestamp'] < iti_end)
-        iti_eye_data = eye_df[iti_mask].copy()
+            # Apply trial rules: first qualifying fixation determines outcome
+            trial_success = False
+            for start_idx, end_idx, duration in fixations:
+                if duration >= min_fixation_duration:
+                    # Get eye positions for this fixation
+                    fix_x = eye_x[start_idx:end_idx]
+                    fix_y = eye_y[start_idx:end_idx]
 
-        # Drop NA values
-        iti_eye_data = iti_eye_data.dropna(subset=['green_x', 'green_y', 'timestamp'])
+                    # Calculate distances from target
+                    fix_distances = np.sqrt((fix_x - target_x)**2 + (fix_y - target_y)**2)
 
-        if len(iti_eye_data) < 2:
-            continue  # Need at least 2 points for fixation detection
+                    # Check if fixation ends on target
+                    if fix_distances[-1] <= contact_threshold:
+                        trial_success = True
+                    # First qualifying fixation determines outcome
+                    break
 
-        # Randomly select a trial to use for target position
-        random_trial = np.random.choice(valid_trials)
+            if trial_success:
+                n_shuffle_success += 1
 
-        inter_trial_periods.append({
-            'eye_x': iti_eye_data['green_x'].values,
-            'eye_y': iti_eye_data['green_y'].values,
-            'eye_times': iti_eye_data['timestamp'].values,
-            'target_x': random_trial['target_x'],
-            'target_y': random_trial['target_y'],
-            'target_radius': random_trial['target_diameter'] / 2.0,
-            'cursor_radius': random_trial.get('cursor_diameter', 0.2) / 2.0,
-            'duration': iti_end - iti_start,
-            'trial_before': trial_num,
-            'trial_after': trial_next['trial_number'],
-            'trial_before_failed': True,
-            'random_target_from_trial': random_trial['trial_number'],
-        })
+        # Calculate success rate for this shuffle
+        shuffle_success_rate = n_shuffle_success / len(valid_trials)
+        shuffled_success_rates.append(shuffle_success_rate)
 
-    n_intertrial = len(inter_trial_periods)
-    print(f"Skipped {n_skipped_after_success} inter-trial periods after successful trials")
-    print(f"Found {n_intertrial} inter-trial periods after FAILED trials")
-    print(f"Using randomly selected trial targets for each inter-trial period")
+    print(f"  Shuffle {n_shuffles}/{n_shuffles}... Done!              ")
 
-    if n_intertrial == 0:
-        print("No inter-trial periods with sufficient eye data after failed trials!")
-        return None
+    # Convert to numpy array and calculate statistics
+    shuffled_success_rates = np.array(shuffled_success_rates)
+    mean_success_rate = np.mean(shuffled_success_rates)
+    ci_95 = np.percentile(shuffled_success_rates, [2.5, 97.5])
+    ci_99 = np.percentile(shuffled_success_rates, [0.5, 99.5])
 
-    # Calculate total duration of inter-trial data
-    total_iti_duration = sum(itp['duration'] for itp in inter_trial_periods)
-    print(f"Total inter-trial duration: {total_iti_duration:.1f}s")
-    print(f"Mean inter-trial duration: {total_iti_duration/n_intertrial:.2f}s")
     print()
-
-    # Check each inter-trial period for success
-    n_intertrial_success = 0
-    success_per_period = []  # For bootstrap CI
-
-    # Track details for debugging
-    n_periods_with_no_fixations = 0
-    n_periods_with_only_short_fixations = 0
-
-    print(f"Analyzing {n_intertrial} inter-trial periods...")
-    print(f"Showing first 10 periods in detail:\n")
-
-    for idx, itp in enumerate(inter_trial_periods):
-        eye_x = itp['eye_x']
-        eye_y = itp['eye_y']
-        eye_times = itp['eye_times']
-        target_x = itp['target_x']
-        target_y = itp['target_y']
-        contact_threshold = itp['target_radius'] + itp['cursor_radius']
-
-        # Detect fixations
-        fixations = detect_fixations(eye_x, eye_y, eye_times)
-
-        # Apply trial rules: first fixation >= min_duration determines outcome
-        # - If it ends ON target → success
-        # - If it ends OFF target → failure (trial would have ended)
-        # - Fixations < min_duration are ignored (don't end trial)
-        period_success = False
-        qualifying_fixation_found = False
-
-        # Debug info for first 10 periods
-        if idx < 10:
-            print(f"Period {idx+1} (between trials {itp['trial_before']}-{itp['trial_after']}, duration={itp['duration']:.2f}s):")
-            print(f"  Target: ({target_x:.2f}, {target_y:.2f}), radius={itp['target_radius']:.3f}, contact_threshold={contact_threshold:.3f}")
-            print(f"  Found {len(fixations)} fixations")
-
-        for fix_idx, (start_idx, end_idx, duration) in enumerate(fixations):
-            # Get eye positions for this fixation
-            fix_x = eye_x[start_idx:end_idx]
-            fix_y = eye_y[start_idx:end_idx]
-
-            # Calculate distances from target
-            fix_distances = np.sqrt((fix_x - target_x)**2 + (fix_y - target_y)**2)
-            end_distance = fix_distances[-1]
-
-            if idx < 10:
-                on_target = "ON TARGET" if end_distance <= contact_threshold else "off target"
-                qualifier = " [QUALIFIES]" if duration >= min_fixation_duration else ""
-                print(f"    Fix {fix_idx+1}: dur={duration:.3f}s, ends at dist={end_distance:.3f} ({on_target}){qualifier}")
-
-            # Only fixations >= min_duration matter (shorter ones don't end trial)
-            if duration >= min_fixation_duration:
-                qualifying_fixation_found = True
-
-                # Check if fixation ends on target
-                if end_distance <= contact_threshold:
-                    # Success! Fixation ends on target
-                    period_success = True
-                    if idx < 10:
-                        print(f"    → OUTCOME: SUCCESS (first qualifying fixation ends on target)")
-                else:
-                    # Failure! Fixation ends off target - trial would have ended
-                    period_success = False
-                    if idx < 10:
-                        print(f"    → OUTCOME: FAILURE (first qualifying fixation ends off target)")
-
-                # First qualifying fixation determines outcome - stop here
-                break
-
-        if not fixations:
-            n_periods_with_no_fixations += 1
-            if idx < 10:
-                print(f"    → OUTCOME: No fixations detected")
-        elif not qualifying_fixation_found:
-            n_periods_with_only_short_fixations += 1
-            if idx < 10:
-                print(f"    → OUTCOME: No qualifying fixations (all < {min_fixation_duration}s)")
-
-        if idx < 10:
-            print()
-
-        success_per_period.append(1 if period_success else 0)
-        if period_success:
-            n_intertrial_success += 1
-
-    # Calculate inter-trial success rate
-    intertrial_success_rate = n_intertrial_success / n_intertrial
-    n_intertrial_failure = n_intertrial - n_intertrial_success - n_periods_with_no_fixations - n_periods_with_only_short_fixations
-
-    print(f"Summary of {n_intertrial} inter-trial periods:")
+    print(f"Chance performance from random target assignment:")
     print(f"-" * 80)
-    print(f"  Successes (first fix ≥{min_fixation_duration}s ends on target): {n_intertrial_success} ({100*n_intertrial_success/n_intertrial:.1f}%)")
-    print(f"  Failures (first fix ≥{min_fixation_duration}s ends off target): {n_intertrial_failure} ({100*n_intertrial_failure/n_intertrial:.1f}%)")
-    print(f"  No fixations detected: {n_periods_with_no_fixations} ({100*n_periods_with_no_fixations/n_intertrial:.1f}%)")
-    print(f"  Only short fixations (<{min_fixation_duration}s): {n_periods_with_only_short_fixations} ({100*n_periods_with_only_short_fixations/n_intertrial:.1f}%)")
-    print()
-    print(f"Overall chance success rate: {n_intertrial_success}/{n_intertrial} ({100*intertrial_success_rate:.1f}%)")
-    print()
-
-    # Bootstrap confidence intervals
-    n_bootstrap = 1000
-    bootstrap_rates = []
-    success_array = np.array(success_per_period)
-
-    print(f"Computing bootstrap 95% and 99% confidence intervals ({n_bootstrap} iterations)...")
-    for _ in range(n_bootstrap):
-        # Resample with replacement
-        resampled = np.random.choice(success_array, size=len(success_array), replace=True)
-        bootstrap_rates.append(np.mean(resampled))
-
-    bootstrap_rates = np.array(bootstrap_rates)
-    ci_95 = np.percentile(bootstrap_rates, [2.5, 97.5])
-    ci_99 = np.percentile(bootstrap_rates, [0.5, 99.5])
-
-    print()
-    print(f"Inter-trial chance performance:")
-    print(f"-" * 80)
-    print(f"  Chance success rate: {100*intertrial_success_rate:.2f}%")
+    print(f"  Mean chance success rate: {100*mean_success_rate:.2f}%")
     print(f"  95% CI: [{100*ci_95[0]:.2f}%, {100*ci_95[1]:.2f}%]")
     print(f"  99% CI: [{100*ci_99[0]:.2f}%, {100*ci_99[1]:.2f}%]")
     print()
@@ -3924,19 +3831,16 @@ def calculate_chance_performance(trials: list[dict], eye_df: pd.DataFrame,
 
     print(f"\n{' '*80}")
 
-    # Return in same format as calculate_chance_performance for compatibility
     return {
-        'n_shuffles': n_intertrial,  # Number of inter-trial periods analyzed
-        'shuffled_success_rates': bootstrap_rates,  # Bootstrap distribution
-        'mean_success_rate': intertrial_success_rate,
+        'n_shuffles': n_shuffles,
+        'shuffled_success_rates': shuffled_success_rates,
+        'mean_success_rate': mean_success_rate,
         'ci_95': ci_95,
         'ci_99': ci_99,
         'actual_success_rate': actual_success_rate,
-        'n_trials': n_intertrial,
+        'n_trials': len(valid_trials),
         'n_actual_success': n_actual_success,
     }
-
-
 def create_vstim_go_fixation_csv(folder_path: Path, results_dir: Optional[Path] = None,
                                    animal_id: Optional[str] = None, session_date: str = "",
                                    min_duration: float = FIXATION_MIN_DURATION,
