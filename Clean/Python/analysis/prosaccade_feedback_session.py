@@ -5063,10 +5063,25 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
     plt.close(fig_path)
 
     print("\nRunning left vs right target comparison...")
-    fig_lr, lr_stats = compare_left_right_performance(trials_for_analysis, left_x=-0.7, right_x=0.7,
-                                                       results_dir=results_dir,
-                                                       animal_id=animal_id,
-                                                       session_date=date_str)
+    # Auto-detect left and right target positions from the data
+    unique_x_positions = sorted(list(set([t['target_x'] for t in trials_for_analysis])))
+    print(f"  Unique target X positions found: {unique_x_positions}")
+
+    # Use the leftmost and rightmost positions if we have at least 2
+    if len(unique_x_positions) >= 2:
+        detected_left_x = unique_x_positions[0]
+        detected_right_x = unique_x_positions[-1]
+        print(f"  Using left={detected_left_x:.2f}, right={detected_right_x:.2f}")
+        fig_lr, lr_stats = compare_left_right_performance(trials_for_analysis,
+                                                           left_x=detected_left_x,
+                                                           right_x=detected_right_x,
+                                                           results_dir=results_dir,
+                                                           animal_id=animal_id,
+                                                           session_date=date_str)
+    else:
+        print(f"  Not enough unique X positions for left/right comparison")
+        fig_lr, lr_stats = None, None
+
     if fig_lr is not None:
         if show_plots:
             plt.show()
@@ -5325,10 +5340,25 @@ def main(session_id: str, trial_min_duration: float = 0.01, trial_max_duration: 
     # plt.close(fig_path)
 
     print("\nRunning left vs right target comparison...")
-    fig_lr, lr_stats = compare_left_right_performance(trials_for_analysis, left_x=-0.7, right_x=0.7,
-                                                       results_dir=results_dir,
-                                                       animal_id=animal_id,
-                                                       session_date=date_str)
+    # Auto-detect left and right target positions from the data
+    unique_x_positions = sorted(list(set([t['target_x'] for t in trials_for_analysis])))
+    print(f"  Unique target X positions found: {unique_x_positions}")
+
+    # Use the leftmost and rightmost positions if we have at least 2
+    if len(unique_x_positions) >= 2:
+        detected_left_x = unique_x_positions[0]
+        detected_right_x = unique_x_positions[-1]
+        print(f"  Using left={detected_left_x:.2f}, right={detected_right_x:.2f}")
+        fig_lr, lr_stats = compare_left_right_performance(trials_for_analysis,
+                                                           left_x=detected_left_x,
+                                                           right_x=detected_right_x,
+                                                           results_dir=results_dir,
+                                                           animal_id=animal_id,
+                                                           session_date=date_str)
+    else:
+        print(f"  Not enough unique X positions for left/right comparison")
+        fig_lr, lr_stats = None, None
+
     if fig_lr is not None:
         plt.show()
         plt.close(fig_lr)
