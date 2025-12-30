@@ -915,22 +915,32 @@ def plot_time_to_target(trials: list[dict], results_dir: Optional[Path] = None,
 
 
 def calculate_chance_level(trials: list[dict], n_shuffles: int = 10000,
-                           target_filter: Optional[callable] = None) -> float:
+                           target_filter: Optional[callable] = None,
+                           min_fixation_duration: float = 0.65,
+                           max_movement: float = 0.1) -> float:
     """Calculate chance level success rate by shuffling target positions.
 
     Shuffles target positions randomly across trials and calculates what the
-    success rate would be if targets were at those shuffled positions.
-    Repeats this n_shuffles times and returns the average success rate.
+    success rate would be if targets were at those shuffled positions, using
+    the actual fixation-based success criterion.
+
+    Success criterion (same as actual trials):
+    - Detects fixations when frame-to-frame movement < max_movement
+    - A fixation counts if it ENDS on the shuffled target
+    - Success if any fixation ending on target has duration >= min_fixation_duration
 
     Parameters
     ----------
     trials : list of dict
-        List of trial data dictionaries with 'target_x', 'target_y',
-        'final_eye_x', 'final_eye_y', 'target_diameter', 'cursor_diameter'
+        List of trial data dictionaries with eye trajectory and target information
     n_shuffles : int
         Number of random shuffles to perform (default: 10000)
     target_filter : callable, optional
         Optional function to filter which trials to include (e.g., left vs right)
+    min_fixation_duration : float
+        Minimum fixation duration required for success (default: 0.65 seconds)
+    max_movement : float
+        Maximum frame-to-frame movement for fixation detection (default: 0.1 units)
 
     Returns
     -------
@@ -949,46 +959,110 @@ def calculate_chance_level(trials: list[dict], n_shuffles: int = 10000,
 
     # Extract data from trials
     target_positions = np.array([(t['target_x'], t['target_y']) for t in trials])
-    final_eye_positions = np.array([(t['final_eye_x'], t['final_eye_y']) for t in trials])
     target_diameters = np.array([t['target_diameter'] for t in trials])
-    cursor_diameters = np.array([t['cursor_diameter'] for t in trials])
+    cursor_diameters = np.array([t.get('cursor_diameter', 0.2) for t in trials])
 
-    # Check for NaN values in final eye positions
-    valid_mask = ~(np.isnan(final_eye_positions[:, 0]) | np.isnan(final_eye_positions[:, 1]))
+    # Filter out trials without eye data
+    valid_trials = []
+    valid_indices = []
+    for i, trial in enumerate(trials):
+        if trial.get('has_eye_data', False):
+            eye_x = np.array(trial.get('eye_x', []))
+            eye_y = np.array(trial.get('eye_y', []))
+            eye_times = np.array(trial.get('eye_times', []))
+            if len(eye_x) > 0 and len(eye_times) > 0:
+                valid_trials.append({
+                    'eye_x': eye_x,
+                    'eye_y': eye_y,
+                    'eye_times': eye_times
+                })
+                valid_indices.append(i)
 
-    if not np.any(valid_mask):
+    if len(valid_trials) == 0:
         return 0.0
 
-    n_trials = len(trials)
+    n_valid = len(valid_trials)
+    valid_target_positions = target_positions[valid_indices]
+    valid_target_diameters = target_diameters[valid_indices]
+    valid_cursor_diameters = cursor_diameters[valid_indices]
+
+    def detect_fixations(eye_x, eye_y, eye_times):
+        """Detect fixation windows based on frame-to-frame movement."""
+        if len(eye_x) < 2:
+            return []
+
+        n = len(eye_x)
+        fixations = []
+        i = 0
+
+        while i < n:
+            j = i + 1
+            # Extend while frame-to-frame movement is below threshold
+            while j < n:
+                dx = eye_x[j] - eye_x[j-1]
+                dy = eye_y[j] - eye_y[j-1]
+                movement = np.sqrt(dx**2 + dy**2)
+
+                if movement < max_movement:
+                    j += 1
+                else:
+                    break
+
+            if j > i + 1:  # At least 2 points
+                duration = eye_times[j-1] - eye_times[i]
+                if duration >= min_fixation_duration:
+                    fixations.append((i, j, duration))
+                    i = j
+                else:
+                    i += 1
+            else:
+                i += 1
+
+        return fixations
+
     success_rates = []
 
-    for _ in range(n_shuffles):
+    for shuffle_idx in range(n_shuffles):
         # Shuffle target positions
-        shuffled_indices = np.random.permutation(n_trials)
-        shuffled_targets = target_positions[shuffled_indices]
-        shuffled_target_diameters = target_diameters[shuffled_indices]
+        shuffled_indices = np.random.permutation(n_valid)
+        shuffled_targets = valid_target_positions[shuffled_indices]
+        shuffled_target_diameters = valid_target_diameters[shuffled_indices]
 
         # Calculate success for this shuffle
         n_success = 0
-        for i in range(n_trials):
-            if not valid_mask[i]:
-                continue
+        for i in range(n_valid):
+            eye_x = valid_trials[i]['eye_x']
+            eye_y = valid_trials[i]['eye_y']
+            eye_times = valid_trials[i]['eye_times']
 
-            # Calculate distance from final eye position to shuffled target
-            dist = np.sqrt((final_eye_positions[i, 0] - shuffled_targets[i, 0])**2 +
-                          (final_eye_positions[i, 1] - shuffled_targets[i, 1])**2)
-
-            # Contact threshold = target_radius + cursor_radius
+            # Get shuffled target for this trial
+            target_x, target_y = shuffled_targets[i]
             target_radius = shuffled_target_diameters[i] / 2.0
-            cursor_radius = cursor_diameters[i] / 2.0
+            cursor_radius = valid_cursor_diameters[i] / 2.0
             contact_threshold = target_radius + cursor_radius
 
-            # Check if eye hit the shuffled target
-            if dist <= contact_threshold:
+            # Detect fixations in the eye trajectory
+            fixations = detect_fixations(eye_x, eye_y, eye_times)
+
+            # Check if any fixation ENDS on the shuffled target with sufficient duration
+            max_fixation_duration = 0.0
+            for start_idx, end_idx, duration in fixations:
+                # Check if fixation ends on shuffled target
+                final_x = eye_x[end_idx - 1]
+                final_y = eye_y[end_idx - 1]
+                dist = np.sqrt((final_x - target_x)**2 + (final_y - target_y)**2)
+
+                if dist <= contact_threshold:
+                    # Fixation ends on target, use total duration
+                    if duration > max_fixation_duration:
+                        max_fixation_duration = duration
+
+            # Success if we found a fixation ending on target with duration >= threshold
+            if max_fixation_duration >= min_fixation_duration:
                 n_success += 1
 
-        # Calculate success rate for this shuffle (only count valid trials)
-        success_rate = n_success / np.sum(valid_mask) if np.sum(valid_mask) > 0 else 0.0
+        # Calculate success rate for this shuffle
+        success_rate = n_success / n_valid if n_valid > 0 else 0.0
         success_rates.append(success_rate)
 
     # Return average success rate across all shuffles
