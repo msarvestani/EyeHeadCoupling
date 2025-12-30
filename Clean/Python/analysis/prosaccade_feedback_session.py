@@ -3724,12 +3724,22 @@ def calculate_chance_performance(trials: list[dict], eye_df: pd.DataFrame,
     print(f"Actual success rate: {n_actual_success}/{len(valid_trials)} ({100*actual_success_rate:.1f}%)")
     print()
 
-    # Extract inter-trial periods
+    # Extract inter-trial periods (only after FAILED trials)
     inter_trial_periods = []
+    n_skipped_after_success = 0
 
     for i in range(len(valid_trials) - 1):
         trial_i = valid_trials[i]
         trial_next = valid_trials[i + 1]
+
+        # Check if trial i was a failure (not success)
+        trial_num = trial_i.get('trial_number', 0)
+        if trial_num > 0 and trial_num <= len(eot_df):
+            trial_success = eot_df.iloc[trial_num - 1]['trial_success']
+            if trial_success == 2:
+                # Skip inter-trial periods after successful trials
+                n_skipped_after_success += 1
+                continue
 
         # Inter-trial period: from end of trial i to start of trial i+1
         iti_start = trial_i['end_time']
@@ -3758,15 +3768,17 @@ def calculate_chance_performance(trials: list[dict], eye_df: pd.DataFrame,
             'target_radius': trial_i['target_diameter'] / 2.0,
             'cursor_radius': trial_i.get('cursor_diameter', 0.2) / 2.0,
             'duration': iti_end - iti_start,
-            'trial_before': trial_i['trial_number'],
+            'trial_before': trial_num,
             'trial_after': trial_next['trial_number'],
+            'trial_before_failed': True,
         })
 
     n_intertrial = len(inter_trial_periods)
-    print(f"Found {n_intertrial} inter-trial periods with eye data")
+    print(f"Skipped {n_skipped_after_success} inter-trial periods after successful trials")
+    print(f"Found {n_intertrial} inter-trial periods after FAILED trials")
 
     if n_intertrial == 0:
-        print("No inter-trial periods with sufficient eye data!")
+        print("No inter-trial periods with sufficient eye data after failed trials!")
         return None
 
     # Calculate total duration of inter-trial data
