@@ -995,13 +995,18 @@ def calculate_trial_success_from_fixations(eye_x: np.ndarray, eye_y: np.ndarray,
                                           contact_threshold: float,
                                           min_fixation_duration: float = 0.65,
                                           max_movement: float = 0.1) -> tuple[bool, float]:
-    """Determine trial success based on fixations ending on target.
+    """Determine trial success based on the last fixation.
 
     Success criterion:
     - Detect fixations using frame-to-frame movement threshold
-    - Check if any fixation ENDS on target (last point within contact_threshold)
-    - If yes, use the TOTAL duration of that fixation
-    - Success if max fixation duration >= min_fixation_duration
+    - Use ONLY the LAST fixation (since each trial should have only one fixation)
+    - Check if this last fixation ENDS on target (last point within contact_threshold)
+    - Success if the last fixation ends on target and duration >= min_fixation_duration
+
+    NOTE: In prosaccade trials, there should ideally be only one fixation:
+    - A fixation inside the target should end the trial with success
+    - A fixation outside the target should end the trial with failure
+    - If multiple fixations are detected, we use only the last one
 
     Parameters
     ----------
@@ -1018,34 +1023,35 @@ def calculate_trial_success_from_fixations(eye_x: np.ndarray, eye_y: np.ndarray,
 
     Returns
     -------
-    tuple of (success, max_fixation_duration)
+    tuple of (success, fixation_duration)
         success : bool
             Whether trial succeeded
-        max_fixation_duration : float
-            Duration of longest fixation ending on target (0.0 if none)
+        fixation_duration : float
+            Duration of last fixation if it ends on target (0.0 if none or off-target)
     """
     # Detect all fixations
     fixations = detect_fixations(eye_x, eye_y, eye_times,
                                  min_fixation_duration, max_movement)
 
-    # Check each fixation to see if it ENDS on target
-    max_fixation_duration = 0.0
+    # Use only the LAST fixation
+    if len(fixations) == 0:
+        return False, 0.0
 
-    for start_idx, end_idx, duration, span in fixations:
-        # Check if fixation ends on target (last point within contact threshold)
-        final_x = eye_x[end_idx - 1]
-        final_y = eye_y[end_idx - 1]
-        dist = np.sqrt((final_x - target_x)**2 + (final_y - target_y)**2)
+    # Get the last fixation
+    start_idx, end_idx, duration, span = fixations[-1]
 
-        if dist <= contact_threshold:
-            # Fixation ends on target, use total duration
-            if duration > max_fixation_duration:
-                max_fixation_duration = duration
+    # Check if the last fixation ends on target
+    final_x = eye_x[end_idx - 1]
+    final_y = eye_y[end_idx - 1]
+    dist = np.sqrt((final_x - target_x)**2 + (final_y - target_y)**2)
 
-    # Success if we found a fixation ending on target with sufficient duration
-    success = (max_fixation_duration >= min_fixation_duration)
-
-    return success, max_fixation_duration
+    if dist <= contact_threshold:
+        # Last fixation ends on target, success if duration meets requirement
+        success = (duration >= min_fixation_duration)
+        return success, duration
+    else:
+        # Last fixation does not end on target
+        return False, 0.0
 
 
 def calculate_chance_level(trials: list[dict], n_shuffles: int = 10000,
@@ -3019,14 +3025,21 @@ def calculate_and_validate_trial_success(trials: list[dict], eot_df: pd.DataFram
 
     For each trial, this function:
     1. Detects fixations using frame-to-frame movement threshold (same as interactive viewer)
-    2. Checks which fixations are within the target contact threshold
-    3. Determines if any on-target fixation meets the minimum duration requirement
-    4. Compares to actual trial_success from task
+    2. Uses ONLY the LAST fixation (since each prosaccade trial should have only one fixation)
+    3. Checks if the last fixation ENDS on target (within contact_threshold)
+    4. Determines if the last fixation meets the minimum duration requirement
+    5. Compares to actual trial_success from task
 
     Success criteria:
     - Fixation detected when consecutive frame-to-frame movements < max_movement
-    - Fixation must have all points within contact_threshold (target_radius + cursor_radius)
+    - Uses ONLY the LAST fixation detected
+    - Fixation must END on target (last point within contact_threshold: target_radius + cursor_radius)
     - Fixation duration must be >= min_fixation_duration (default: 0.65s)
+
+    NOTE: In prosaccade trials, there should ideally be only one fixation:
+    - A fixation inside the target should end the trial with success
+    - A fixation outside the target should end the trial with failure
+    - If multiple fixations are detected, we use only the last one
 
     Parameters
     ----------
@@ -3049,9 +3062,9 @@ def calculate_and_validate_trial_success(trials: list[dict], eot_df: pd.DataFram
     print(f"TRIAL SUCCESS VALIDATION")
     print(f"{'='*80}")
     print(f"Calculating trial success from fixation data and comparing to actual results...")
-    print(f"Success criterion: Fixation (≥{min_fixation_duration}s) that ENDS on target")
+    print(f"Success criterion: LAST fixation (≥{min_fixation_duration}s) that ENDS on target")
     print(f"Fixation detection: frame-to-frame movement < {max_movement} units")
-    print(f"  (If fixation ends on target, count TOTAL fixation duration)")
+    print(f"  (Using ONLY the last fixation, counting TOTAL fixation duration)")
     print()
 
     results = []
@@ -3126,18 +3139,20 @@ def calculate_and_validate_trial_success(trials: list[dict], eot_df: pd.DataFram
         # Step 1: Detect all fixations using frame-to-frame movement (uses shared function)
         fixations = detect_fixations(eye_x, eye_y, eye_times, min_fixation_duration, max_movement)
 
-        # Step 2: For each fixation, check if it ENDS on target
-        # The key insight: a fixation can start off-target, but if it ends on-target,
-        # we calculate the duration from when the eye entered the target until the end
+        # Step 2: Use ONLY the LAST fixation
+        # In prosaccade trials, there should ideally be only one fixation:
+        # - A fixation inside the target ends the trial with success
+        # - A fixation outside the target ends the trial with failure
+        # If multiple fixations are detected, we use only the last one
         max_fixation_duration = 0.0
         max_fixation_info = ""
         on_target_fixations = []
-        max_fixation_duration_old = 0.0  # Old method: all points within
-        max_fixation_duration_center = 0.0  # Alternative: center-based
-        max_fixation_duration_majority = 0.0  # Alternative: majority-based
 
-        for fix_idx, (start_idx, end_idx, duration, span) in enumerate(fixations):
-            # Get eye positions for this fixation
+        if len(fixations) > 0:
+            # Get the LAST fixation only
+            start_idx, end_idx, duration, span = fixations[-1]
+
+            # Get eye positions for the last fixation
             fix_x = eye_x[start_idx:end_idx]
             fix_y = eye_y[start_idx:end_idx]
             fix_times = eye_times[start_idx:end_idx]
@@ -3146,60 +3161,17 @@ def calculate_and_validate_trial_success(trials: list[dict], eot_df: pd.DataFram
             fix_distances = np.sqrt((fix_x - target_x)**2 + (fix_y - target_y)**2)
             within_target = fix_distances <= contact_threshold
 
-            # NEW APPROACH: Check if fixation ENDS on target
-            # If yes, use the TOTAL fixation duration (not just the on-target portion)
+            # Check if the last fixation ENDS on target
             ends_on_target = within_target[-1]
 
-            # Also calculate the final on-target portion for diagnostic purposes
-            final_on_target_duration = 0.0
             if ends_on_target:
-                # Find the start of the final continuous on-target period
-                final_period_start = len(within_target) - 1
-                for i in range(len(within_target) - 2, -1, -1):
-                    if within_target[i]:
-                        final_period_start = i
-                    else:
-                        break
-                final_on_target_duration = fix_times[-1] - fix_times[final_period_start]
-
-            # OLD APPROACH: all points within target (for comparison)
-            all_points_within_target = np.all(within_target)
-            if all_points_within_target and duration > max_fixation_duration_old:
-                max_fixation_duration_old = duration
-
-            # Alternative criteria for diagnosis
-            center_x = np.mean(fix_x)
-            center_y = np.mean(fix_y)
-            center_distance = np.sqrt((center_x - target_x)**2 + (center_y - target_y)**2)
-            center_on_target = center_distance <= contact_threshold
-
-            majority_within = np.mean(within_target) >= 0.5
-
-            if debug_this_trial and fix_idx < 3:  # Show first 3 fixations
-                pct_within = 100 * np.mean(within_target)
-
-
-            # NEW: Track fixations that end on target, using TOTAL duration
-            if ends_on_target:
+                # Last fixation ends on target, use its total duration
                 on_target_fixations.append((start_idx, end_idx, duration, span))
-                if duration > max_fixation_duration:
-                    max_fixation_duration = duration
-                    max_fixation_info = f"{duration:.3f}s total fixation (ends on target at t={fix_times[-1]:.2f}s)"
+                max_fixation_duration = duration
+                max_fixation_info = f"{duration:.3f}s total fixation (ends on target at t={fix_times[-1]:.2f}s)"
 
-            # Track alternatives
-            if center_on_target and duration > max_fixation_duration_center:
-                max_fixation_duration_center = duration
-            if majority_within and duration > max_fixation_duration_majority:
-                max_fixation_duration_majority = duration
-
-        # Determine calculated success using NEW method (fixation ends on target)
+        # Determine calculated success (last fixation ends on target with sufficient duration)
         calculated_success = (max_fixation_duration >= min_fixation_duration)
-
-        # Alternative success criteria for diagnosis
-        calculated_success_old = (max_fixation_duration_old >= min_fixation_duration)  # Old: all points
-        calculated_success_strict = (max_fixation_duration > min_fixation_duration)  # > instead of >=
-        calculated_success_center = (max_fixation_duration_center >= min_fixation_duration)
-        calculated_success_majority = (max_fixation_duration_majority >= min_fixation_duration)
 
 
         # Check if it matches actual success
