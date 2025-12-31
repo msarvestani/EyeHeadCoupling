@@ -830,8 +830,8 @@ def plot_density_heatmap(trials: list[dict], eye_df: pd.DataFrame, results_dir: 
 
     # --- Subplot 2: Continuous eye positions (all data including ITIs) ---
     # Extract all eye positions from eye_df
-    continuous_x = eye_df['eye_x'].values
-    continuous_y = eye_df['eye_y'].values
+    continuous_x = eye_df['green_x'].values
+    continuous_y = eye_df['green_y'].values
 
     # Create 2D histogram
     h2, xedges2, yedges2 = np.histogram2d(continuous_x, continuous_y, bins=bins, range=[[-1.7, 1.7], [-1, 1]])
