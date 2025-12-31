@@ -1055,31 +1055,35 @@ def calculate_trial_success_from_fixations(eye_x: np.ndarray, eye_y: np.ndarray,
         return False, 0.0
 
 
-def calculate_chance_level(trials: list[dict], n_shuffles: int = 10000,
+def calculate_chance_level(trials: list[dict], n_shuffles: int = 1000,
                            target_filter: Optional[callable] = None,
                            min_fixation_duration: float = 0.65,
                            max_movement: float = 0.1,
                            results_dir: Optional[Path] = None) -> float:
-    """Calculate chance level by checking if last fixation lands on shuffled targets.
+    """Calculate chance level by matching actual fixation positions against shuffled targets.
 
-    For each shuffle:
-    - Randomly assign target positions to trials
-    - Check if the last fixation from each trial lands on the shuffled target
-    - Use calculate_trial_success_from_fixations to determine success
-    - Return average success rate across shuffles
+    Algorithm:
+    1. For each trial, determine where the last fixation landed:
+       - 'Left' if last fixation ends on the left target
+       - 'Right' if last fixation ends on the right target
+       - 'Invalid' if no fixation detected or fixation doesn't land on either target
+    2. Generate random 50-50 Left/Right target assignments (n_shuffles times)
+    3. For each shuffle, count matches between fixation labels and shuffled targets
+    4. 'Invalid' fixations never match, so they always count as failures
+    5. Return average success rate across all shuffles
 
     Parameters
     ----------
     trials : list of dict
         List of trial data dictionaries with target information
     n_shuffles : int
-        Number of random shuffles to perform (default: 10000)
+        Number of random shuffles to perform (default: 1000)
     target_filter : callable, optional
         Optional function to filter which trials to include
     min_fixation_duration : float
-        For CSV output only: minimum fixation duration (default: 0.65 seconds)
+        Minimum fixation duration (default: 0.65 seconds)
     max_movement : float
-        For CSV output only: maximum movement for fixation detection (default: 0.1 units)
+        Maximum movement for fixation detection (default: 0.1 units)
     results_dir : Path, optional
         Directory to save CSV output (only written when no filter applied)
 
@@ -1099,25 +1103,6 @@ def calculate_chance_level(trials: list[dict], n_shuffles: int = 10000,
     if len(filtered_trials) == 0:
         return 0.0
 
-    # Extract ALL target positions and metadata for shuffling
-    all_target_positions = np.array([(t['target_x'], t['target_y']) for t in trials])
-    all_target_diameters = np.array([t['target_diameter'] for t in trials])
-
-    # Get unique target positions with their diameters
-    unique_positions = []
-    unique_diameters = []
-    seen = set()
-    for i, (tx, ty) in enumerate(all_target_positions):
-        key = (round(tx, 3), round(ty, 3))
-        if key not in seen:
-            seen.add(key)
-            unique_positions.append((tx, ty))
-            unique_diameters.append(all_target_diameters[i])
-
-    shuffle_pool_positions = np.array(unique_positions)
-    shuffle_pool_diameters = np.array(unique_diameters)
-    n_unique = len(shuffle_pool_positions)
-
     # Filter to trials with eye data
     valid_trials = []
     for trial in filtered_trials:
@@ -1132,7 +1117,8 @@ def calculate_chance_level(trials: list[dict], n_shuffles: int = 10000,
                     'eye_times': eye_times,
                     'cursor_diameter': trial.get('cursor_diameter', 0.2),
                     'target_x': trial['target_x'],
-                    'target_y': trial['target_y']
+                    'target_y': trial['target_y'],
+                    'target_diameter': trial['target_diameter']
                 })
 
     if len(valid_trials) == 0:
@@ -1140,71 +1126,91 @@ def calculate_chance_level(trials: list[dict], n_shuffles: int = 10000,
 
     n_trials = len(valid_trials)
 
-    # Only write CSV for all trials (no filter applied)
-    write_csv = (target_filter is None and results_dir is not None)
-    csv_writer = None
-    csvfile = None
+    # Step 1: Determine where each trial's last fixation landed (only once!)
+    fixation_labels = []  # Will be 'Left', 'Right', or 'Invalid'
+    actual_targets = []   # Will be 'Left' or 'Right'
 
+    for trial_data in valid_trials:
+        eye_x = trial_data['eye_x']
+        eye_y = trial_data['eye_y']
+        eye_times = trial_data['eye_times']
+        cursor_radius = trial_data['cursor_diameter'] / 2.0
+
+        # Determine actual target side
+        target_x = trial_data['target_x']
+        target_y = trial_data['target_y']
+        target_diameter = trial_data['target_diameter']
+        target_radius = target_diameter / 2.0
+        contact_threshold = target_radius + cursor_radius
+
+        actual_target = 'Left' if target_x < 0 else 'Right'
+        actual_targets.append(actual_target)
+
+        # Detect fixations
+        fixations = detect_fixations(eye_x, eye_y, eye_times,
+                                     min_fixation_duration, max_movement)
+
+        if len(fixations) == 0:
+            # No fixation detected
+            fixation_labels.append('Invalid')
+        else:
+            # Get the last fixation endpoint
+            _, end_idx, _, _ = fixations[-1]
+            final_x = eye_x[end_idx - 1]
+            final_y = eye_y[end_idx - 1]
+
+            # Check if it lands on left target (negative x)
+            # We need to check both left and right targets for this session
+            # Assume targets are symmetric on left/right sides
+            left_target_x = -abs(target_x)
+            left_target_y = target_y
+            right_target_x = abs(target_x)
+            right_target_y = target_y
+
+            # Check distance to left target
+            dist_left = np.sqrt((final_x - left_target_x)**2 + (final_y - left_target_y)**2)
+            on_left = dist_left <= contact_threshold
+
+            # Check distance to right target
+            dist_right = np.sqrt((final_x - right_target_x)**2 + (final_y - right_target_y)**2)
+            on_right = dist_right <= contact_threshold
+
+            if on_left:
+                fixation_labels.append('Left')
+            elif on_right:
+                fixation_labels.append('Right')
+            else:
+                fixation_labels.append('Invalid')
+
+    # Optional: Write CSV for debugging (first shuffle only)
+    write_csv = (target_filter is None and results_dir is not None)
     if write_csv:
         csv_path = results_dir / 'chance_level_trials.csv'
-        csvfile = open(csv_path, 'w', newline='')
-        csv_writer = csv.writer(csvfile)
-        csv_writer.writerow(['trial_number', 'fixation_ended_on', 'actual_target', 'shuffled_target'])
+        with open(csv_path, 'w', newline='') as csvfile:
+            csv_writer = csv.writer(csvfile)
+            csv_writer.writerow(['trial_number', 'fixation_landed_on', 'actual_target', 'shuffled_target'])
 
+            # Write one example shuffle
+            shuffled_targets = np.random.choice(['Left', 'Right'], size=n_trials)
+            for i in range(n_trials):
+                csv_writer.writerow([i + 1, fixation_labels[i], actual_targets[i], shuffled_targets[i]])
+
+    # Step 2: Bootstrap shuffles
     success_rates = []
 
     for shuffle_idx in range(n_shuffles):
-        # Randomly assign target positions from the pool
-        random_indices = np.random.choice(n_unique, size=n_trials, replace=True)
-        shuffled_positions = shuffle_pool_positions[random_indices]
-        shuffled_diameters = shuffle_pool_diameters[random_indices]
+        # Randomly assign Left/Right targets with 50-50 probability
+        shuffled_targets = np.random.choice(['Left', 'Right'], size=n_trials)
 
-        # Check if last fixation lands on shuffled target
+        # Count matches
         n_success = 0
-        for i, trial_data in enumerate(valid_trials):
-            eye_x = trial_data['eye_x']
-            eye_y = trial_data['eye_y']
-            eye_times = trial_data['eye_times']
-            cursor_radius = trial_data['cursor_diameter'] / 2.0
-
-            # Get shuffled target for this trial
-            target_x, target_y = shuffled_positions[i]
-            target_radius = shuffled_diameters[i] / 2.0
-            contact_threshold = target_radius + cursor_radius
-
-            # Check if last fixation lands on shuffled target
-            success, _ = calculate_trial_success_from_fixations(
-                eye_x, eye_y, eye_times,
-                target_x, target_y, contact_threshold,
-                min_fixation_duration, max_movement
-            )
-
-            if success:
+        for i in range(n_trials):
+            if fixation_labels[i] == shuffled_targets[i]:
                 n_success += 1
-
-            # Write CSV for first shuffle only
-            if write_csv and shuffle_idx == 0:
-                # Determine actual and shuffled target sides
-                actual_side = 'left' if trial_data['target_x'] < 0 else 'right'
-                shuffled_side = 'left' if target_x < 0 else 'right'
-
-                # Determine where last fixation ended
-                fixations = detect_fixations(eye_x, eye_y, eye_times,
-                                            min_fixation_duration, max_movement)
-                if len(fixations) > 0:
-                    _, end_idx, _, _ = fixations[-1]
-                    fixation_side = 'left' if eye_x[end_idx - 1] < 0 else 'right'
-                else:
-                    fixation_side = 'left' if eye_x[-1] < 0 else 'right'
-
-                csv_writer.writerow([i + 1, fixation_side, actual_side, shuffled_side])
 
         # Calculate success rate for this shuffle
         success_rate = n_success / n_trials if n_trials > 0 else 0.0
         success_rates.append(success_rate)
-
-    if csvfile:
-        csvfile.close()
 
     # Return average success rate across all shuffles
     return np.mean(success_rates)
