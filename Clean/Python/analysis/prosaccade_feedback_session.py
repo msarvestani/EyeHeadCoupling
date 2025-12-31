@@ -3758,6 +3758,33 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
             plt.show()
         plt.close(fig_success)
 
+    print("\nRunning left vs right target comparison...")
+    # Note: Always use trials_all for success/failure stats, regardless of --include-failed-trials flag
+    # Auto-detect left and right target positions from the data
+    unique_x_positions = sorted(list(set([t['target_x'] for t in trials_all])))
+    print(f"  Unique target X positions found: {unique_x_positions}")
+
+    # Use the leftmost and rightmost positions if we have at least 2
+    if len(unique_x_positions) >= 2:
+        detected_left_x = unique_x_positions[0]
+        detected_right_x = unique_x_positions[-1]
+        print(f"  Using left={detected_left_x:.2f}, right={detected_right_x:.2f}")
+        print(f"  (Using all {len(trials_all)} trials including failures for success rate calculation)")
+        fig_lr, lr_stats = compare_left_right_performance(trials_all,
+                                                           left_x=detected_left_x,
+                                                           right_x=detected_right_x,
+                                                           results_dir=results_dir,
+                                                           animal_id=animal_id,
+                                                           session_date=date_str)
+    else:
+        print(f"  Not enough unique X positions for left/right comparison")
+        fig_lr, lr_stats = None, None
+
+    if fig_lr is not None:
+        if show_plots:
+            plt.show()
+        plt.close(fig_lr)
+
     # Interactive viewer: show all trials or just successful ones
     print("\nShowing interactive trajectory viewer...")
     if show_failed_in_viewer:
@@ -3787,33 +3814,6 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
     if show_plots:
         plt.show()
     plt.close(fig_path)
-
-    print("\nRunning left vs right target comparison...")
-    # Note: Always use trials_all for success/failure stats, regardless of --include-failed-trials flag
-    # Auto-detect left and right target positions from the data
-    unique_x_positions = sorted(list(set([t['target_x'] for t in trials_all])))
-    print(f"  Unique target X positions found: {unique_x_positions}")
-
-    # Use the leftmost and rightmost positions if we have at least 2
-    if len(unique_x_positions) >= 2:
-        detected_left_x = unique_x_positions[0]
-        detected_right_x = unique_x_positions[-1]
-        print(f"  Using left={detected_left_x:.2f}, right={detected_right_x:.2f}")
-        print(f"  (Using all {len(trials_all)} trials including failures for success rate calculation)")
-        fig_lr, lr_stats = compare_left_right_performance(trials_all,
-                                                           left_x=detected_left_x,
-                                                           right_x=detected_right_x,
-                                                           results_dir=results_dir,
-                                                           animal_id=animal_id,
-                                                           session_date=date_str)
-    else:
-        print(f"  Not enough unique X positions for left/right comparison")
-        fig_lr, lr_stats = None, None
-
-    if fig_lr is not None:
-        if show_plots:
-            plt.show()
-        plt.close(fig_lr)
 
     print("\nRunning visible vs invisible target comparison...")
     fig_vis, vis_stats = compare_visible_invisible_performance(trials_for_analysis, results_dir=results_dir,
