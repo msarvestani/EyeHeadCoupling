@@ -1218,7 +1218,7 @@ def calculate_chance_level(trials: list[dict], n_shuffles: int = 1000,
 
 def plot_trial_success(eot_df: pd.DataFrame, results_dir: Optional[Path] = None,
                        animal_id: Optional[str] = None, session_date: str = "",
-                       trials: Optional[list[dict]] = None) -> plt.Figure:
+                       trials: Optional[list[dict]] = None, session_time: Optional[str] = None) -> plt.Figure:
     """Plot trial success vs failure summary, independent of --include-failed-trials flag.
 
     Creates a figure with:
@@ -1236,6 +1236,8 @@ def plot_trial_success(eot_df: pd.DataFrame, results_dir: Optional[Path] = None,
         Animal identifier for filename
     session_date : str, optional
         Session date for title
+    session_time : str, optional
+        Session time (HH:MM) for title
 
     Returns
     -------
@@ -1257,6 +1259,9 @@ def plot_trial_success(eot_df: pd.DataFrame, results_dir: Optional[Path] = None,
     n_failed = n_trials - n_success
     pct_success = 100 * n_success / n_trials if n_trials > 0 else 0
     pct_failed = 100 * n_failed / n_trials if n_trials > 0 else 0
+
+    # Get target diameter from trials (should be consistent across session)
+    target_diameter = trials[0]['target_diameter'] if trials and len(trials) > 0 else None
 
     # Calculate chance level if trials data is provided
     chance_level = None
@@ -1299,7 +1304,14 @@ def plot_trial_success(eot_df: pd.DataFrame, results_dir: Optional[Path] = None,
     if animal_id:
         title += f' - {animal_id}'
     if session_date:
-        title += f' ({session_date})'
+        title += f' ({session_date}'
+        if session_time:
+            title += f' @ {session_time}'
+        title += ')'
+    elif session_time:
+        title += f' @ {session_time}'
+    if target_diameter is not None:
+        title += f' | Target: {target_diameter:.2f}'
     ax1.set_title(title, fontsize=14, fontweight='bold')
     ax1.set_ylim(0, max(counts) * 1.2)  # Leave room for labels
     ax1.grid(True, alpha=0.3, axis='y')
@@ -3705,6 +3717,16 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
     date_match = re.search(r'\d{4}-\d{2}-\d{2}', str(folder_path))
     date_str = date_match.group() if date_match else ""
 
+    # Extract session time from folder path (format: AnimalID_YYYY-MM-DDTHH_MM_SS)
+    session_time = None
+    folder_name = folder_path.name
+    # Match pattern like "2025-12-31T11_12_01" using the last 'T'
+    time_match = re.search(r'\d{4}-\d{2}-\d{2}T(\d{2})_(\d{2})_\d{2}', folder_name)
+    if time_match:
+        hours = int(time_match.group(1))
+        minutes = int(time_match.group(2))
+        session_time = f"{hours:02d}:{minutes:02d}"
+
     # Load the three CSV files
     eot_df, eye_df, target_df_all = load_feedback_data(folder_path, animal_id)
 
@@ -3752,7 +3774,7 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
 
     # Plot trial success summary (uses ALL trials, independent of --include-failed-trials flag)
     print("\nGenerating trial success summary plot...")
-    fig_success = plot_trial_success(eot_df, results_dir, animal_id, date_str, trials=trials_all)
+    fig_success = plot_trial_success(eot_df, results_dir, animal_id, date_str, trials=trials_all, session_time=session_time)
     if fig_success is not None:
         if show_plots:
             plt.show()
@@ -3903,8 +3925,11 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
 
 def main(session_id: str, trial_min_duration: float = 0.01, trial_max_duration: float = 15.0,
          show_failed_in_viewer: bool = False,
-         include_failed_trials: bool = False) -> pd.DataFrame:
+         include_failed_trials: bool = False, show_plots: bool = True) -> pd.DataFrame:
     """Run the saccade feedback analysis pipeline for ``session_id``.
+
+    This is a convenience wrapper around analyze_folder() that loads session
+    configuration from the session manifest.
 
     Parameters
     ----------
@@ -3919,6 +3944,8 @@ def main(session_id: str, trial_min_duration: float = 0.01, trial_max_duration: 
     include_failed_trials : bool
         Whether to include failed trials in ALL plots and analyses (default: False)
         When True, all plots will show both successful and failed trials
+    show_plots : bool
+        Whether to display plots (default: True)
 
     Returns
     -------
@@ -3929,242 +3956,20 @@ def main(session_id: str, trial_min_duration: float = 0.01, trial_max_duration: 
 
     folder_path = config.folder_path
     results_dir = config.results_dir
-    if results_dir is not None:
-        results_dir.mkdir(parents=True, exist_ok=True)
+    animal_id = config.animal_id or "Tsh001"
 
-    print(f"Session path: {folder_path}")
-    print(f"Results directory: {results_dir}")
-
-    # Get animal ID and date
-    animal_id = config.animal_id
-    date_str = config.params.get("date", "")
-
-    # Load the three CSV files
-    eot_df, eye_df, target_df_all = load_feedback_data(folder_path, animal_id or "Tsh001")
-
-    # Add original trial numbers (1-indexed) to preserve through filtering
-    target_df_all['original_trial_number'] = range(1, len(target_df_all) + 1)
-
-    # Always identify and filter failed trials for clean analysis
-    target_df_successful, failed_indices, successful_indices = identify_and_filter_failed_trials(
-        target_df_all, eot_df, exclude_failed=True
+    # Delegate to analyze_folder for all the actual work
+    return analyze_folder(
+        folder_path=folder_path,
+        results_dir=results_dir,
+        animal_id=animal_id,
+        show_plots=show_plots,
+        trial_min_duration=trial_min_duration,
+        trial_max_duration=trial_max_duration,
+        show_failed_in_viewer=show_failed_in_viewer,
+        include_failed_trials=include_failed_trials
     )
 
-    # Extract ALL trial trajectories for the interactive viewer (includes trials with no eye data)
-    # eot_df now contains ALL trials (successful + failed) with trial_success column
-    print("\nExtracting ALL trials for interactive viewer...")
-    print(f"  Using eot_df with {len(eot_df)} trials (matches target_df_all with {len(target_df_all)} trials)")
-
-    # Extract all trials (will include placeholders for trials with no eye data)
-    trials_all = extract_trial_trajectories(eot_df, eye_df, target_df_all,
-                                            successful_indices=successful_indices)
-
-    # Separate successful trials for analysis
-    trials_successful = [t for t in trials_all if not t.get('trial_failed', False) and t.get('has_eye_data', True)]
-
-    # Decide which trials to use for analysis based on include_failed_trials parameter
-    if include_failed_trials:
-        trials_for_analysis = trials_all
-        print(f"\nUsing ALL {len(trials_all)} trials for analysis (including {len(failed_indices)} failed trials)")
-    else:
-        trials_for_analysis = trials_successful
-        print(f"\nUsing only {len(trials_successful)} successful trials for analysis")
-
-    if len(trials_for_analysis) == 0:
-        print("No valid trials found, exiting")
-        return pd.DataFrame()
-
-    # Validate trial success calculation from fixation data
-    validation_df = calculate_and_validate_trial_success(trials_all, eot_df, min_fixation_duration=0.65)
-
-    # Save validation results to CSV
-    if results_dir is not None:
-        validation_filename = f"{animal_id}_{date_str}_trial_success_validation.csv" if animal_id and date_str else "trial_success_validation.csv"
-        validation_filepath = results_dir / validation_filename
-        validation_df.to_csv(validation_filepath, index=False)
-        print(f"Saved validation results to: {validation_filepath}")
-
-    # Plot trial success summary (uses ALL trials, independent of --include-failed-trials flag)
-    print("\nGenerating trial success summary plot...")
-    fig_success = plot_trial_success(eot_df, results_dir, animal_id, date_str, trials=trials_all)
-    if fig_success is not None:
-        plt.show()
-        plt.close(fig_success)
-
-
-    print("\nRunning left vs right target comparison...")
-    # Note: Always use trials_all for success/failure stats, regardless of --include-failed-trials flag
-    # Auto-detect left and right target positions from the data
-    unique_x_positions = sorted(list(set([t['target_x'] for t in trials_all])))
-    print(f"  Unique target X positions found: {unique_x_positions}")
-
-    # Use the leftmost and rightmost positions if we have at least 2
-    if len(unique_x_positions) >= 2:
-        detected_left_x = unique_x_positions[0]
-        detected_right_x = unique_x_positions[-1]
-        print(f"  Using left={detected_left_x:.2f}, right={detected_right_x:.2f}")
-        print(f"  (Using all {len(trials_all)} trials including failures for success rate calculation)")
-        fig_lr, lr_stats = compare_left_right_performance(trials_all,
-                                                           left_x=detected_left_x,
-                                                           right_x=detected_right_x,
-                                                           results_dir=results_dir,
-                                                           animal_id=animal_id,
-                                                           session_date=date_str)
-    else:
-        print(f"  Not enough unique X positions for left/right comparison")
-        fig_lr, lr_stats = None, None
-
-    if fig_lr is not None:
-        plt.show()
-        plt.close(fig_lr)
-
-
-    # Generate plots
-    print("\nGenerating trajectory plot...")
-    fig_traj = plot_trajectories(trials_for_analysis, results_dir, animal_id, date_str)
-    plt.show()
-    plt.close(fig_traj)
-
-    print("\nGenerating trajectory plot by direction (left vs right)...")
-    fig_traj_dir = plot_trajectories_by_direction(trials_for_analysis, results_dir, animal_id, date_str)
-    plt.show()
-    plt.close(fig_traj_dir)
-
-    # Interactive viewer: show all trials or just successful ones
-    print("\nShowing interactive trajectory viewer...")
-    if show_failed_in_viewer:
-        print(f"  Showing ALL {len(trials_all)} trials (including {len(failed_indices)} failed trials in RED)")
-        trials_for_viewer = trials_all
-    else:
-        print(f"  Showing only successful trials with eye data ({len(trials_successful)} trials)")
-        trials_for_viewer = trials_for_analysis
-    print("(Press SPACE to advance to next trial)")
-    interactive_trajectories(trials_for_viewer, animal_id=animal_id, session_date=date_str)
-
-    print("\nGenerating density heatmap...")
-    fig_heat = plot_density_heatmap(trials_for_analysis, results_dir, animal_id, date_str)
-    plt.show()
-    plt.close(fig_heat)
-
-    # print("\nGenerating time-to-target plot...")
-    # fig_time = plot_time_to_target(trials_for_analysis, results_dir, animal_id, date_str)
-    # plt.show()
-    # plt.close(fig_time)
-
-    # print("\nGenerating path length plot...")
-    # fig_path = plot_path_length(trials_for_analysis, results_dir, animal_id, date_str)
-    # plt.show()
-    # plt.close(fig_path)
-
-
-
-    # print("\nRunning visible vs invisible target comparison...")
-    # fig_vis, vis_stats = compare_visible_invisible_performance(trials_for_analysis, results_dir=results_dir,
-    #                                                             animal_id=animal_id,
-    #                                                             session_date=date_str)
-    # if fig_vis is not None:
-    #     plt.show()
-    #     plt.close(fig_vis)
-
-    # # NEW: Detailed visible/invisible statistics (including success/failure and direction errors)
-    # print("\nGenerating detailed visible vs invisible target statistics...")
-    # fig_vis_detailed, vis_detailed_stats = plot_visible_invisible_detailed_stats(trials_all, results_dir=results_dir,
-    #                                                                               animal_id=animal_id,
-    #                                                                               session_date=date_str)
-    # if fig_vis_detailed is not None:
-    #     plt.show()
-    #     plt.close(fig_vis_detailed)
-
-    # # NEW: Heatmaps broken down by position and visibility
-    # print("\nGenerating heatmaps by position and visibility...")
-    # fig_heatmaps = plot_heatmaps_by_position_and_visibility(trials_for_analysis, results_dir=results_dir,
-    #                                                          animal_id=animal_id,
-    #                                                          session_date=date_str)
-    # plt.show()
-    # plt.close(fig_heatmaps)
-
-    # # NEW: Test for voluntary targeted movement
-    # print("\nTesting for voluntary targeted movement...")
-    # fig_voluntary, voluntary_stats = test_voluntary_targeted_movement(trials_for_analysis, results_dir=results_dir,
-    #                                                                    animal_id=animal_id,
-    #                                                                    session_date=date_str)
-    # if fig_voluntary is not None:
-    #     plt.show()
-    #     plt.close(fig_voluntary)
-
-    # # NEW: Test for left/right targeted movement (simplified binary test)
-    # print("\nTesting for left/right targeted movement (binary classification)...")
-    # fig_lr_test, lr_test_stats = test_left_right_targeted_movement(trials_for_analysis, results_dir=results_dir,
-    #                                                                 animal_id=animal_id,
-    #                                                                 session_date=date_str)
-    # if fig_lr_test is not None:
-    #     plt.show()
-    #     plt.close(fig_lr_test)
-
-    # # NEW: Interactive initial direction viewer
-    # print("\nShowing interactive initial direction viewer...")
-    # print("  (Shows initial direction vectors for each trial - press SPACE to advance)")
-    # interactive_initial_direction_viewer(trials_for_analysis, animal_id=animal_id, session_date=date_str)
-
-    # NEW: Interactive fixation viewer
-    print("\nShowing interactive fixation viewer...")
-    print("  (Shows detected fixation periods for each trial - press SPACE to advance)")
-    interactive_fixation_viewer(trials_for_analysis, animal_id=animal_id, session_date=date_str)
-
-    print("\nPlotting final positions by target type...")
-    fig_final_pos = plot_final_positions_by_target(trials_for_analysis, min_duration=trial_min_duration, max_duration=trial_max_duration,
-                                                    results_dir=results_dir,
-                                                    animal_id=animal_id,
-                                                    session_date=date_str)
-    if fig_final_pos is not None:
-        plt.show()
-        plt.close(fig_final_pos)
-
-    # Export eye positions CSV with ITI markers
-    print("\nExporting eye positions to CSV...")
-    # Calculate ITI from target_df_all
-    if len(target_df_all) > 1:
-        time_diffs = np.diff(target_df_all['timestamp'].values)
-        min_diff = np.min(time_diffs)
-        ITI = np.floor(min_diff)
-    else:
-        ITI = 0
-    export_eye_positions_csv(trials_all, eye_df, results_dir, animal_id, date_str, ITI)
-
-    # Create summary DataFrame
-    durations = [t['duration'] for t in trials_for_analysis]
-    path_lengths = [t['path_length'] for t in trials_for_analysis]
-    efficiencies = [t['path_efficiency'] for t in trials_for_analysis]
-    dir_errors = [t['initial_direction_error'] for t in trials_for_analysis if not np.isnan(t['initial_direction_error'])]
-
-    df = pd.DataFrame({
-        'session_id': [session_id],
-        'animal_id': [animal_id],
-        'session_date': [date_str],
-        'n_trials': [len(trials_for_analysis)],
-        'mean_duration': [np.mean(durations)],
-        'median_duration': [np.median(durations)],
-        'std_duration': [np.std(durations)],
-        'min_duration': [np.min(durations)],
-        'max_duration': [np.max(durations)],
-        'mean_path_length': [np.mean(path_lengths)],
-        'median_path_length': [np.median(path_lengths)],
-        'std_path_length': [np.std(path_lengths)],
-        'mean_path_efficiency': [np.mean(efficiencies)],
-        'median_path_efficiency': [np.median(efficiencies)],
-        'mean_initial_dir_error': [np.mean(dir_errors) if dir_errors else np.nan],
-        'median_initial_dir_error': [np.median(dir_errors) if dir_errors else np.nan],
-    })
-
-    print("\n" + "="*60)
-    print("SESSION SUMMARY")
-    print("="*60)
-    print(f"Session: {session_id}")
-    print(f"Animal: {animal_id}")
-    print(f"Date: {date_str}")
-    print(f"Valid trials: {len(trials_for_analysis)}")
-
-    return df
 
 
 # Usage Examples:
