@@ -762,14 +762,20 @@ def interactive_trajectories(trials: list[dict], animal_id: Optional[str] = None
     plt.show()
 
 
-def plot_density_heatmap(trials: list[dict], results_dir: Optional[Path] = None,
+def plot_density_heatmap(trials: list[dict], eye_df: pd.DataFrame, results_dir: Optional[Path] = None,
                          animal_id: Optional[str] = None, session_date: str = "") -> plt.Figure:
-    """Plot 2D histogram heatmap showing density of eye positions across all trials.
+    """Plot 2D histogram heatmaps showing density of eye positions.
+
+    Creates a figure with two subplots:
+    1. Eye positions from trial data only (successful or all trials based on input)
+    2. All eye positions from continuous data (including ITIs)
 
     Parameters
     ----------
     trials : list of dict
         List of trial data dictionaries
+    eye_df : pd.DataFrame
+        Continuous eye position data for all recordings
     results_dir : Path, optional
         Directory to save the figure
     animal_id : str, optional
@@ -782,8 +788,9 @@ def plot_density_heatmap(trials: list[dict], results_dir: Optional[Path] = None,
     matplotlib.figure.Figure
         The generated figure
     """
-    fig, ax = plt.subplots(figsize=(12, 10))
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(24, 10))
 
+    # --- Subplot 1: Trial-based eye positions ---
     # Collect all eye positions from all trials
     all_x = []
     all_y = []
@@ -796,14 +803,14 @@ def plot_density_heatmap(trials: list[dict], results_dir: Optional[Path] = None,
 
     # Create 2D histogram
     bins = 50  # Number of bins in each dimension
-    h, xedges, yedges = np.histogram2d(all_x, all_y, bins=bins, range=[[-1, 1], [-1, 1]])
+    h, xedges, yedges = np.histogram2d(all_x, all_y, bins=bins, range=[[-1.7, 1.7], [-1, 1]])
 
     # Plot heatmap
     extent = [xedges[0], xedges[-1], yedges[0], yedges[-1]]
-    im = ax.imshow(h.T, extent=extent, origin='lower', cmap='hot', aspect='auto', interpolation='bilinear')
+    im1 = ax1.imshow(h.T, extent=extent, origin='lower', cmap='hot', aspect='auto', interpolation='bilinear')
 
     # Add colorbar
-    cbar = plt.colorbar(im, ax=ax, label='Number of Samples')
+    cbar1 = plt.colorbar(im1, ax=ax1, label='Number of Samples')
 
     # Overlay target positions
     for i, trial in enumerate(trials):
@@ -812,21 +819,53 @@ def plot_density_heatmap(trials: list[dict], results_dir: Optional[Path] = None,
         target_radius = trial['target_diameter'] / 2.0
         target_circle = Circle((target_x, target_y), radius=target_radius, fill=False,
                               edgecolor='cyan', linewidth=2, linestyle='-', alpha=0.7)
-        ax.add_patch(target_circle)
+        ax1.add_patch(target_circle)
 
-    ax.set_xlabel('Horizontal Position (stimulus units)', fontsize=12)
-    ax.set_ylabel('Vertical Position (stimulus units)', fontsize=12)
+    ax1.set_xlabel('Horizontal Position (stimulus units)', fontsize=12)
+    ax1.set_ylabel('Vertical Position (stimulus units)', fontsize=12)
+    ax1.set_title('Eye Position Density (Successful/All Trials)', fontsize=14, fontweight='bold')
+    ax1.set_xlim(-1.7, 1.7)
+    ax1.set_ylim(-1, 1)
+    ax1.set_aspect('equal', adjustable='box')
 
-    title = 'Eye Position Density Heatmap'
+    # --- Subplot 2: Continuous eye positions (all data including ITIs) ---
+    # Extract all eye positions from eye_df
+    continuous_x = eye_df['eye_x'].values
+    continuous_y = eye_df['eye_y'].values
+
+    # Create 2D histogram
+    h2, xedges2, yedges2 = np.histogram2d(continuous_x, continuous_y, bins=bins, range=[[-1.7, 1.7], [-1, 1]])
+
+    # Plot heatmap
+    extent2 = [xedges2[0], xedges2[-1], yedges2[0], yedges2[-1]]
+    im2 = ax2.imshow(h2.T, extent=extent2, origin='lower', cmap='hot', aspect='auto', interpolation='bilinear')
+
+    # Add colorbar
+    cbar2 = plt.colorbar(im2, ax=ax2, label='Number of Samples')
+
+    # Overlay target positions (if they exist in trials)
+    for i, trial in enumerate(trials):
+        target_x = trial['target_x']
+        target_y = trial['target_y']
+        target_radius = trial['target_diameter'] / 2.0
+        target_circle = Circle((target_x, target_y), radius=target_radius, fill=False,
+                              edgecolor='cyan', linewidth=2, linestyle='-', alpha=0.7)
+        ax2.add_patch(target_circle)
+
+    ax2.set_xlabel('Horizontal Position (stimulus units)', fontsize=12)
+    ax2.set_ylabel('Vertical Position (stimulus units)', fontsize=12)
+    ax2.set_title('Eye Position Density (Continuous - All Data)', fontsize=14, fontweight='bold')
+    ax2.set_xlim(-1.7, 1.7)
+    ax2.set_ylim(-1, 1)
+    ax2.set_aspect('equal', adjustable='box')
+
+    # Overall title
+    title = 'Eye Position Density Heatmaps'
     if animal_id:
         title += f' - {animal_id}'
     if session_date:
         title += f' ({session_date})'
-    ax.set_title(title, fontsize=14, fontweight='bold')
-
-    ax.set_xlim(-1.7, 1.7)
-    ax.set_ylim(-1, 1)
-    ax.set_aspect('equal', adjustable='box')
+    fig.suptitle(title, fontsize=16, fontweight='bold')
 
     plt.tight_layout()
 
@@ -3820,7 +3859,7 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
         interactive_trajectories(trials_for_viewer, animal_id=animal_id, session_date=date_str)
 
     print("\nGenerating density heatmap...")
-    fig_heat = plot_density_heatmap(trials_for_analysis, results_dir, animal_id, date_str)
+    fig_heat = plot_density_heatmap(trials_for_analysis, eye_df, results_dir, animal_id, date_str)
     if show_plots:
         plt.show()
     plt.close(fig_heat)
