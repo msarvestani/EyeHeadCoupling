@@ -1412,6 +1412,134 @@ def plot_trial_success(eot_df: pd.DataFrame, results_dir: Optional[Path] = None,
     return fig
 
 
+def plot_psychometric_curve(eot_df: pd.DataFrame, results_dir: Optional[Path] = None,
+                            animal_id: Optional[str] = None, session_date: str = "",
+                            session_time: Optional[str] = None) -> plt.Figure:
+    """Plot psychometric curve showing success rate as a function of target diameter.
+
+    Creates a plot with:
+    - Success rate (%) on y-axis
+    - Target diameter on x-axis
+    - Error bars showing binomial standard error
+    - Number of trials annotated for each diameter
+
+    Parameters
+    ----------
+    eot_df : pd.DataFrame
+        End-of-trial dataframe containing 'trial_success' (2=success) and 'diameter' columns
+    results_dir : Path, optional
+        Directory to save the figure
+    animal_id : str, optional
+        Animal identifier for filename
+    session_date : str, optional
+        Session date for title (format: YYYY-MM-DD)
+    session_time : str, optional
+        Session time for title (format: HH:MM)
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+        The generated figure
+    """
+    # Check required columns
+    if 'trial_success' not in eot_df.columns:
+        print("Warning: trial_success column not found in eot_df, cannot plot psychometric curve")
+        return None
+    if 'diameter' not in eot_df.columns:
+        print("Warning: diameter column not found in eot_df, cannot plot psychometric curve")
+        return None
+
+    # Group by diameter and calculate success rate
+    diameter_groups = eot_df.groupby('diameter')
+
+    diameters = []
+    success_rates = []
+    error_bars = []
+    n_trials_per_diameter = []
+
+    for diameter, group in diameter_groups:
+        n_trials = len(group)
+        n_success = np.sum(group['trial_success'] == 2)
+        success_rate = n_success / n_trials if n_trials > 0 else 0
+
+        # Calculate binomial standard error: sqrt(p*(1-p)/n)
+        if n_trials > 0:
+            std_error = np.sqrt(success_rate * (1 - success_rate) / n_trials)
+        else:
+            std_error = 0
+
+        diameters.append(diameter)
+        success_rates.append(success_rate * 100)  # Convert to percentage
+        error_bars.append(std_error * 100)  # Convert to percentage
+        n_trials_per_diameter.append(n_trials)
+
+    # Sort by diameter for cleaner plotting
+    sorted_indices = np.argsort(diameters)
+    diameters = np.array(diameters)[sorted_indices]
+    success_rates = np.array(success_rates)[sorted_indices]
+    error_bars = np.array(error_bars)[sorted_indices]
+    n_trials_per_diameter = np.array(n_trials_per_diameter)[sorted_indices]
+
+    # Create figure
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    # Plot psychometric curve with error bars
+    ax.errorbar(diameters, success_rates, yerr=error_bars,
+                fmt='o-', markersize=10, linewidth=2, capsize=5, capthick=2,
+                color='steelblue', ecolor='darkblue', label='Success Rate')
+
+    # Annotate number of trials for each diameter
+    for i, (d, sr, n) in enumerate(zip(diameters, success_rates, n_trials_per_diameter)):
+        # Position text above error bars
+        text_y = sr + error_bars[i] + 3
+        ax.text(d, text_y, f'n={n}', ha='center', va='bottom',
+                fontsize=10, fontweight='bold', color='darkblue')
+
+    # Add reference lines
+    ax.axhline(50, color='gray', linestyle='--', alpha=0.5, linewidth=1, label='Chance (50%)')
+    ax.axhline(100, color='green', linestyle='--', alpha=0.3, linewidth=1)
+    ax.axhline(0, color='red', linestyle='--', alpha=0.3, linewidth=1)
+
+    # Labels and title
+    ax.set_xlabel('Target Diameter', fontsize=14, fontweight='bold')
+    ax.set_ylabel('Success Rate (%)', fontsize=14, fontweight='bold')
+
+    # Build title with all requested information
+    title = 'Psychometric Curve: Success Rate vs Target Diameter'
+    if animal_id:
+        title += f'\n{animal_id}'
+    if session_date:
+        # Include full date and timestamp
+        title += f' - {session_date}'
+        if session_time:
+            title += f' @ {session_time}'
+    elif session_time:
+        title += f' - {session_time}'
+
+    ax.set_title(title, fontsize=14, fontweight='bold')
+
+    # Set y-axis limits with some padding
+    ax.set_ylim(-5, 105)
+    ax.set_xlim(diameters.min() - 0.05, diameters.max() + 0.05)
+
+    # Grid and legend
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc='best', fontsize=11)
+
+    plt.tight_layout()
+
+    # Save figure if results directory provided
+    if results_dir:
+        results_dir.mkdir(parents=True, exist_ok=True)
+        prefix = f"{animal_id}_" if animal_id else ""
+        date_suffix = f"_{session_date}" if session_date else ""
+        filename = f"{prefix}psychometric_curve{date_suffix}.png"
+        fig.savefig(results_dir / filename, dpi=150, bbox_inches='tight')
+        print(f"Saved psychometric curve to {results_dir / filename}")
+
+    return fig
+
+
 def plot_path_length(trials: list[dict], results_dir: Optional[Path] = None,
                      animal_id: Optional[str] = None, session_date: str = "") -> plt.Figure:
     """Plot trajectory path length by trial.
@@ -3693,6 +3821,14 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
         if show_plots:
             plt.show()
         plt.close(fig_success)
+
+    # Plot psychometric curve (success rate vs target diameter)
+    print("\nGenerating psychometric curve...")
+    fig_psychometric = plot_psychometric_curve(eot_df, results_dir, animal_id, date_str, session_time=session_time)
+    if fig_psychometric is not None:
+        if show_plots:
+            plt.show()
+        plt.close(fig_psychometric)
 
     print("\nRunning left vs right target comparison...")
     # Note: Always use trials_all for success/failure stats, regardless of --include-failed-trials flag
