@@ -1412,7 +1412,7 @@ def plot_trial_success(eot_df: pd.DataFrame, results_dir: Optional[Path] = None,
     return fig
 
 
-def plot_psychometric_curve(eot_df: pd.DataFrame, results_dir: Optional[Path] = None,
+def plot_psychometric_curve(eot_df: pd.DataFrame,target_df: pd.DataFrame, results_dir: Optional[Path] = None,
                             animal_id: Optional[str] = None, session_date: str = "",
                             session_time: Optional[str] = None) -> plt.Figure:
     """Plot psychometric curve showing success rate as a function of target diameter.
@@ -1427,6 +1427,8 @@ def plot_psychometric_curve(eot_df: pd.DataFrame, results_dir: Optional[Path] = 
     ----------
     eot_df : pd.DataFrame
         End-of-trial dataframe containing 'trial_success' (2=success) and 'diameter' columns
+    target_df : pd.DataFrame
+        Target dataframe containing 'diameter' column   
     results_dir : Path, optional
         Directory to save the figure
     animal_id : str, optional
@@ -1445,12 +1447,28 @@ def plot_psychometric_curve(eot_df: pd.DataFrame, results_dir: Optional[Path] = 
     if 'trial_success' not in eot_df.columns:
         print("Warning: trial_success column not found in eot_df, cannot plot psychometric curve")
         return None
-    if 'diameter' not in eot_df.columns:
-        print("Warning: diameter column not found in eot_df, cannot plot psychometric curve")
+    if 'diameter' not in target_df.columns:
+        print("Warning: diameter column not found in target_df, cannot plot psychometric curve")
         return None
 
+    # Merge diameter from target_df into eot_df based on trial index
+    # Assuming both dataframes have the same number of rows and represent the same trials
+    if len(eot_df) != len(target_df):
+        print(f"Warning: eot_df has {len(eot_df)} rows but target_df has {len(target_df)} rows")
+        # Take the minimum length to avoid index errors
+        min_len = min(len(eot_df), len(target_df))
+        combined_df = pd.DataFrame({
+            'trial_success': eot_df['trial_success'].iloc[:min_len].values,
+            'diameter': target_df['diameter'].iloc[:min_len].values
+        })
+    else:
+        combined_df = pd.DataFrame({
+            'trial_success': eot_df['trial_success'].values,
+            'diameter': target_df['diameter'].values
+        })
+
     # Group by diameter and calculate success rate
-    diameter_groups = eot_df.groupby('diameter')
+    diameter_groups = combined_df.groupby('diameter')
 
     diameters = []
     success_rates = []
@@ -1496,7 +1514,6 @@ def plot_psychometric_curve(eot_df: pd.DataFrame, results_dir: Optional[Path] = 
                 fontsize=10, fontweight='bold', color='darkblue')
 
     # Add reference lines
-    ax.axhline(50, color='gray', linestyle='--', alpha=0.5, linewidth=1, label='Chance (50%)')
     ax.axhline(100, color='green', linestyle='--', alpha=0.3, linewidth=1)
     ax.axhline(0, color='red', linestyle='--', alpha=0.3, linewidth=1)
 
@@ -3824,11 +3841,12 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
 
     # Plot psychometric curve (success rate vs target diameter)
     print("\nGenerating psychometric curve...")
-    fig_psychometric = plot_psychometric_curve(eot_df, results_dir, animal_id, date_str, session_time=session_time)
+    fig_psychometric = plot_psychometric_curve(eot_df, target_df_all, results_dir, animal_id, date_str, session_time=session_time)
     if fig_psychometric is not None:
         if show_plots:
             plt.show()
         plt.close(fig_psychometric)
+
 
     print("\nRunning left vs right target comparison...")
     # Note: Always use trials_all for success/failure stats, regardless of --include-failed-trials flag
