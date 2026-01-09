@@ -1556,6 +1556,183 @@ def plot_psychometric_curve(eot_df: pd.DataFrame,target_df: pd.DataFrame, result
 
     return fig
 
+def plot_trajectories_by_diameter(trials: list[dict], results_dir: Optional[Path] = None,
+                                  animal_id: Optional[str] = None, session_date: str = "",
+                                  session_time: Optional[str] = None,
+                                  min_fixation_duration: float = 0.45,
+                                  max_fixation_movement: float = 0.15) -> plt.Figure:
+    """Plot fixation points grouped by target diameter.
+    
+    Creates a figure with subplots, one for each unique target diameter.
+    Each subplot shows fixation points with successful trials in green and failed trials in red.
+    
+    Parameters
+    ----------
+    trials : list of dict
+        List of trial data dictionaries containing eye trajectories
+    results_dir : Path, optional
+        Directory to save the figure
+    animal_id : str, optional
+        Animal identifier for filename
+    session_date : str, optional
+        Session date for title (format: YYYY-MM-DD)
+    session_time : str, optional
+        Session time for title (format: HH:MM)
+    min_fixation_duration : float
+        Minimum fixation duration in seconds (default: 0.45)
+    max_fixation_movement : float
+        Maximum movement threshold for fixation (default: 0.15)
+    
+    Returns
+    -------
+    matplotlib.figure.Figure
+        The generated figure
+    """
+    # Group trials by diameter
+    diameter_trials = {}
+    for trial in trials:
+        if not trial.get('has_eye_data', False):
+            continue
+        
+        diameter = trial.get('target_diameter', None)
+        if diameter is None:
+            continue
+            
+        if diameter not in diameter_trials:
+            diameter_trials[diameter] = []
+        
+        diameter_trials[diameter].append(trial)
+    
+    if len(diameter_trials) == 0:
+        print("Warning: No trials with eye data and diameter information found")
+        return None
+    
+    # Sort diameters for consistent plotting
+    sorted_diameters = sorted(diameter_trials.keys())
+    n_diameters = len(sorted_diameters)
+    
+    # Create subplots - arrange in a grid
+    n_cols = min(3, n_diameters)  # Max 3 columns
+    n_rows = int(np.ceil(n_diameters / n_cols))
+    
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(6*n_cols, 5*n_rows))
+    
+    # Make axes always iterable
+    if n_diameters == 1:
+        axes = np.array([axes])
+    axes = axes.flatten()
+    
+    # Plot fixations for each diameter
+    for idx, diameter in enumerate(sorted_diameters):
+        ax = axes[idx]
+        trial_list = diameter_trials[diameter]
+        
+        n_success = 0
+        n_failed = 0
+        target_x = None
+        target_y = None
+        
+        # Collect fixation points from all trials
+        for trial in trial_list:
+            eye_x = np.array(trial['eye_x'])
+            eye_y = np.array(trial['eye_y'])
+            eye_times = np.array(trial.get('eye_times', np.arange(len(eye_x))))
+            
+            if target_x is None:
+                target_x = trial['target_x']
+                target_y = trial['target_y']
+            
+            is_failed = trial.get('trial_failed', False)
+            
+            if is_failed:
+                n_failed += 1
+                color = 'red'
+                marker = 'x'
+            else:
+                n_success += 1
+                color = 'green'
+                marker = 'o'
+            
+            # Detect fixations
+            fixations = detect_fixations(eye_x, eye_y, eye_times, 
+                                        min_fixation_duration, max_fixation_movement)
+            
+            # # Plot all fixation points
+            # for start, end, duration, span in fixations:
+            #     fix_x = eye_x[start:end]
+            #     fix_y = eye_y[start:end]
+            #     ax.plot(fix_x, fix_y, marker, color=color, markersize=6, alpha=0.6)
+
+
+            # Plot only the last fixation
+            if len(fixations) > 0:
+                start, end, duration, span = fixations[-1]  # Get last fixation
+                fix_x = eye_x[start:end]
+                fix_y = eye_y[start:end]
+                ax.plot(fix_x, fix_y, marker, color=color, markersize=6, alpha=0.6)
+        
+        # Draw target circle
+        circle = Circle((target_x, target_y), diameter/2, 
+                       fill=False, edgecolor='blue', linewidth=2.5, linestyle='--')
+        ax.add_patch(circle)
+        
+        # Mark target center
+        ax.plot(target_x, target_y, 'b+', markersize=15, markeredgewidth=3)
+        
+        # Set axis limits
+        ax.set_xlim(-1.7, 1.7)
+        ax.set_ylim(-1, 1)
+        ax.set_aspect('equal')
+        
+        # Labels and title
+        ax.set_xlabel('X Position', fontsize=10)
+        ax.set_ylabel('Y Position', fontsize=10)
+        ax.set_title(f'Diameter: {diameter:.3f}\n(n={n_success+n_failed}: {n_success} success, {n_failed} failed)', 
+                    fontsize=11, fontweight='bold')
+        ax.grid(True, alpha=0.3)
+        
+        # Add legend to first subplot only
+        if idx == 0:
+            from matplotlib.lines import Line2D
+            legend_elements = [
+                Line2D([0], [0], marker='o', color='w', markerfacecolor='green', 
+                      markersize=8, label='Success fixations'),
+                Line2D([0], [0], marker='x', color='red', markersize=8, 
+                      linewidth=2, label='Failed fixations'),
+                Line2D([0], [0], color='blue', linewidth=2, linestyle='--', label='Target')
+            ]
+            ax.legend(handles=legend_elements, loc='upper right', fontsize=9)
+    
+    # Hide extra subplots if we have more subplots than diameters
+    for idx in range(n_diameters, len(axes)):
+        axes[idx].set_visible(False)
+    
+    # Overall title
+    title = 'Fixation Points by Target Diameter'
+    if animal_id:
+        title += f'\n{animal_id}'
+    if session_date:
+        title += f' - {session_date}'
+        if session_time:
+            title += f' @ {session_time}'
+    elif session_time:
+        title += f' - {session_time}'
+    
+    fig.suptitle(title, fontsize=14, fontweight='bold')
+    plt.tight_layout()
+    
+    # Save figure if results directory provided
+    if results_dir:
+        results_dir.mkdir(parents=True, exist_ok=True)
+        prefix = f"{animal_id}_" if animal_id else ""
+        date_suffix = f"_{session_date}" if session_date else ""
+        filename = f"{prefix}fixations_by_diameter{date_suffix}.png"
+        fig.savefig(results_dir / filename, dpi=150, bbox_inches='tight')
+        print(f"Saved fixations by diameter to {results_dir / filename}")
+    
+    return fig
+
+
 
 def plot_path_length(trials: list[dict], results_dir: Optional[Path] = None,
                      animal_id: Optional[str] = None, session_date: str = "") -> plt.Figure:
@@ -2711,7 +2888,7 @@ def plot_visible_invisible_detailed_stats(trials: list[dict], results_dir: Optio
 
 # Fixation detection parameters - shared across analysis functions
 FIXATION_MIN_DURATION = 0.65  # seconds
-FIXATION_MAX_MOVEMENT = 0.1  # stimulus units
+FIXATION_MAX_MOVEMENT = 0.2  # stimulus units
 def interactive_fixation_viewer(trials: list[dict], animal_id: Optional[str] = None,
                                  session_date: str = "", 
                                  min_duration: float = FIXATION_MIN_DURATION,
@@ -3847,6 +4024,13 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
             plt.show()
         plt.close(fig_psychometric)
 
+    # Plot trajectories grouped by target diameter
+    print("\nGenerating trajectories by diameter plot...")
+    fig_traj_diam = plot_trajectories_by_diameter(trials_all, results_dir, animal_id, date_str, session_time=session_time)
+    if fig_traj_diam is not None:
+        if show_plots:
+            plt.show()
+        plt.close(fig_traj_diam)
 
     print("\nRunning left vs right target comparison...")
     # Note: Always use trials_all for success/failure stats, regardless of --include-failed-trials flag
