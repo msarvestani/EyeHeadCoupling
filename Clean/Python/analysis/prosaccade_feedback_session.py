@@ -469,8 +469,19 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
             # Calculate straight-line distance from start to target
             straight_line_distance = np.sqrt((target_x - start_eye_x)**2 + (target_y - start_eye_y)**2)
 
+            # Check if eye is already in target at trial start
+            # If so, exclude from path efficiency calculation
+            target_radius = target_diameter / 2.0
+            cursor_radius = cursor_diameter / 2.0
+            contact_threshold = target_radius + cursor_radius
+            distance_to_target_at_start = np.sqrt((target_x - start_eye_x)**2 + (target_y - start_eye_y)**2)
+            eye_already_in_target = distance_to_target_at_start <= contact_threshold
+
             # Path efficiency: ratio of straight-line to actual path (closer to 1.0 is more efficient)
-            if path_length > 0:
+            # Set to NaN if eye already in target at start
+            if eye_already_in_target:
+                path_efficiency = np.nan
+            elif path_length > 0:
                 path_efficiency = straight_line_distance / path_length
             else:
                 path_efficiency = 0.0
@@ -599,10 +610,15 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
         print(f"    Median: {np.median(path_lengths):.3f}")
         print(f"    Range: {np.min(path_lengths):.3f} - {np.max(path_lengths):.3f}")
 
-        efficiencies = [t['path_efficiency'] for t in trials]
+        efficiencies = [t['path_efficiency'] for t in trials if not np.isnan(t['path_efficiency'])]
         print(f"\n  Path efficiency statistics (1.0 = perfectly direct):")
-        print(f"    Mean: {np.mean(efficiencies):.3f}")
-        print(f"    Median: {np.median(efficiencies):.3f}")
+        print(f"    (Excluding trials where eye starts in target)")
+        if efficiencies:
+            print(f"    Mean: {np.mean(efficiencies):.3f}")
+            print(f"    Median: {np.median(efficiencies):.3f}")
+            print(f"    n: {len(efficiencies)}/{len(trials)}")
+        else:
+            print(f"    No valid efficiency data")
 
         dir_errors = [t['initial_direction_error'] for t in trials if not np.isnan(t['initial_direction_error'])]
         if dir_errors:
@@ -1958,6 +1974,183 @@ def plot_path_length(trials: list[dict], results_dir: Optional[Path] = None,
         filename = f"{prefix}saccade_feedback_path_length.png"
         fig.savefig(results_dir / filename, dpi=150, bbox_inches='tight')
         print(f"Saved path length plot to {results_dir / filename}")
+
+    return fig
+
+
+def plot_path_efficiency(trials: list[dict], results_dir: Optional[Path] = None,
+                         animal_id: Optional[str] = None, session_date: str = "") -> plt.Figure:
+    """Plot path efficiency comparing successful vs failed trials.
+
+    Path efficiency is the ratio of straight-line distance to actual path length.
+    Trials where the eye starts within the target are excluded (set to NaN).
+
+    Parameters
+    ----------
+    trials : list of dict
+        List of trial data dictionaries
+    results_dir : Path, optional
+        Directory to save the figure
+    animal_id : str, optional
+        Animal identifier for filename
+    session_date : str, optional
+        Session date for title
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+        The generated figure
+    """
+    # Separate trials by success/failure and filter out NaN values
+    successful_trials = []
+    failed_trials = []
+
+    for t in trials:
+        eff = t.get('path_efficiency', np.nan)
+        if not np.isnan(eff):
+            if t.get('trial_failed', False):
+                failed_trials.append(t)
+            else:
+                successful_trials.append(t)
+
+    success_efficiencies = [t['path_efficiency'] for t in successful_trials]
+    failed_efficiencies = [t['path_efficiency'] for t in failed_trials]
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+
+    # Plot 1: Bar plot comparing means
+    categories = []
+    means = []
+    colors = []
+    errors = []  # Standard error of the mean
+
+    if success_efficiencies:
+        categories.append('Successful')
+        means.append(np.mean(success_efficiencies))
+        colors.append('green')
+        errors.append(np.std(success_efficiencies) / np.sqrt(len(success_efficiencies)))
+
+    if failed_efficiencies:
+        categories.append('Failed')
+        means.append(np.mean(failed_efficiencies))
+        colors.append('red')
+        errors.append(np.std(failed_efficiencies) / np.sqrt(len(failed_efficiencies)))
+
+    x_pos = np.arange(len(categories))
+    ax1.bar(x_pos, means, yerr=errors, color=colors, alpha=0.7,
+            edgecolor='black', linewidth=1.5, capsize=10, error_kw={'linewidth': 2})
+    ax1.set_xticks(x_pos)
+    ax1.set_xticklabels(categories, fontsize=12)
+    ax1.set_ylabel('Path Efficiency', fontsize=12)
+    ax1.set_ylim(0, 1.0)
+    ax1.axhline(1.0, color='black', linestyle='--', linewidth=1, alpha=0.5,
+                label='Perfect efficiency')
+
+    title = 'Path Efficiency - Successful vs Failed'
+    if animal_id:
+        title += f' - {animal_id}'
+    if session_date:
+        title += f' ({session_date})'
+    ax1.set_title(title, fontsize=14, fontweight='bold')
+    ax1.grid(True, alpha=0.3, axis='y')
+    ax1.legend(fontsize=10)
+
+    # Add value labels on bars
+    for i, (mean, err) in enumerate(zip(means, errors)):
+        ax1.text(i, mean + err + 0.02, f'{mean:.3f}', ha='center', va='bottom',
+                fontsize=11, fontweight='bold')
+
+    # Add sample size labels
+    if success_efficiencies and failed_efficiencies:
+        ax1.text(0, -0.08, f'n={len(success_efficiencies)}', ha='center', va='top',
+                fontsize=10, transform=ax1.get_xaxis_transform())
+        ax1.text(1, -0.08, f'n={len(failed_efficiencies)}', ha='center', va='top',
+                fontsize=10, transform=ax1.get_xaxis_transform())
+    elif success_efficiencies:
+        ax1.text(0, -0.08, f'n={len(success_efficiencies)}', ha='center', va='top',
+                fontsize=10, transform=ax1.get_xaxis_transform())
+    elif failed_efficiencies:
+        ax1.text(0, -0.08, f'n={len(failed_efficiencies)}', ha='center', va='top',
+                fontsize=10, transform=ax1.get_xaxis_transform())
+
+    # Plot 2: Histogram comparing distributions
+    if success_efficiencies and failed_efficiencies:
+        ax2.hist([success_efficiencies, failed_efficiencies],
+                bins=np.linspace(0, 1, 21), color=['green', 'red'], alpha=0.6,
+                edgecolor='black', label=['Successful', 'Failed'])
+    elif success_efficiencies:
+        ax2.hist(success_efficiencies, bins=np.linspace(0, 1, 21),
+                color='green', alpha=0.6, edgecolor='black', label='Successful')
+    elif failed_efficiencies:
+        ax2.hist(failed_efficiencies, bins=np.linspace(0, 1, 21),
+                color='red', alpha=0.6, edgecolor='black', label='Failed')
+
+    ax2.axvline(1.0, color='black', linestyle='--', linewidth=1, alpha=0.5)
+    ax2.set_xlabel('Path Efficiency', fontsize=12)
+    ax2.set_ylabel('Number of Trials', fontsize=12)
+    ax2.set_xlim(0, 1.0)
+    ax2.set_title('Distribution of Path Efficiency', fontsize=12, fontweight='bold')
+    ax2.grid(True, alpha=0.3, axis='y')
+    ax2.legend(fontsize=11)
+
+    # Add statistics text
+    stats_lines = []
+    if success_efficiencies:
+        mean_s = np.mean(success_efficiencies)
+        median_s = np.median(success_efficiencies)
+        std_s = np.std(success_efficiencies)
+        stats_lines.append(f'Successful:')
+        stats_lines.append(f'  Mean={mean_s:.3f}')
+        stats_lines.append(f'  Median={median_s:.3f}')
+        stats_lines.append(f'  SD={std_s:.3f}')
+        stats_lines.append(f'  n={len(success_efficiencies)}')
+
+    if failed_efficiencies:
+        if success_efficiencies:
+            stats_lines.append('')
+        mean_f = np.mean(failed_efficiencies)
+        median_f = np.median(failed_efficiencies)
+        std_f = np.std(failed_efficiencies)
+        stats_lines.append(f'Failed:')
+        stats_lines.append(f'  Mean={mean_f:.3f}')
+        stats_lines.append(f'  Median={median_f:.3f}')
+        stats_lines.append(f'  SD={std_f:.3f}')
+        stats_lines.append(f'  n={len(failed_efficiencies)}')
+
+    stats_text = '\n'.join(stats_lines)
+    ax2.text(0.02, 0.98, stats_text, transform=ax2.transAxes,
+            fontsize=10, verticalalignment='top', horizontalalignment='left',
+            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.9),
+            family='monospace')
+
+    plt.tight_layout()
+
+    # Save figure if results directory provided
+    if results_dir:
+        results_dir.mkdir(parents=True, exist_ok=True)
+        prefix = f"{animal_id}_" if animal_id else ""
+        filename = f"{prefix}saccade_feedback_path_efficiency.png"
+        fig.savefig(results_dir / filename, dpi=150, bbox_inches='tight')
+        print(f"Saved path efficiency plot to {results_dir / filename}")
+
+    # Print statistics to console
+    print("\n" + "="*60)
+    print("PATH EFFICIENCY STATISTICS")
+    print("="*60)
+    print("(Trials where eye starts in target are excluded)")
+    if success_efficiencies:
+        print(f"\nSuccessful trials:")
+        print(f"  Mean: {np.mean(success_efficiencies):.3f}")
+        print(f"  Median: {np.median(success_efficiencies):.3f}")
+        print(f"  SD: {np.std(success_efficiencies):.3f}")
+        print(f"  n: {len(success_efficiencies)}")
+    if failed_efficiencies:
+        print(f"\nFailed trials:")
+        print(f"  Mean: {np.mean(failed_efficiencies):.3f}")
+        print(f"  Median: {np.median(failed_efficiencies):.3f}")
+        print(f"  SD: {np.std(failed_efficiencies):.3f}")
+        print(f"  n: {len(failed_efficiencies)}")
+    print("="*60)
 
     return fig
 
@@ -4574,11 +4767,20 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
             plt.show()
         plt.close(fig_dir_error)
 
+    print("\nPlotting path efficiency (success vs failure)...")
+    fig_path_eff = plot_path_efficiency(trials_all, results_dir=results_dir,
+                                        animal_id=animal_id,
+                                        session_date=date_str)
+    if fig_path_eff is not None:
+        if show_plots:
+            plt.show()
+        plt.close(fig_path_eff)
+
 
     # Create summary DataFrame
     durations = [t['duration'] for t in trials_for_analysis]
     path_lengths = [t['path_length'] for t in trials_for_analysis]
-    efficiencies = [t['path_efficiency'] for t in trials_for_analysis]
+    efficiencies = [t['path_efficiency'] for t in trials_for_analysis if not np.isnan(t['path_efficiency'])]
     dir_errors = [t['initial_direction_error'] for t in trials_for_analysis if not np.isnan(t['initial_direction_error'])]
 
     df = pd.DataFrame({
@@ -4594,8 +4796,8 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
         'mean_path_length': [np.mean(path_lengths)],
         'median_path_length': [np.median(path_lengths)],
         'std_path_length': [np.std(path_lengths)],
-        'mean_path_efficiency': [np.mean(efficiencies)],
-        'median_path_efficiency': [np.median(efficiencies)],
+        'mean_path_efficiency': [np.mean(efficiencies) if efficiencies else np.nan],
+        'median_path_efficiency': [np.median(efficiencies) if efficiencies else np.nan],
         'mean_initial_dir_error': [np.mean(dir_errors) if dir_errors else np.nan],
         'median_initial_dir_error': [np.median(dir_errors) if dir_errors else np.nan],
     })
