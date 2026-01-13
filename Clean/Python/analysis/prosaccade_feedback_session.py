@@ -2018,16 +2018,22 @@ def plot_initial_direction_error(trials: list[dict], results_dir: Optional[Path]
     # Separate trials by success/failure and filter out NaN values
     successful_trials = []
     failed_trials = []
+    all_trials_with_data = []
 
     for t in trials:
         dir_error = t.get('initial_direction_error', np.nan)
         if not np.isnan(dir_error):
+            all_trials_with_data.append(t)
             if t.get('trial_failed', False):
                 failed_trials.append(t)
             else:
                 successful_trials.append(t)
 
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 12))
+
+    # Compute circular statistics for all trials combined
+    all_errors = [t['initial_direction_error'] for t in all_trials_with_data]
+    stats_all = compute_circular_stats(all_errors) if all_errors else None
 
     # Compute circular statistics for each group
     stats_success = None
@@ -2041,42 +2047,47 @@ def plot_initial_direction_error(trials: list[dict], results_dir: Optional[Path]
         failed_errors = [t['initial_direction_error'] for t in failed_trials]
         stats_failed = compute_circular_stats(failed_errors)
 
-    # Plot 1: Scatter plot of initial direction error vs trial number
-    if successful_trials:
-        success_trial_nums = [t['trial_number'] for t in successful_trials]
-        success_errors = [t['initial_direction_error'] for t in successful_trials]
-        ax1.scatter(success_trial_nums, success_errors, color='green', s=80,
-                   alpha=0.7, edgecolors='darkgreen', linewidth=1.5,
-                   label=f'Successful (n={len(successful_trials)})', marker='o')
+    # Plot 1: Histogram of all trials combined
+    ax1.axvline(0, color='black', linestyle='-', linewidth=1, alpha=0.5)
 
-    if failed_trials:
-        failed_trial_nums = [t['trial_number'] for t in failed_trials]
-        failed_errors = [t['initial_direction_error'] for t in failed_trials]
-        ax1.scatter(failed_trial_nums, failed_errors, color='red', s=80,
-                   alpha=0.7, edgecolors='darkred', linewidth=1.5,
-                   label=f'Failed (n={len(failed_trials)})', marker='x')
+    if all_errors:
+        ax1.hist(all_errors, bins=np.arange(-180, 181, 20),
+                color='steelblue', alpha=0.7, edgecolor='black',
+                label=f'All Trials (n={len(all_errors)})')
 
-    ax1.set_xlabel('Trial Number', fontsize=12)
-    ax1.set_ylabel('Initial Direction Error (degrees)', fontsize=12)
-    ax1.set_ylim(-180, 180)
-    ax1.axhline(0, color='black', linestyle='-', linewidth=1, alpha=0.5)
+    ax1.set_xlabel('Initial Direction Error (degrees)', fontsize=12)
+    ax1.set_ylabel('Number of Trials', fontsize=12)
+    ax1.set_xlim(-180, 180)
 
-    title = 'Initial Direction Error Across Trials'
+    title = 'Initial Direction Error - All Trials'
     if animal_id:
         title += f' - {animal_id}'
     if session_date:
         title += f' ({session_date})'
     ax1.set_title(title, fontsize=14, fontweight='bold')
-    ax1.grid(True, alpha=0.3)
-    ax1.legend(fontsize=11, loc='best')
+    ax1.grid(True, alpha=0.3, axis='y')
+    ax1.legend(fontsize=11, loc='upper right')
 
-    # Add circular mean lines
-    if stats_success:
-        ax1.axhline(stats_success['circular_mean'], color='green', linestyle='--',
-                   linewidth=2, alpha=0.6, label=f"Success μ={stats_success['circular_mean']:.1f}°")
-    if stats_failed:
-        ax1.axhline(stats_failed['circular_mean'], color='red', linestyle='--',
-                   linewidth=2, alpha=0.6, label=f"Failed μ={stats_failed['circular_mean']:.1f}°")
+    # Add circular statistics text for all trials
+    if stats_all:
+        stats_lines_all = []
+        stats_lines_all.append("ALL TRIALS:")
+        stats_lines_all.append(f"  Circular mean: {stats_all['circular_mean']:.1f}°")
+        stats_lines_all.append(f"  Circular SD: {stats_all['circular_std']:.1f}°")
+        stats_lines_all.append(f"  R: {stats_all['R']:.3f}")
+        stats_lines_all.append(f"  Rayleigh test: Z={stats_all['rayleigh_z']:.2f}, p={stats_all['rayleigh_p']:.6f}")
+        rayleigh_sig = "***" if stats_all['rayleigh_p'] < 0.001 else ("**" if stats_all['rayleigh_p'] < 0.01 else ("*" if stats_all['rayleigh_p'] < 0.05 else "ns"))
+        stats_lines_all.append(f"    {'Clustered' if stats_all['rayleigh_p'] < 0.05 else 'Uniform'} ({rayleigh_sig})")
+        stats_lines_all.append(f"  V-test (0°): V={stats_all['v_stat']:.3f}, p={stats_all['v_p']:.6f}")
+        v_sig = "***" if stats_all['v_p'] < 0.001 else ("**" if stats_all['v_p'] < 0.01 else ("*" if stats_all['v_p'] < 0.05 else "ns"))
+        stats_lines_all.append(f"    {'Toward target' if stats_all['v_p'] < 0.05 else 'Not toward target'} ({v_sig})")
+        stats_lines_all.append(f"  n={stats_all['n']}")
+
+        stats_text_all = '\n'.join(stats_lines_all)
+        ax1.text(0.02, 0.98, stats_text_all, transform=ax1.transAxes,
+                fontsize=9, verticalalignment='top', horizontalalignment='left',
+                bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.9),
+                family='monospace')
 
     # Plot 2: Histogram comparing distributions
     ax2.axvline(0, color='black', linestyle='-', linewidth=1, alpha=0.5)
@@ -2095,7 +2106,7 @@ def plot_initial_direction_error(trials: list[dict], results_dir: Optional[Path]
     ax2.set_xlabel('Initial Direction Error (degrees)', fontsize=12)
     ax2.set_ylabel('Number of Trials', fontsize=12)
     ax2.set_xlim(-180, 180)
-    ax2.set_title('Distribution of Initial Direction Errors', fontsize=12, fontweight='bold')
+    ax2.set_title('Initial Direction Error - Successful vs Failed Trials', fontsize=12, fontweight='bold')
     ax2.grid(True, alpha=0.3, axis='y')
     ax2.legend(fontsize=11)
 
@@ -2150,6 +2161,27 @@ def plot_initial_direction_error(trials: list[dict], results_dir: Optional[Path]
     print("\n" + "="*60)
     print("CIRCULAR STATISTICS FOR INITIAL DIRECTION ERROR")
     print("="*60)
+
+    if stats_all:
+        print("\nALL TRIALS:")
+        print(f"  Circular mean: {stats_all['circular_mean']:.2f}°")
+        print(f"  Circular standard deviation: {stats_all['circular_std']:.2f}°")
+        print(f"  Mean resultant length (R): {stats_all['R']:.3f}")
+        print(f"    (R ranges from 0=uniform to 1=perfect clustering)")
+        print(f"\n  Rayleigh Test for Non-Uniformity:")
+        print(f"    H0: Angles uniformly distributed (no preferred direction)")
+        print(f"    H1: Angles clustered (preferred direction exists)")
+        print(f"    Z-statistic: {stats_all['rayleigh_z']:.3f}")
+        print(f"    p-value: {stats_all['rayleigh_p']:.6f}")
+        print(f"    Result: {'REJECT H0 - Significant clustering' if stats_all['rayleigh_p'] < 0.05 else 'Fail to reject H0'}")
+        print(f"\n  V-test for Clustering Around 0°:")
+        print(f"    H0: Distribution not clustered toward 0° (target direction)")
+        print(f"    H1: Distribution clustered toward 0° (movements toward target)")
+        print(f"    V-statistic: {stats_all['v_stat']:.3f}")
+        print(f"    p-value: {stats_all['v_p']:.6f}")
+        print(f"    Result: {'REJECT H0 - Movements biased toward target' if stats_all['v_p'] < 0.05 else 'Fail to reject H0'}")
+        print(f"  n={stats_all['n']}")
+
     if stats_success:
         print("\nSUCCESSFUL TRIALS:")
         print(f"  Circular mean: {stats_success['circular_mean']:.2f}°")
