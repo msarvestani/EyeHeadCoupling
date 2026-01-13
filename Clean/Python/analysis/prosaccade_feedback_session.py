@@ -2017,6 +2017,15 @@ def plot_path_efficiency(trials: list[dict], results_dir: Optional[Path] = None,
     success_efficiencies = [t['path_efficiency'] for t in successful_trials]
     failed_efficiencies = [t['path_efficiency'] for t in failed_trials]
 
+    # Verify data before plotting
+    print(f"\nPath Efficiency - Data verification:")
+    if success_efficiencies:
+        print(f"  Successful: n={len(success_efficiencies)}, mean={np.mean(success_efficiencies):.4f}, "
+              f"min={np.min(success_efficiencies):.4f}, max={np.max(success_efficiencies):.4f}")
+    if failed_efficiencies:
+        print(f"  Failed: n={len(failed_efficiencies)}, mean={np.mean(failed_efficiencies):.4f}, "
+              f"min={np.min(failed_efficiencies):.4f}, max={np.max(failed_efficiencies):.4f}")
+
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
 
     # Plot 1: Bar plot comparing means
@@ -2079,20 +2088,33 @@ def plot_path_efficiency(trials: list[dict], results_dir: Optional[Path] = None,
         ax2.hist([success_efficiencies, failed_efficiencies],
                 bins=np.linspace(0, 1, 21), color=['green', 'red'], alpha=0.6,
                 edgecolor='black', label=['Successful', 'Failed'])
+        # Add mean lines to histogram
+        mean_success = np.mean(success_efficiencies)
+        mean_failed = np.mean(failed_efficiencies)
+        ax2.axvline(mean_success, color='darkgreen', linestyle='--', linewidth=2,
+                   label=f'Success mean: {mean_success:.3f}')
+        ax2.axvline(mean_failed, color='darkred', linestyle='--', linewidth=2,
+                   label=f'Failed mean: {mean_failed:.3f}')
     elif success_efficiencies:
         ax2.hist(success_efficiencies, bins=np.linspace(0, 1, 21),
                 color='green', alpha=0.6, edgecolor='black', label='Successful')
+        mean_success = np.mean(success_efficiencies)
+        ax2.axvline(mean_success, color='darkgreen', linestyle='--', linewidth=2,
+                   label=f'Mean: {mean_success:.3f}')
     elif failed_efficiencies:
         ax2.hist(failed_efficiencies, bins=np.linspace(0, 1, 21),
                 color='red', alpha=0.6, edgecolor='black', label='Failed')
+        mean_failed = np.mean(failed_efficiencies)
+        ax2.axvline(mean_failed, color='darkred', linestyle='--', linewidth=2,
+                   label=f'Mean: {mean_failed:.3f}')
 
-    ax2.axvline(1.0, color='black', linestyle='--', linewidth=1, alpha=0.5)
+    ax2.axvline(1.0, color='black', linestyle='--', linewidth=1, alpha=0.3)
     ax2.set_xlabel('Path Efficiency', fontsize=12)
     ax2.set_ylabel('Number of Trials', fontsize=12)
     ax2.set_xlim(0, 1.0)
     ax2.set_title('Distribution of Path Efficiency', fontsize=12, fontweight='bold')
     ax2.grid(True, alpha=0.3, axis='y')
-    ax2.legend(fontsize=11)
+    ax2.legend(fontsize=10, loc='upper left')
 
     # Add statistics text
     stats_lines = []
