@@ -2245,7 +2245,17 @@ def plot_initial_direction_error(trials: list[dict], results_dir: Optional[Path]
             else:
                 successful_trials.append(t)
 
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 12))
+    # Find the 4 biggest target sizes
+    target_sizes = sorted(set(t.get('target_diameter', 0) for t in all_trials_with_data), reverse=True)
+    biggest_4_sizes = target_sizes[:4] if len(target_sizes) >= 4 else target_sizes
+    print(f"\nBiggest 4 target sizes: {biggest_4_sizes}")
+
+    # Filter trials for biggest 4 targets
+    all_trials_big4 = [t for t in all_trials_with_data if t.get('target_diameter', 0) in biggest_4_sizes]
+    successful_trials_big4 = [t for t in successful_trials if t.get('target_diameter', 0) in biggest_4_sizes]
+    failed_trials_big4 = [t for t in failed_trials if t.get('target_diameter', 0) in biggest_4_sizes]
+
+    fig, ((ax1, ax3), (ax2, ax4)) = plt.subplots(2, 2, figsize=(20, 12))
 
     # Compute circular statistics for all trials combined
     all_errors = [t['initial_direction_error'] for t in all_trials_with_data]
@@ -2274,13 +2284,7 @@ def plot_initial_direction_error(trials: list[dict], results_dir: Optional[Path]
     ax1.set_xlabel('Initial Direction Error (degrees)', fontsize=12)
     ax1.set_ylabel('Number of Trials', fontsize=12)
     ax1.set_xlim(-180, 180)
-
-    title = 'Initial Direction Error - All Trials'
-    if animal_id:
-        title += f' - {animal_id}'
-    if session_date:
-        title += f' ({session_date})'
-    ax1.set_title(title, fontsize=14, fontweight='bold')
+    ax1.set_title('All Trials - All Targets', fontsize=14, fontweight='bold')
     ax1.grid(True, alpha=0.3, axis='y')
     ax1.legend(fontsize=11, loc='upper right')
 
@@ -2322,7 +2326,7 @@ def plot_initial_direction_error(trials: list[dict], results_dir: Optional[Path]
     ax2.set_xlabel('Initial Direction Error (degrees)', fontsize=12)
     ax2.set_ylabel('Number of Trials', fontsize=12)
     ax2.set_xlim(-180, 180)
-    ax2.set_title('Initial Direction Error - Successful vs Failed Trials', fontsize=12, fontweight='bold')
+    ax2.set_title('Success vs Failed - All Targets', fontsize=12, fontweight='bold')
     ax2.grid(True, alpha=0.3, axis='y')
     ax2.legend(fontsize=11)
 
@@ -2363,7 +2367,125 @@ def plot_initial_direction_error(trials: list[dict], results_dir: Optional[Path]
             bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.9),
             family='monospace')
 
-    plt.tight_layout()
+    # RIGHT COLUMN: Biggest 4 targets only
+    # Compute circular statistics for biggest 4 targets
+    all_errors_big4 = [t['initial_direction_error'] for t in all_trials_big4]
+    stats_all_big4 = compute_circular_stats(all_errors_big4) if all_errors_big4 else None
+
+    stats_success_big4 = None
+    stats_failed_big4 = None
+
+    if successful_trials_big4:
+        success_errors_big4 = [t['initial_direction_error'] for t in successful_trials_big4]
+        stats_success_big4 = compute_circular_stats(success_errors_big4)
+
+    if failed_trials_big4:
+        failed_errors_big4 = [t['initial_direction_error'] for t in failed_trials_big4]
+        stats_failed_big4 = compute_circular_stats(failed_errors_big4)
+
+    # Plot 3: Histogram of all trials combined (biggest 4 targets)
+    ax3.axvline(0, color='black', linestyle='-', linewidth=1, alpha=0.5)
+
+    if all_errors_big4:
+        ax3.hist(all_errors_big4, bins=np.arange(-180, 181, 20),
+                color='steelblue', alpha=0.7, edgecolor='black',
+                label=f'All Trials (n={len(all_errors_big4)})')
+
+    ax3.set_xlabel('Initial Direction Error (degrees)', fontsize=12)
+    ax3.set_ylabel('Number of Trials', fontsize=12)
+    ax3.set_xlim(-180, 180)
+    ax3.set_title('All Trials - Biggest 4 Targets', fontsize=14, fontweight='bold')
+    ax3.grid(True, alpha=0.3, axis='y')
+    ax3.legend(fontsize=11, loc='upper right')
+
+    # Add circular statistics text for all trials (biggest 4)
+    if stats_all_big4:
+        stats_lines_all_big4 = []
+        stats_lines_all_big4.append("ALL TRIALS (BIG 4):")
+        stats_lines_all_big4.append(f"  Circular mean: {stats_all_big4['circular_mean']:.1f}°")
+        stats_lines_all_big4.append(f"  Circular SD: {stats_all_big4['circular_std']:.1f}°")
+        stats_lines_all_big4.append(f"  R: {stats_all_big4['R']:.3f}")
+        stats_lines_all_big4.append(f"  Rayleigh: Z={stats_all_big4['rayleigh_z']:.2f}, p={stats_all_big4['rayleigh_p']:.6f}")
+        rayleigh_sig_big4 = "***" if stats_all_big4['rayleigh_p'] < 0.001 else ("**" if stats_all_big4['rayleigh_p'] < 0.01 else ("*" if stats_all_big4['rayleigh_p'] < 0.05 else "ns"))
+        stats_lines_all_big4.append(f"    {'Clustered' if stats_all_big4['rayleigh_p'] < 0.05 else 'Uniform'} ({rayleigh_sig_big4})")
+        stats_lines_all_big4.append(f"  V-test (0°): V={stats_all_big4['v_stat']:.3f}, p={stats_all_big4['v_p']:.6f}")
+        v_sig_big4 = "***" if stats_all_big4['v_p'] < 0.001 else ("**" if stats_all_big4['v_p'] < 0.01 else ("*" if stats_all_big4['v_p'] < 0.05 else "ns"))
+        stats_lines_all_big4.append(f"    {'Toward target' if stats_all_big4['v_p'] < 0.05 else 'Not toward target'} ({v_sig_big4})")
+        stats_lines_all_big4.append(f"  n={stats_all_big4['n']}")
+
+        stats_text_all_big4 = '\n'.join(stats_lines_all_big4)
+        ax3.text(0.02, 0.98, stats_text_all_big4, transform=ax3.transAxes,
+                fontsize=9, verticalalignment='top', horizontalalignment='left',
+                bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.9),
+                family='monospace')
+
+    # Plot 4: Histogram comparing distributions (biggest 4 targets)
+    ax4.axvline(0, color='black', linestyle='-', linewidth=1, alpha=0.5)
+
+    if successful_trials_big4 and failed_trials_big4:
+        ax4.hist([success_errors_big4, failed_errors_big4], bins=np.arange(-180, 181, 20),
+                color=['green', 'red'], alpha=0.6, edgecolor='black',
+                label=['Successful', 'Failed'])
+    elif successful_trials_big4:
+        ax4.hist(success_errors_big4, bins=np.arange(-180, 181, 20),
+                color='green', alpha=0.6, edgecolor='black', label='Successful')
+    elif failed_trials_big4:
+        ax4.hist(failed_errors_big4, bins=np.arange(-180, 181, 20),
+                color='red', alpha=0.6, edgecolor='black', label='Failed')
+
+    ax4.set_xlabel('Initial Direction Error (degrees)', fontsize=12)
+    ax4.set_ylabel('Number of Trials', fontsize=12)
+    ax4.set_xlim(-180, 180)
+    ax4.set_title('Success vs Failed - Biggest 4 Targets', fontsize=12, fontweight='bold')
+    ax4.grid(True, alpha=0.3, axis='y')
+    ax4.legend(fontsize=11)
+
+    # Add circular statistics text (biggest 4)
+    stats_lines_big4 = []
+
+    if stats_success_big4:
+        stats_lines_big4.append("SUCCESSFUL (BIG 4):")
+        stats_lines_big4.append(f"  Circular mean: {stats_success_big4['circular_mean']:.1f}°")
+        stats_lines_big4.append(f"  Circular SD: {stats_success_big4['circular_std']:.1f}°")
+        stats_lines_big4.append(f"  R: {stats_success_big4['R']:.3f}")
+        stats_lines_big4.append(f"  Rayleigh: Z={stats_success_big4['rayleigh_z']:.2f}, p={stats_success_big4['rayleigh_p']:.6f}")
+        rayleigh_sig_s = "***" if stats_success_big4['rayleigh_p'] < 0.001 else ("**" if stats_success_big4['rayleigh_p'] < 0.01 else ("*" if stats_success_big4['rayleigh_p'] < 0.05 else "ns"))
+        stats_lines_big4.append(f"    {'Clustered' if stats_success_big4['rayleigh_p'] < 0.05 else 'Uniform'} ({rayleigh_sig_s})")
+        stats_lines_big4.append(f"  V-test (0°): V={stats_success_big4['v_stat']:.3f}, p={stats_success_big4['v_p']:.6f}")
+        v_sig_s = "***" if stats_success_big4['v_p'] < 0.001 else ("**" if stats_success_big4['v_p'] < 0.01 else ("*" if stats_success_big4['v_p'] < 0.05 else "ns"))
+        stats_lines_big4.append(f"    {'Toward target' if stats_success_big4['v_p'] < 0.05 else 'Not toward target'} ({v_sig_s})")
+        stats_lines_big4.append(f"  n={stats_success_big4['n']}")
+
+    if stats_failed_big4:
+        if stats_success_big4:
+            stats_lines_big4.append("")
+        stats_lines_big4.append("FAILED (BIG 4):")
+        stats_lines_big4.append(f"  Circular mean: {stats_failed_big4['circular_mean']:.1f}°")
+        stats_lines_big4.append(f"  Circular SD: {stats_failed_big4['circular_std']:.1f}°")
+        stats_lines_big4.append(f"  R: {stats_failed_big4['R']:.3f}")
+        stats_lines_big4.append(f"  Rayleigh: Z={stats_failed_big4['rayleigh_z']:.2f}, p={stats_failed_big4['rayleigh_p']:.6f}")
+        rayleigh_sig_f = "***" if stats_failed_big4['rayleigh_p'] < 0.001 else ("**" if stats_failed_big4['rayleigh_p'] < 0.01 else ("*" if stats_failed_big4['rayleigh_p'] < 0.05 else "ns"))
+        stats_lines_big4.append(f"    {'Clustered' if stats_failed_big4['rayleigh_p'] < 0.05 else 'Uniform'} ({rayleigh_sig_f})")
+        stats_lines_big4.append(f"  V-test (0°): V={stats_failed_big4['v_stat']:.3f}, p={stats_failed_big4['v_p']:.6f}")
+        v_sig_f = "***" if stats_failed_big4['v_p'] < 0.001 else ("**" if stats_failed_big4['v_p'] < 0.01 else ("*" if stats_failed_big4['v_p'] < 0.05 else "ns"))
+        stats_lines_big4.append(f"    {'Toward target' if stats_failed_big4['v_p'] < 0.05 else 'Not toward target'} ({v_sig_f})")
+        stats_lines_big4.append(f"  n={stats_failed_big4['n']}")
+
+    stats_text_big4 = '\n'.join(stats_lines_big4)
+    ax4.text(0.02, 0.98, stats_text_big4, transform=ax4.transAxes,
+            fontsize=9, verticalalignment='top', horizontalalignment='left',
+            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.9),
+            family='monospace')
+
+    # Add main title for entire figure
+    main_title = 'Initial Direction Error Analysis'
+    if animal_id:
+        main_title += f' - {animal_id}'
+    if session_date:
+        main_title += f' ({session_date})'
+    fig.suptitle(main_title, fontsize=16, fontweight='bold', y=0.995)
+
+    plt.tight_layout(rect=[0, 0, 1, 0.99])
 
     # Save figure if results directory provided
     if results_dir:
@@ -2437,6 +2559,40 @@ def plot_initial_direction_error(trials: list[dict], results_dir: Optional[Path]
         print(f"    p-value: {stats_failed['v_p']:.6f}")
         print(f"    Result: {'REJECT H0 - Movements biased toward target' if stats_failed['v_p'] < 0.05 else 'Fail to reject H0'}")
         print(f"  n={stats_failed['n']}")
+
+    # Print statistics for biggest 4 targets
+    print("\n" + "-"*60)
+    print("BIGGEST 4 TARGETS ONLY")
+    print("-"*60)
+    print(f"Target sizes: {biggest_4_sizes}")
+
+    if stats_all_big4:
+        print("\nALL TRIALS (BIG 4):")
+        print(f"  Circular mean: {stats_all_big4['circular_mean']:.2f}°")
+        print(f"  Circular standard deviation: {stats_all_big4['circular_std']:.2f}°")
+        print(f"  Mean resultant length (R): {stats_all_big4['R']:.3f}")
+        print(f"  Rayleigh p-value: {stats_all_big4['rayleigh_p']:.6f}")
+        print(f"  V-test p-value: {stats_all_big4['v_p']:.6f}")
+        print(f"  n={stats_all_big4['n']}")
+
+    if stats_success_big4:
+        print("\nSUCCESSFUL TRIALS (BIG 4):")
+        print(f"  Circular mean: {stats_success_big4['circular_mean']:.2f}°")
+        print(f"  Circular standard deviation: {stats_success_big4['circular_std']:.2f}°")
+        print(f"  Mean resultant length (R): {stats_success_big4['R']:.3f}")
+        print(f"  Rayleigh p-value: {stats_success_big4['rayleigh_p']:.6f}")
+        print(f"  V-test p-value: {stats_success_big4['v_p']:.6f}")
+        print(f"  n={stats_success_big4['n']}")
+
+    if stats_failed_big4:
+        print("\nFAILED TRIALS (BIG 4):")
+        print(f"  Circular mean: {stats_failed_big4['circular_mean']:.2f}°")
+        print(f"  Circular standard deviation: {stats_failed_big4['circular_std']:.2f}°")
+        print(f"  Mean resultant length (R): {stats_failed_big4['R']:.3f}")
+        print(f"  Rayleigh p-value: {stats_failed_big4['rayleigh_p']:.6f}")
+        print(f"  V-test p-value: {stats_failed_big4['v_p']:.6f}")
+        print(f"  n={stats_failed_big4['n']}")
+
     print("="*60)
 
     return fig
