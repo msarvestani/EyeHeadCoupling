@@ -476,25 +476,48 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
                 path_efficiency = 0.0
 
             # Initial movement direction: angle between initial movement and ideal vector
-            # Use first 5 samples (or fewer if trial is short) to determine initial direction
-            n_samples = min(5, len(eye_trajectory))
-            initial_dx = eye_trajectory['green_x'].values[n_samples-1] - start_eye_x
-            initial_dy = eye_trajectory['green_y'].values[n_samples-1] - start_eye_y
+            # Get eye position data for this trial
+            # First 100ms: start_time to start_time + 0.1
+            # 200-300ms: start_time + 0.2 to start_time + 0.3
 
-            # Ideal vector from start to target
-            ideal_dx = target_x - start_eye_x
-            ideal_dy = target_y - start_eye_y
+            eye_early = eye_trajectory[(eye_trajectory['timestamp'] >= start_time) &
+                                       (eye_trajectory['timestamp'] < start_time + 0.1)]
 
-            # Calculate angle between vectors using dot product
-            # angle = arccos(dot(v1, v2) / (|v1| * |v2|))
-            initial_mag = np.sqrt(initial_dx**2 + initial_dy**2)
-            ideal_mag = np.sqrt(ideal_dx**2 + ideal_dy**2)
+            eye_at_250ms = eye_trajectory[(eye_trajectory['timestamp'] >= start_time + 0.2) &
+                                          (eye_trajectory['timestamp'] < start_time + 0.3)]
 
-            if initial_mag > 0 and ideal_mag > 0:
-                cos_angle = (initial_dx * ideal_dx + initial_dy * initial_dy) / (initial_mag * ideal_mag)
-                # Clamp to [-1, 1] to avoid numerical errors
-                cos_angle = np.clip(cos_angle, -1.0, 1.0)
-                initial_direction_error = np.degrees(np.arccos(cos_angle))
+            # Check if we have enough data
+            if len(eye_early) > 0 and len(eye_at_250ms) > 0:
+                # Average position over first 100ms (starting position)
+                early_x = eye_early['green_x'].mean()
+                early_y = eye_early['green_y'].mean()
+
+                # Average position over 200-300ms window
+                later_x = eye_at_250ms['green_x'].mean()
+                later_y = eye_at_250ms['green_y'].mean()
+
+                # Calculate movement vector
+                move_dx = later_x - early_x
+                move_dy = later_y - early_y
+                movement_magnitude = np.sqrt(move_dx**2 + move_dy**2)
+
+                # Calculate angle of movement (in radians, then degrees)
+                move_angle_rad = np.arctan2(move_dy, move_dx)
+                move_angle_deg = np.degrees(move_angle_rad)
+
+                # Calculate target direction from starting position
+                target_dx = target_x - early_x
+                target_dy = target_y - early_y
+                target_angle_rad = np.arctan2(target_dy, target_dx)
+                target_angle_deg = np.degrees(target_angle_rad)
+
+                # Calculate angular difference
+                # Use circular difference to keep it in [-180, 180]
+                angle_diff = move_angle_deg - target_angle_deg
+                # Normalize to [-180, 180]
+                angle_diff = ((angle_diff + 180) % 360) - 180
+
+                initial_direction_error = abs(angle_diff)
             else:
                 initial_direction_error = np.nan
         elif has_eye_data:
