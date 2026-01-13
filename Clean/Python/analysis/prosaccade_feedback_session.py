@@ -517,7 +517,7 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
                 # Normalize to [-180, 180]
                 angle_diff = ((angle_diff + 180) % 360) - 180
 
-                initial_direction_error = abs(angle_diff)
+                initial_direction_error = angle_diff
             else:
                 initial_direction_error = np.nan
         elif has_eye_data:
@@ -1966,6 +1966,8 @@ def plot_initial_direction_error(trials: list[dict], results_dir: Optional[Path]
                                   animal_id: Optional[str] = None, session_date: str = "") -> plt.Figure:
     """Plot initial direction error by trial, separated by success/failure.
 
+    Uses circular statistics for angular data and includes statistical tests.
+
     Parameters
     ----------
     trials : list of dict
@@ -1982,6 +1984,37 @@ def plot_initial_direction_error(trials: list[dict], results_dir: Optional[Path]
     matplotlib.figure.Figure
         The generated figure
     """
+    def compute_circular_stats(angles_deg):
+        """Compute circular statistics for angles in degrees."""
+        angles_rad = np.radians(angles_deg)
+        mean_vector_x = np.cos(angles_rad).mean()
+        mean_vector_y = np.sin(angles_rad).mean()
+        R = np.sqrt(mean_vector_x**2 + mean_vector_y**2)
+        circular_mean_rad = np.arctan2(mean_vector_y, mean_vector_x)
+        circular_mean_deg = np.degrees(circular_mean_rad)
+        circular_std_rad = np.sqrt(-2 * np.log(R)) if R > 0 else np.nan
+        circular_std_deg = np.degrees(circular_std_rad) if not np.isnan(circular_std_rad) else np.nan
+
+        # Rayleigh test for non-uniformity
+        n = len(angles_rad)
+        z_stat = n * R**2
+        rayleigh_p = np.exp(-z_stat) if z_stat < 700 else 0.0  # Avoid overflow
+
+        # V-test: test if distribution is clustered around 0 degrees
+        v_stat = R * np.cos(circular_mean_rad)
+        v_p = np.exp(-n * v_stat**2) if (n * v_stat**2) < 700 else 0.0  # Avoid overflow
+
+        return {
+            'circular_mean': circular_mean_deg,
+            'circular_std': circular_std_deg,
+            'R': R,
+            'n': n,
+            'rayleigh_z': z_stat,
+            'rayleigh_p': rayleigh_p,
+            'v_stat': v_stat,
+            'v_p': v_p
+        }
+
     # Separate trials by success/failure and filter out NaN values
     successful_trials = []
     failed_trials = []
@@ -1994,7 +2027,19 @@ def plot_initial_direction_error(trials: list[dict], results_dir: Optional[Path]
             else:
                 successful_trials.append(t)
 
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 12))
+
+    # Compute circular statistics for each group
+    stats_success = None
+    stats_failed = None
+
+    if successful_trials:
+        success_errors = [t['initial_direction_error'] for t in successful_trials]
+        stats_success = compute_circular_stats(success_errors)
+
+    if failed_trials:
+        failed_errors = [t['initial_direction_error'] for t in failed_trials]
+        stats_failed = compute_circular_stats(failed_errors)
 
     # Plot 1: Scatter plot of initial direction error vs trial number
     if successful_trials:
@@ -2013,6 +2058,8 @@ def plot_initial_direction_error(trials: list[dict], results_dir: Optional[Path]
 
     ax1.set_xlabel('Trial Number', fontsize=12)
     ax1.set_ylabel('Initial Direction Error (degrees)', fontsize=12)
+    ax1.set_ylim(-180, 180)
+    ax1.axhline(0, color='black', linestyle='-', linewidth=1, alpha=0.5)
 
     title = 'Initial Direction Error Across Trials'
     if animal_id:
@@ -2023,56 +2070,71 @@ def plot_initial_direction_error(trials: list[dict], results_dir: Optional[Path]
     ax1.grid(True, alpha=0.3)
     ax1.legend(fontsize=11, loc='best')
 
-    # Add mean lines
-    if successful_trials:
-        mean_success = np.mean(success_errors)
-        ax1.axhline(mean_success, color='green', linestyle='--', linewidth=2, alpha=0.6)
-    if failed_trials:
-        mean_failed = np.mean(failed_errors)
-        ax1.axhline(mean_failed, color='red', linestyle='--', linewidth=2, alpha=0.6)
+    # Add circular mean lines
+    if stats_success:
+        ax1.axhline(stats_success['circular_mean'], color='green', linestyle='--',
+                   linewidth=2, alpha=0.6, label=f"Success μ={stats_success['circular_mean']:.1f}°")
+    if stats_failed:
+        ax1.axhline(stats_failed['circular_mean'], color='red', linestyle='--',
+                   linewidth=2, alpha=0.6, label=f"Failed μ={stats_failed['circular_mean']:.1f}°")
 
     # Plot 2: Histogram comparing distributions
-    errors_list = []
-    labels_list = []
-    colors_list = []
+    ax2.axvline(0, color='black', linestyle='-', linewidth=1, alpha=0.5)
 
-    if successful_trials:
-        errors_list.append(success_errors)
-        labels_list.append('Successful')
-        colors_list.append('green')
+    if successful_trials and failed_trials:
+        ax2.hist([success_errors, failed_errors], bins=np.arange(-180, 181, 20),
+                color=['green', 'red'], alpha=0.6, edgecolor='black',
+                label=['Successful', 'Failed'])
+    elif successful_trials:
+        ax2.hist(success_errors, bins=np.arange(-180, 181, 20),
+                color='green', alpha=0.6, edgecolor='black', label='Successful')
+    elif failed_trials:
+        ax2.hist(failed_errors, bins=np.arange(-180, 181, 20),
+                color='red', alpha=0.6, edgecolor='black', label='Failed')
 
-    if failed_trials:
-        errors_list.append(failed_errors)
-        labels_list.append('Failed')
-        colors_list.append('red')
+    ax2.set_xlabel('Initial Direction Error (degrees)', fontsize=12)
+    ax2.set_ylabel('Number of Trials', fontsize=12)
+    ax2.set_xlim(-180, 180)
+    ax2.set_title('Distribution of Initial Direction Errors', fontsize=12, fontweight='bold')
+    ax2.grid(True, alpha=0.3, axis='y')
+    ax2.legend(fontsize=11)
 
-    if errors_list:
-        ax2.hist(errors_list, bins=20, color=colors_list, alpha=0.6,
-                edgecolor='black', label=labels_list)
-        ax2.set_xlabel('Initial Direction Error (degrees)', fontsize=12)
-        ax2.set_ylabel('Number of Trials', fontsize=12)
-        ax2.set_title('Distribution of Initial Direction Errors', fontsize=12, fontweight='bold')
-        ax2.grid(True, alpha=0.3, axis='y')
-        ax2.legend(fontsize=11)
+    # Add circular statistics text
+    stats_lines = []
 
-        # Add statistics text
-        stats_lines = []
-        if successful_trials:
-            mean_s = np.mean(success_errors)
-            median_s = np.median(success_errors)
-            std_s = np.std(success_errors)
-            stats_lines.append(f'Successful: Mean={mean_s:.1f}°, Median={median_s:.1f}°, SD={std_s:.1f}°, n={len(successful_trials)}')
+    if stats_success:
+        stats_lines.append("SUCCESSFUL TRIALS:")
+        stats_lines.append(f"  Circular mean: {stats_success['circular_mean']:.1f}°")
+        stats_lines.append(f"  Circular SD: {stats_success['circular_std']:.1f}°")
+        stats_lines.append(f"  R: {stats_success['R']:.3f}")
+        stats_lines.append(f"  Rayleigh test: Z={stats_success['rayleigh_z']:.2f}, p={stats_success['rayleigh_p']:.6f}")
+        rayleigh_sig = "***" if stats_success['rayleigh_p'] < 0.001 else ("**" if stats_success['rayleigh_p'] < 0.01 else ("*" if stats_success['rayleigh_p'] < 0.05 else "ns"))
+        stats_lines.append(f"    {'Clustered' if stats_success['rayleigh_p'] < 0.05 else 'Uniform'} ({rayleigh_sig})")
+        stats_lines.append(f"  V-test (0°): V={stats_success['v_stat']:.3f}, p={stats_success['v_p']:.6f}")
+        v_sig = "***" if stats_success['v_p'] < 0.001 else ("**" if stats_success['v_p'] < 0.01 else ("*" if stats_success['v_p'] < 0.05 else "ns"))
+        stats_lines.append(f"    {'Toward target' if stats_success['v_p'] < 0.05 else 'Not toward target'} ({v_sig})")
+        stats_lines.append(f"  n={stats_success['n']}")
 
-        if failed_trials:
-            mean_f = np.mean(failed_errors)
-            median_f = np.median(failed_errors)
-            std_f = np.std(failed_errors)
-            stats_lines.append(f'Failed: Mean={mean_f:.1f}°, Median={median_f:.1f}°, SD={std_f:.1f}°, n={len(failed_trials)}')
+    if stats_failed:
+        if stats_success:
+            stats_lines.append("")
+        stats_lines.append("FAILED TRIALS:")
+        stats_lines.append(f"  Circular mean: {stats_failed['circular_mean']:.1f}°")
+        stats_lines.append(f"  Circular SD: {stats_failed['circular_std']:.1f}°")
+        stats_lines.append(f"  R: {stats_failed['R']:.3f}")
+        stats_lines.append(f"  Rayleigh test: Z={stats_failed['rayleigh_z']:.2f}, p={stats_failed['rayleigh_p']:.6f}")
+        rayleigh_sig = "***" if stats_failed['rayleigh_p'] < 0.001 else ("**" if stats_failed['rayleigh_p'] < 0.01 else ("*" if stats_failed['rayleigh_p'] < 0.05 else "ns"))
+        stats_lines.append(f"    {'Clustered' if stats_failed['rayleigh_p'] < 0.05 else 'Uniform'} ({rayleigh_sig})")
+        stats_lines.append(f"  V-test (0°): V={stats_failed['v_stat']:.3f}, p={stats_failed['v_p']:.6f}")
+        v_sig = "***" if stats_failed['v_p'] < 0.001 else ("**" if stats_failed['v_p'] < 0.01 else ("*" if stats_failed['v_p'] < 0.05 else "ns"))
+        stats_lines.append(f"    {'Toward target' if stats_failed['v_p'] < 0.05 else 'Not toward target'} ({v_sig})")
+        stats_lines.append(f"  n={stats_failed['n']}")
 
-        stats_text = '\n'.join(stats_lines)
-        ax2.text(0.98, 0.98, stats_text, transform=ax2.transAxes,
-                fontsize=10, verticalalignment='top', horizontalalignment='right',
-                bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+    stats_text = '\n'.join(stats_lines)
+    ax2.text(0.02, 0.98, stats_text, transform=ax2.transAxes,
+            fontsize=9, verticalalignment='top', horizontalalignment='left',
+            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.9),
+            family='monospace')
 
     plt.tight_layout()
 
@@ -2083,6 +2145,51 @@ def plot_initial_direction_error(trials: list[dict], results_dir: Optional[Path]
         filename = f"{prefix}saccade_feedback_initial_direction_error.png"
         fig.savefig(results_dir / filename, dpi=150, bbox_inches='tight')
         print(f"Saved initial direction error plot to {results_dir / filename}")
+
+    # Print statistics to console
+    print("\n" + "="*60)
+    print("CIRCULAR STATISTICS FOR INITIAL DIRECTION ERROR")
+    print("="*60)
+    if stats_success:
+        print("\nSUCCESSFUL TRIALS:")
+        print(f"  Circular mean: {stats_success['circular_mean']:.2f}°")
+        print(f"  Circular standard deviation: {stats_success['circular_std']:.2f}°")
+        print(f"  Mean resultant length (R): {stats_success['R']:.3f}")
+        print(f"    (R ranges from 0=uniform to 1=perfect clustering)")
+        print(f"\n  Rayleigh Test for Non-Uniformity:")
+        print(f"    H0: Angles uniformly distributed (no preferred direction)")
+        print(f"    H1: Angles clustered (preferred direction exists)")
+        print(f"    Z-statistic: {stats_success['rayleigh_z']:.3f}")
+        print(f"    p-value: {stats_success['rayleigh_p']:.6f}")
+        print(f"    Result: {'REJECT H0 - Significant clustering' if stats_success['rayleigh_p'] < 0.05 else 'Fail to reject H0'}")
+        print(f"\n  V-test for Clustering Around 0°:")
+        print(f"    H0: Distribution not clustered toward 0° (target direction)")
+        print(f"    H1: Distribution clustered toward 0° (movements toward target)")
+        print(f"    V-statistic: {stats_success['v_stat']:.3f}")
+        print(f"    p-value: {stats_success['v_p']:.6f}")
+        print(f"    Result: {'REJECT H0 - Movements biased toward target' if stats_success['v_p'] < 0.05 else 'Fail to reject H0'}")
+        print(f"  n={stats_success['n']}")
+
+    if stats_failed:
+        print("\nFAILED TRIALS:")
+        print(f"  Circular mean: {stats_failed['circular_mean']:.2f}°")
+        print(f"  Circular standard deviation: {stats_failed['circular_std']:.2f}°")
+        print(f"  Mean resultant length (R): {stats_failed['R']:.3f}")
+        print(f"    (R ranges from 0=uniform to 1=perfect clustering)")
+        print(f"\n  Rayleigh Test for Non-Uniformity:")
+        print(f"    H0: Angles uniformly distributed (no preferred direction)")
+        print(f"    H1: Angles clustered (preferred direction exists)")
+        print(f"    Z-statistic: {stats_failed['rayleigh_z']:.3f}")
+        print(f"    p-value: {stats_failed['rayleigh_p']:.6f}")
+        print(f"    Result: {'REJECT H0 - Significant clustering' if stats_failed['rayleigh_p'] < 0.05 else 'Fail to reject H0'}")
+        print(f"\n  V-test for Clustering Around 0°:")
+        print(f"    H0: Distribution not clustered toward 0° (target direction)")
+        print(f"    H1: Distribution clustered toward 0° (movements toward target)")
+        print(f"    V-statistic: {stats_failed['v_stat']:.3f}")
+        print(f"    p-value: {stats_failed['v_p']:.6f}")
+        print(f"    Result: {'REJECT H0 - Movements biased toward target' if stats_failed['v_p'] < 0.05 else 'Fail to reject H0'}")
+        print(f"  n={stats_failed['n']}")
+    print("="*60)
 
     return fig
 
