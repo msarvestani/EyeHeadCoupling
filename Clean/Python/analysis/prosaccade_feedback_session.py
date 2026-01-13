@@ -610,9 +610,9 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
         print(f"    Median: {np.median(path_lengths):.3f}")
         print(f"    Range: {np.min(path_lengths):.3f} - {np.max(path_lengths):.3f}")
 
-        efficiencies = [t['path_efficiency'] for t in trials if not np.isnan(t['path_efficiency'])]
+        efficiencies = [t['path_efficiency'] for t in trials if not np.isnan(t['path_efficiency']) and t['path_efficiency'] <= 1.0]
         print(f"\n  Path efficiency statistics (1.0 = perfectly direct):")
-        print(f"    (Excluding trials where eye starts in target)")
+        print(f"    (Excluding: trials where eye starts in target, and efficiency > 1.0)")
         if efficiencies:
             print(f"    Mean: {np.mean(efficiencies):.3f}")
             print(f"    Median: {np.median(efficiencies):.3f}")
@@ -1984,6 +1984,7 @@ def plot_path_efficiency(trials: list[dict], results_dir: Optional[Path] = None,
 
     Path efficiency is the ratio of straight-line distance to actual path length.
     Trials where the eye starts within the target are excluded (set to NaN).
+    Only trials with efficiency <= 1.0 are included.
 
     Parameters
     ----------
@@ -2001,13 +2002,13 @@ def plot_path_efficiency(trials: list[dict], results_dir: Optional[Path] = None,
     matplotlib.figure.Figure
         The generated figure
     """
-    # Separate trials by success/failure and filter out NaN values
+    # Separate trials by success/failure and filter out NaN values and efficiency > 1
     successful_trials = []
     failed_trials = []
 
     for t in trials:
         eff = t.get('path_efficiency', np.nan)
-        if not np.isnan(eff):
+        if not np.isnan(eff) and eff <= 1.0:
             if t.get('trial_failed', False):
                 failed_trials.append(t)
             else:
@@ -2137,7 +2138,7 @@ def plot_path_efficiency(trials: list[dict], results_dir: Optional[Path] = None,
     print("\n" + "="*60)
     print("PATH EFFICIENCY STATISTICS")
     print("="*60)
-    print("(Trials where eye starts in target are excluded)")
+    print("(Excluding: trials where eye starts in target, and efficiency > 1.0)")
     if success_efficiencies:
         print(f"\nSuccessful trials:")
         print(f"  Mean: {np.mean(success_efficiencies):.3f}")
@@ -4780,7 +4781,7 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
     # Create summary DataFrame
     durations = [t['duration'] for t in trials_for_analysis]
     path_lengths = [t['path_length'] for t in trials_for_analysis]
-    efficiencies = [t['path_efficiency'] for t in trials_for_analysis if not np.isnan(t['path_efficiency'])]
+    efficiencies = [t['path_efficiency'] for t in trials_for_analysis if not np.isnan(t['path_efficiency']) and t['path_efficiency'] <= 1.0]
     dir_errors = [t['initial_direction_error'] for t in trials_for_analysis if not np.isnan(t['initial_direction_error'])]
 
     df = pd.DataFrame({
