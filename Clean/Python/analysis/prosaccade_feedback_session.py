@@ -1962,6 +1962,131 @@ def plot_path_length(trials: list[dict], results_dir: Optional[Path] = None,
     return fig
 
 
+def plot_initial_direction_error(trials: list[dict], results_dir: Optional[Path] = None,
+                                  animal_id: Optional[str] = None, session_date: str = "") -> plt.Figure:
+    """Plot initial direction error by trial, separated by success/failure.
+
+    Parameters
+    ----------
+    trials : list of dict
+        List of trial data dictionaries
+    results_dir : Path, optional
+        Directory to save the figure
+    animal_id : str, optional
+        Animal identifier for filename
+    session_date : str, optional
+        Session date for title
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+        The generated figure
+    """
+    # Separate trials by success/failure and filter out NaN values
+    successful_trials = []
+    failed_trials = []
+
+    for t in trials:
+        dir_error = t.get('initial_direction_error', np.nan)
+        if not np.isnan(dir_error):
+            if t.get('trial_failed', False):
+                failed_trials.append(t)
+            else:
+                successful_trials.append(t)
+
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
+
+    # Plot 1: Scatter plot of initial direction error vs trial number
+    if successful_trials:
+        success_trial_nums = [t['trial_number'] for t in successful_trials]
+        success_errors = [t['initial_direction_error'] for t in successful_trials]
+        ax1.scatter(success_trial_nums, success_errors, color='green', s=80,
+                   alpha=0.7, edgecolors='darkgreen', linewidth=1.5,
+                   label=f'Successful (n={len(successful_trials)})', marker='o')
+
+    if failed_trials:
+        failed_trial_nums = [t['trial_number'] for t in failed_trials]
+        failed_errors = [t['initial_direction_error'] for t in failed_trials]
+        ax1.scatter(failed_trial_nums, failed_errors, color='red', s=80,
+                   alpha=0.7, edgecolors='darkred', linewidth=1.5,
+                   label=f'Failed (n={len(failed_trials)})', marker='x')
+
+    ax1.set_xlabel('Trial Number', fontsize=12)
+    ax1.set_ylabel('Initial Direction Error (degrees)', fontsize=12)
+
+    title = 'Initial Direction Error Across Trials'
+    if animal_id:
+        title += f' - {animal_id}'
+    if session_date:
+        title += f' ({session_date})'
+    ax1.set_title(title, fontsize=14, fontweight='bold')
+    ax1.grid(True, alpha=0.3)
+    ax1.legend(fontsize=11, loc='best')
+
+    # Add mean lines
+    if successful_trials:
+        mean_success = np.mean(success_errors)
+        ax1.axhline(mean_success, color='green', linestyle='--', linewidth=2, alpha=0.6)
+    if failed_trials:
+        mean_failed = np.mean(failed_errors)
+        ax1.axhline(mean_failed, color='red', linestyle='--', linewidth=2, alpha=0.6)
+
+    # Plot 2: Histogram comparing distributions
+    errors_list = []
+    labels_list = []
+    colors_list = []
+
+    if successful_trials:
+        errors_list.append(success_errors)
+        labels_list.append('Successful')
+        colors_list.append('green')
+
+    if failed_trials:
+        errors_list.append(failed_errors)
+        labels_list.append('Failed')
+        colors_list.append('red')
+
+    if errors_list:
+        ax2.hist(errors_list, bins=20, color=colors_list, alpha=0.6,
+                edgecolor='black', label=labels_list)
+        ax2.set_xlabel('Initial Direction Error (degrees)', fontsize=12)
+        ax2.set_ylabel('Number of Trials', fontsize=12)
+        ax2.set_title('Distribution of Initial Direction Errors', fontsize=12, fontweight='bold')
+        ax2.grid(True, alpha=0.3, axis='y')
+        ax2.legend(fontsize=11)
+
+        # Add statistics text
+        stats_lines = []
+        if successful_trials:
+            mean_s = np.mean(success_errors)
+            median_s = np.median(success_errors)
+            std_s = np.std(success_errors)
+            stats_lines.append(f'Successful: Mean={mean_s:.1f}°, Median={median_s:.1f}°, SD={std_s:.1f}°, n={len(successful_trials)}')
+
+        if failed_trials:
+            mean_f = np.mean(failed_errors)
+            median_f = np.median(failed_errors)
+            std_f = np.std(failed_errors)
+            stats_lines.append(f'Failed: Mean={mean_f:.1f}°, Median={median_f:.1f}°, SD={std_f:.1f}°, n={len(failed_trials)}')
+
+        stats_text = '\n'.join(stats_lines)
+        ax2.text(0.98, 0.98, stats_text, transform=ax2.transAxes,
+                fontsize=10, verticalalignment='top', horizontalalignment='right',
+                bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+
+    plt.tight_layout()
+
+    # Save figure if results directory provided
+    if results_dir:
+        results_dir.mkdir(parents=True, exist_ok=True)
+        prefix = f"{animal_id}_" if animal_id else ""
+        filename = f"{prefix}saccade_feedback_initial_direction_error.png"
+        fig.savefig(results_dir / filename, dpi=150, bbox_inches='tight')
+        print(f"Saved initial direction error plot to {results_dir / filename}")
+
+    return fig
+
+
 def plot_final_positions_by_target(trials: list[dict], min_duration: float = 0.01, max_duration: float = 15.0,
                                    results_dir: Optional[Path] = None, animal_id: Optional[str] = None,
                                    session_date: str = "") -> plt.Figure:
@@ -4300,6 +4425,15 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
         if show_plots:
             plt.show()
         plt.close(fig_final_pos)
+
+    print("\nPlotting initial direction error (success vs failure)...")
+    fig_dir_error = plot_initial_direction_error(trials_all, results_dir=results_dir,
+                                                  animal_id=animal_id,
+                                                  session_date=date_str)
+    if fig_dir_error is not None:
+        if show_plots:
+            plt.show()
+        plt.close(fig_dir_error)
 
 
     # Create summary DataFrame
