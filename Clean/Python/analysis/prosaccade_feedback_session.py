@@ -1644,7 +1644,8 @@ def calculate_random_walk_chance_performance(trials: list[dict],
 
 def plot_trial_success(eot_df: pd.DataFrame, results_dir: Optional[Path] = None,
                        animal_id: Optional[str] = None, session_date: str = "",
-                       trials: Optional[list[dict]] = None, session_time: Optional[str] = None) -> plt.Figure:
+                       trials: Optional[list[dict]] = None, session_time: Optional[str] = None,
+                       random_walk_results: Optional[dict] = None) -> plt.Figure:
     """Plot trial success vs failure summary, independent of --include-failed-trials flag.
 
     Creates a figure with:
@@ -1664,6 +1665,8 @@ def plot_trial_success(eot_df: pd.DataFrame, results_dir: Optional[Path] = None,
         Session date for title
     session_time : str, optional
         Session time (HH:MM) for title
+    random_walk_results : dict, optional
+        Pre-computed random walk chance performance results to avoid recalculation
 
     Returns
     -------
@@ -1689,19 +1692,27 @@ def plot_trial_success(eot_df: pd.DataFrame, results_dir: Optional[Path] = None,
     # Get target diameter from trials (should be consistent across session)
     target_diameter = trials[0]['target_diameter'] if trials and len(trials) > 0 else None
 
-    # Calculate chance level if trials data is provided
+    # Calculate chance level using random walk simulations if trials data is provided
     chance_level = None
-    if trials is not None and len(trials) > 0:
-        print("  Calculating chance level (1000 shuffles)...")
-        chance_level = calculate_chance_level(trials, n_shuffles=1000, results_dir=results_dir)
-        print(f"  Chance level: {100*chance_level:.1f}%")
+    if random_walk_results is not None:
+        # Use pre-computed results
+        chance_level = random_walk_results['overall_chance']
+        print(f"  Using pre-computed random walk chance level: {100*chance_level:.1f}%")
+    elif trials is not None and len(trials) > 0:
+        # Calculate if not provided
+        print("  Calculating random walk chance performance (100 simulations per trial)...")
+        rw_results = calculate_random_walk_chance_performance(
+            trials, n_simulations=100, results_dir=results_dir
+        )
+        chance_level = rw_results['overall_chance']
+        print(f"  Random walk chance level: {100*chance_level:.1f}%")
 
     # Create figure with 2 subplots
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8), height_ratios=[1, 1.5])
 
     # --- Top plot: Bar chart showing fraction of success vs failure ---
     if chance_level is not None:
-        categories = ['Success', 'Failed', 'Chance']
+        categories = ['Success', 'Failed', 'RW Chance']
         counts = [n_success, n_failed, chance_level * n_trials]
         percentages = [pct_success, pct_failed, 100 * chance_level]
         colors = ['forestgreen', 'firebrick', 'gray']
@@ -1801,7 +1812,8 @@ def plot_trial_success(eot_df: pd.DataFrame, results_dir: Optional[Path] = None,
 
 def plot_psychometric_curve(eot_df: pd.DataFrame,target_df: pd.DataFrame, results_dir: Optional[Path] = None,
                             animal_id: Optional[str] = None, session_date: str = "",
-                            session_time: Optional[str] = None) -> plt.Figure:
+                            session_time: Optional[str] = None,
+                            random_walk_chance: Optional[dict] = None) -> plt.Figure:
     """Plot psychometric curve showing success rate as a function of target diameter.
 
     Creates a plot with:
@@ -1809,13 +1821,14 @@ def plot_psychometric_curve(eot_df: pd.DataFrame,target_df: pd.DataFrame, result
     - Target diameter on x-axis
     - Error bars showing binomial standard error
     - Number of trials annotated for each diameter
+    - Optional: Random walk chance performance per diameter
 
     Parameters
     ----------
     eot_df : pd.DataFrame
         End-of-trial dataframe containing 'trial_success' (2=success) and 'diameter' columns
     target_df : pd.DataFrame
-        Target dataframe containing 'diameter' column   
+        Target dataframe containing 'diameter' column
     results_dir : Path, optional
         Directory to save the figure
     animal_id : str, optional
@@ -1824,6 +1837,9 @@ def plot_psychometric_curve(eot_df: pd.DataFrame,target_df: pd.DataFrame, result
         Session date for title (format: YYYY-MM-DD)
     session_time : str, optional
         Session time for title (format: HH:MM)
+    random_walk_chance : dict, optional
+        Results from calculate_random_walk_chance_performance() containing
+        'by_diameter' key with diameter -> chance rate mapping
 
     Returns
     -------
@@ -1891,7 +1907,24 @@ def plot_psychometric_curve(eot_df: pd.DataFrame,target_df: pd.DataFrame, result
     # Plot psychometric curve with error bars
     ax.errorbar(diameters, success_rates, yerr=error_bars,
                 fmt='o-', markersize=10, linewidth=2, capsize=5, capthick=2,
-                color='steelblue', ecolor='darkblue', label='Success Rate')
+                color='steelblue', ecolor='darkblue', label='Actual Success Rate')
+
+    # Plot random walk chance performance if provided
+    if random_walk_chance is not None and 'by_diameter' in random_walk_chance:
+        chance_by_diameter = random_walk_chance['by_diameter']
+        # Extract chance rates for the same diameters
+        chance_rates = []
+        chance_diameters = []
+        for d in diameters:
+            if d in chance_by_diameter:
+                chance_diameters.append(d)
+                chance_rates.append(chance_by_diameter[d] * 100)  # Convert to percentage
+
+        if len(chance_rates) > 0:
+            ax.plot(chance_diameters, chance_rates,
+                   'o--', markersize=8, linewidth=2,
+                   color='gray', markeredgecolor='black', markeredgewidth=1,
+                   label='Random Walk Chance', alpha=0.8)
 
     # Annotate number of trials for each diameter
     for i, (d, sr, n) in enumerate(zip(diameters, success_rates, n_trials_per_diameter)):
@@ -5146,16 +5179,24 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
         validation_df.to_csv(validation_filepath, index=False)
         print(f"Saved validation results to: {validation_filepath}")
 
+    # Calculate random walk chance performance (used by both trial success and psychometric plots)
+    print("\nCalculating random walk chance performance (100 simulations per trial)...")
+    random_walk_results = calculate_random_walk_chance_performance(
+        trials_all, n_simulations=100, results_dir=results_dir
+    )
+
     # Plot trial success summary (uses ALL trials, independent of --include-failed-trials flag)
     print("\nGenerating trial success summary plot...")
-    fig_success = plot_trial_success(eot_df, results_dir, animal_id, date_str, trials=trials_all, session_time=session_time)
+    fig_success = plot_trial_success(eot_df, results_dir, animal_id, date_str,
+                                     trials=trials_all, session_time=session_time,
+                                     random_walk_results=random_walk_results)
     if fig_success is not None:
         if show_plots:
             plt.show()
         plt.close(fig_success)
 
 
-    
+
     # NEW: Create vstim_go_fixation CSV (single source of truth for fixation detection)
     vstim_go_fixation_df = create_vstim_go_fixation_csv(folder_path, results_dir=results_dir,
                                                          animal_id=animal_id,
@@ -5163,7 +5204,9 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
 
     # Plot psychometric curve (success rate vs target diameter)
     print("\nGenerating psychometric curve...")
-    fig_psychometric = plot_psychometric_curve(eot_df, target_df_all, results_dir, animal_id, date_str, session_time=session_time)
+    fig_psychometric = plot_psychometric_curve(eot_df, target_df_all, results_dir, animal_id, date_str,
+                                               session_time=session_time,
+                                               random_walk_chance=random_walk_results)
     if fig_psychometric is not None:
         if show_plots:
             plt.show()
