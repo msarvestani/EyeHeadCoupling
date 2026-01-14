@@ -629,6 +629,340 @@ def extract_trial_trajectories(eot_df: pd.DataFrame, eye_df: pd.DataFrame,
     return trials
 
 
+# ============================================================================
+# ITI (Inter-Trial Interval) Direction Error Analysis
+# This section can be easily removed if no longer needed
+# ============================================================================
+
+def calculate_iti_direction_errors(trials: list[dict], eye_df: pd.DataFrame) -> list[dict]:
+    """Calculate initial direction error during ITI periods.
+
+    For each trial (except the first), analyzes the ITI period between the
+    previous trial end and current trial start, calculating whether the eye
+    is already moving toward where the upcoming target will appear.
+
+    Parameters
+    ----------
+    trials : list of dict
+        List of trial data from extract_trial_trajectories
+    eye_df : pd.DataFrame
+        Eye tracking data with columns: timestamp, green_x, green_y, frame
+
+    Returns
+    -------
+    list of dict
+        List of ITI analysis results, one per trial (excluding first trial)
+        Each dict contains: trial_number, target_x, target_y, target_diameter,
+        iti_direction_error, iti_start_time, iti_end_time
+    """
+    iti_results = []
+
+    # Skip first trial since it has no ITI before it
+    for i in range(1, len(trials)):
+        current_trial = trials[i]
+        previous_trial = trials[i-1]
+
+        # ITI period: from previous trial end to current trial start
+        iti_start = previous_trial.get('end_time', np.nan)
+        iti_end = current_trial.get('start_time', np.nan)
+
+        if np.isnan(iti_start) or np.isnan(iti_end):
+            continue
+
+        # Get target info for upcoming (current) trial
+        target_x = current_trial.get('target_x', np.nan)
+        target_y = current_trial.get('target_y', np.nan)
+        target_diameter = current_trial.get('target_diameter', np.nan)
+
+        if np.isnan(target_x) or np.isnan(target_y):
+            continue
+
+        # Extract eye trajectory during ITI period
+        iti_mask = (eye_df['timestamp'] >= iti_start) & (eye_df['timestamp'] < iti_end)
+        iti_trajectory = eye_df[iti_mask].dropna(subset=['green_x', 'green_y', 'timestamp'])
+
+        if len(iti_trajectory) == 0:
+            continue
+
+        # Calculate direction error using same approach as trial direction error
+        # First 100ms: iti_start to iti_start + 0.1
+        # 200-300ms: iti_start + 0.2 to iti_start + 0.3
+
+        eye_early = iti_trajectory[(iti_trajectory['timestamp'] >= iti_start) &
+                                   (iti_trajectory['timestamp'] < iti_start + 0.1)]
+
+        eye_at_250ms = iti_trajectory[(iti_trajectory['timestamp'] >= iti_start + 0.2) &
+                                      (iti_trajectory['timestamp'] < iti_start + 0.3)]
+
+        # Check if we have enough data
+        if len(eye_early) == 0 or len(eye_at_250ms) == 0:
+            iti_direction_error = np.nan
+        else:
+            # Average position over first 100ms (starting position)
+            early_x = eye_early['green_x'].mean()
+            early_y = eye_early['green_y'].mean()
+
+            # Average position over 200-300ms window
+            later_x = eye_at_250ms['green_x'].mean()
+            later_y = eye_at_250ms['green_y'].mean()
+
+            # Calculate movement vector
+            move_dx = later_x - early_x
+            move_dy = later_y - early_y
+
+            # Calculate angle of movement (in radians, then degrees)
+            move_angle_rad = np.arctan2(move_dy, move_dx)
+            move_angle_deg = np.degrees(move_angle_rad)
+
+            # Calculate target direction from starting position
+            target_dx = target_x - early_x
+            target_dy = target_y - early_y
+            target_angle_rad = np.arctan2(target_dy, target_dx)
+            target_angle_deg = np.degrees(target_angle_rad)
+
+            # Calculate angular difference
+            # Use circular difference to keep it in [-180, 180]
+            angle_diff = move_angle_deg - target_angle_deg
+            # Normalize to [-180, 180]
+            angle_diff = ((angle_diff + 180) % 360) - 180
+
+            iti_direction_error = angle_diff
+
+        iti_results.append({
+            'trial_number': current_trial.get('trial_number', i+1),
+            'target_x': target_x,
+            'target_y': target_y,
+            'target_diameter': target_diameter,
+            'iti_direction_error': iti_direction_error,
+            'iti_start_time': iti_start,
+            'iti_end_time': iti_end,
+        })
+
+    return iti_results
+
+
+def plot_iti_direction_error(iti_results: list[dict], results_dir: Optional[Path] = None,
+                              animal_id: Optional[str] = None, session_date: str = "") -> plt.Figure:
+    """Plot ITI direction error analysis.
+
+    Creates a 2x2 plot similar to the trial direction error plot, showing
+    direction errors calculated during ITI periods.
+
+    Parameters
+    ----------
+    iti_results : list of dict
+        ITI analysis results from calculate_iti_direction_errors
+    results_dir : Path, optional
+        Directory to save the figure
+    animal_id : str, optional
+        Animal identifier for filename
+    session_date : str, optional
+        Session date for title
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+        The generated figure
+    """
+    def compute_circular_stats(angles_deg):
+        """Compute circular statistics for angles in degrees."""
+        angles_rad = np.radians(angles_deg)
+        mean_vector_x = np.cos(angles_rad).mean()
+        mean_vector_y = np.sin(angles_rad).mean()
+        R = np.sqrt(mean_vector_x**2 + mean_vector_y**2)
+        circular_mean_rad = np.arctan2(mean_vector_y, mean_vector_x)
+        circular_mean_deg = np.degrees(circular_mean_rad)
+        circular_std_rad = np.sqrt(-2 * np.log(R)) if R > 0 else np.nan
+        circular_std_deg = np.degrees(circular_std_rad) if not np.isnan(circular_std_rad) else np.nan
+
+        # Rayleigh test for non-uniformity
+        n = len(angles_rad)
+        z_stat = n * R**2
+        rayleigh_p = np.exp(-z_stat) if z_stat < 700 else 0.0
+
+        # V-test: test if distribution is clustered around 0 degrees
+        v_stat = R * np.cos(circular_mean_rad)
+        v_p = np.exp(-n * v_stat**2) if (n * v_stat**2) < 700 else 0.0
+
+        return {
+            'circular_mean': circular_mean_deg,
+            'circular_std': circular_std_deg,
+            'R': R,
+            'n': n,
+            'rayleigh_z': z_stat,
+            'rayleigh_p': rayleigh_p,
+            'v_stat': v_stat,
+            'v_p': v_p
+        }
+
+    # Filter out NaN values
+    all_iti_with_data = [r for r in iti_results if not np.isnan(r.get('iti_direction_error', np.nan))]
+
+    if len(all_iti_with_data) == 0:
+        print("No valid ITI direction error data to plot")
+        return None
+
+    # Find the 4 biggest target sizes
+    target_sizes = sorted(set(r.get('target_diameter', 0) for r in all_iti_with_data), reverse=True)
+    biggest_4_sizes = target_sizes[:4] if len(target_sizes) >= 4 else target_sizes
+    print(f"\nITI Analysis - Biggest 4 target sizes: {biggest_4_sizes}")
+
+    # Filter for biggest 4 targets
+    all_iti_big4 = [r for r in all_iti_with_data if r.get('target_diameter', 0) in biggest_4_sizes]
+
+    fig, ((ax1, ax3), (ax2, ax4)) = plt.subplots(2, 2, figsize=(20, 12))
+
+    # Compute circular statistics
+    all_errors = [r['iti_direction_error'] for r in all_iti_with_data]
+    stats_all = compute_circular_stats(all_errors) if all_errors else None
+
+    all_errors_big4 = [r['iti_direction_error'] for r in all_iti_big4]
+    stats_all_big4 = compute_circular_stats(all_errors_big4) if all_errors_big4 else None
+
+    # LEFT COLUMN: All targets
+    # Plot 1: Histogram of all ITI periods
+    ax1.axvline(0, color='black', linestyle='-', linewidth=1, alpha=0.5)
+
+    if all_errors:
+        ax1.hist(all_errors, bins=np.arange(-180, 181, 20),
+                color='steelblue', alpha=0.7, edgecolor='black',
+                label=f'All ITI Periods (n={len(all_errors)})')
+
+    ax1.set_xlabel('ITI Direction Error (degrees)', fontsize=12)
+    ax1.set_ylabel('Number of ITI Periods', fontsize=12)
+    ax1.set_xlim(-180, 180)
+    ax1.set_title('ITI Direction Error - All Targets', fontsize=14, fontweight='bold')
+    ax1.grid(True, alpha=0.3, axis='y')
+    ax1.legend(fontsize=11, loc='upper right')
+
+    # Add circular statistics text
+    if stats_all:
+        stats_lines_all = []
+        stats_lines_all.append("ALL ITI PERIODS:")
+        stats_lines_all.append(f"  Circular mean: {stats_all['circular_mean']:.1f}°")
+        stats_lines_all.append(f"  Circular SD: {stats_all['circular_std']:.1f}°")
+        stats_lines_all.append(f"  R: {stats_all['R']:.3f}")
+        stats_lines_all.append(f"  Rayleigh: Z={stats_all['rayleigh_z']:.2f}, p={stats_all['rayleigh_p']:.6f}")
+        rayleigh_sig = "***" if stats_all['rayleigh_p'] < 0.001 else ("**" if stats_all['rayleigh_p'] < 0.01 else ("*" if stats_all['rayleigh_p'] < 0.05 else "ns"))
+        stats_lines_all.append(f"    {'Clustered' if stats_all['rayleigh_p'] < 0.05 else 'Uniform'} ({rayleigh_sig})")
+        stats_lines_all.append(f"  V-test (0°): V={stats_all['v_stat']:.3f}, p={stats_all['v_p']:.6f}")
+        v_sig = "***" if stats_all['v_p'] < 0.001 else ("**" if stats_all['v_p'] < 0.01 else ("*" if stats_all['v_p'] < 0.05 else "ns"))
+        stats_lines_all.append(f"    {'Toward target' if stats_all['v_p'] < 0.05 else 'Not toward target'} ({v_sig})")
+        stats_lines_all.append(f"  n={stats_all['n']}")
+
+        stats_text_all = '\n'.join(stats_lines_all)
+        ax1.text(0.02, 0.98, stats_text_all, transform=ax1.transAxes,
+                fontsize=9, verticalalignment='top', horizontalalignment='left',
+                bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.9),
+                family='monospace')
+
+    # Plot 2: Empty (placeholder for consistency with trial plot)
+    ax2.text(0.5, 0.5, 'ITI periods are not grouped by trial outcome',
+            ha='center', va='center', transform=ax2.transAxes,
+            fontsize=12, style='italic', color='gray')
+    ax2.set_xlim(-180, 180)
+    ax2.set_xlabel('ITI Direction Error (degrees)', fontsize=12)
+    ax2.set_ylabel('Number of ITI Periods', fontsize=12)
+    ax2.set_title('Not Applicable', fontsize=12, fontweight='bold')
+    ax2.grid(True, alpha=0.3, axis='y')
+
+    # RIGHT COLUMN: Biggest 4 targets
+    # Plot 3: Histogram of ITI periods (biggest 4 targets)
+    ax3.axvline(0, color='black', linestyle='-', linewidth=1, alpha=0.5)
+
+    if all_errors_big4:
+        ax3.hist(all_errors_big4, bins=np.arange(-180, 181, 20),
+                color='steelblue', alpha=0.7, edgecolor='black',
+                label=f'All ITI Periods (n={len(all_errors_big4)})')
+
+    ax3.set_xlabel('ITI Direction Error (degrees)', fontsize=12)
+    ax3.set_ylabel('Number of ITI Periods', fontsize=12)
+    ax3.set_xlim(-180, 180)
+    ax3.set_title('ITI Direction Error - Biggest 4 Targets', fontsize=14, fontweight='bold')
+    ax3.grid(True, alpha=0.3, axis='y')
+    ax3.legend(fontsize=11, loc='upper right')
+
+    # Add circular statistics text (biggest 4)
+    if stats_all_big4:
+        stats_lines_big4 = []
+        stats_lines_big4.append("ALL ITI (BIG 4):")
+        stats_lines_big4.append(f"  Circular mean: {stats_all_big4['circular_mean']:.1f}°")
+        stats_lines_big4.append(f"  Circular SD: {stats_all_big4['circular_std']:.1f}°")
+        stats_lines_big4.append(f"  R: {stats_all_big4['R']:.3f}")
+        stats_lines_big4.append(f"  Rayleigh: Z={stats_all_big4['rayleigh_z']:.2f}, p={stats_all_big4['rayleigh_p']:.6f}")
+        rayleigh_sig_b = "***" if stats_all_big4['rayleigh_p'] < 0.001 else ("**" if stats_all_big4['rayleigh_p'] < 0.01 else ("*" if stats_all_big4['rayleigh_p'] < 0.05 else "ns"))
+        stats_lines_big4.append(f"    {'Clustered' if stats_all_big4['rayleigh_p'] < 0.05 else 'Uniform'} ({rayleigh_sig_b})")
+        stats_lines_big4.append(f"  V-test (0°): V={stats_all_big4['v_stat']:.3f}, p={stats_all_big4['v_p']:.6f}")
+        v_sig_b = "***" if stats_all_big4['v_p'] < 0.001 else ("**" if stats_all_big4['v_p'] < 0.01 else ("*" if stats_all_big4['v_p'] < 0.05 else "ns"))
+        stats_lines_big4.append(f"    {'Toward target' if stats_all_big4['v_p'] < 0.05 else 'Not toward target'} ({v_sig_b})")
+        stats_lines_big4.append(f"  n={stats_all_big4['n']}")
+
+        stats_text_big4 = '\n'.join(stats_lines_big4)
+        ax3.text(0.02, 0.98, stats_text_big4, transform=ax3.transAxes,
+                fontsize=9, verticalalignment='top', horizontalalignment='left',
+                bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.9),
+                family='monospace')
+
+    # Plot 4: Empty (placeholder for consistency)
+    ax4.text(0.5, 0.5, 'ITI periods are not grouped by trial outcome',
+            ha='center', va='center', transform=ax4.transAxes,
+            fontsize=12, style='italic', color='gray')
+    ax4.set_xlim(-180, 180)
+    ax4.set_xlabel('ITI Direction Error (degrees)', fontsize=12)
+    ax4.set_ylabel('Number of ITI Periods', fontsize=12)
+    ax4.set_title('Not Applicable', fontsize=12, fontweight='bold')
+    ax4.grid(True, alpha=0.3, axis='y')
+
+    # Add main title
+    main_title = 'ITI Direction Error Analysis (Before Trial Start)'
+    if animal_id:
+        main_title += f' - {animal_id}'
+    if session_date:
+        main_title += f' ({session_date})'
+    fig.suptitle(main_title, fontsize=16, fontweight='bold', y=0.995)
+
+    plt.tight_layout(rect=[0, 0, 1, 0.99])
+
+    # Save figure if results directory provided
+    if results_dir:
+        results_dir.mkdir(parents=True, exist_ok=True)
+        prefix = f"{animal_id}_" if animal_id else ""
+        filename = f"{prefix}saccade_feedback_iti_direction_error.png"
+        fig.savefig(results_dir / filename, dpi=150, bbox_inches='tight')
+        print(f"Saved ITI direction error plot to {results_dir / filename}")
+
+    # Print statistics to console
+    print("\n" + "="*60)
+    print("ITI DIRECTION ERROR STATISTICS")
+    print("="*60)
+
+    if stats_all:
+        print("\nALL ITI PERIODS (ALL TARGETS):")
+        print(f"  Circular mean: {stats_all['circular_mean']:.2f}°")
+        print(f"  Circular standard deviation: {stats_all['circular_std']:.2f}°")
+        print(f"  Mean resultant length (R): {stats_all['R']:.3f}")
+        print(f"  Rayleigh p-value: {stats_all['rayleigh_p']:.6f}")
+        print(f"  V-test p-value: {stats_all['v_p']:.6f}")
+        print(f"  n={stats_all['n']}")
+
+    if stats_all_big4:
+        print("\nALL ITI PERIODS (BIGGEST 4 TARGETS):")
+        print(f"  Target sizes: {biggest_4_sizes}")
+        print(f"  Circular mean: {stats_all_big4['circular_mean']:.2f}°")
+        print(f"  Circular standard deviation: {stats_all_big4['circular_std']:.2f}°")
+        print(f"  Mean resultant length (R): {stats_all_big4['R']:.3f}")
+        print(f"  Rayleigh p-value: {stats_all_big4['rayleigh_p']:.6f}")
+        print(f"  V-test p-value: {stats_all_big4['v_p']:.6f}")
+        print(f"  n={stats_all_big4['n']}")
+
+    print("="*60)
+
+    return fig
+
+# End of ITI Direction Error Analysis section
+# ============================================================================
+
+
 def interactive_trajectories(trials: list[dict], animal_id: Optional[str] = None,
                             session_date: str = ""):
     """Interactive plot showing trajectories one trial at a time. Press spacebar to advance.
@@ -5745,6 +6079,26 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
         if show_plots:
             plt.show()
         plt.close(fig_path_eff)
+
+    # ============================================================================
+    # ITI Direction Error Analysis (can be easily removed)
+    # ============================================================================
+    print("\nCalculating ITI direction errors...")
+    iti_results = calculate_iti_direction_errors(trials_all, eye_df)
+    if len(iti_results) > 0:
+        print(f"  Found {len(iti_results)} ITI periods with valid direction data")
+        print("\nPlotting ITI direction error...")
+        fig_iti_dir = plot_iti_direction_error(iti_results, results_dir=results_dir,
+                                                animal_id=animal_id,
+                                                session_date=date_str)
+        if fig_iti_dir is not None:
+            if show_plots:
+                plt.show()
+            plt.close(fig_iti_dir)
+    else:
+        print("  No valid ITI direction data found")
+    # End of ITI Direction Error Analysis
+    # ============================================================================
 
 
     # Create summary DataFrame
