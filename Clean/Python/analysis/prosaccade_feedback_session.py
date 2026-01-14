@@ -4331,10 +4331,12 @@ def plot_visible_invisible_detailed_stats(trials: list[dict], results_dir: Optio
 FIXATION_MIN_DURATION = 0.65  # seconds
 FIXATION_MAX_MOVEMENT = 0.2  # stimulus units
 def interactive_fixation_viewer(trials: list[dict], animal_id: Optional[str] = None,
-                                 session_date: str = "", 
+                                 session_date: str = "",
                                  min_duration: float = FIXATION_MIN_DURATION,
-                                 max_movement: float = FIXATION_MAX_MOVEMENT):
-    """Interactive viewer showing detected fixations for each trial.
+                                 max_movement: float = FIXATION_MAX_MOVEMENT,
+                                 show_random_walk: bool = True,
+                                 velocity_threshold: float = 2.0):
+    """Interactive viewer showing detected fixations for each trial with random walk comparison.
 
     Detects periods where eyes moved less than max_movement units for at least
     min_duration seconds, and highlights those points on the trajectory.
@@ -4355,6 +4357,10 @@ def interactive_fixation_viewer(trials: list[dict], animal_id: Optional[str] = N
         Minimum fixation duration in seconds (default: 0.45)
     max_movement : float
         Maximum movement threshold for fixation in stimulus units (default: 0.15)
+    show_random_walk : bool
+        Whether to show random walk simulation for comparison (default: True)
+    velocity_threshold : float
+        Velocity threshold for fixation/saccade classification in random walk (default: 2.0)
     """
     if len(trials) == 0:
         print("No trials to display")
@@ -4369,6 +4375,14 @@ def interactive_fixation_viewer(trials: list[dict], animal_id: Optional[str] = N
     print(f"Interactive Fixation Viewer: {len(trials_with_data)} trials")
     print(f"Fixation criteria: ≥{min_duration}s duration, frame-to-frame movement <{max_movement} units")
     print("Press SPACE to advance, ESC or 'q' to quit")
+
+    # Compute Markov model statistics once for all random walks
+    state_stats = None
+    if show_random_walk:
+        print("Computing movement statistics for random walk generation...")
+        state_stats = compute_movement_statistics_with_states(trials, velocity_threshold)
+        print(f"  Fixation samples: {len(state_stats['fixation_velocities'])}")
+        print(f"  Saccade samples: {len(state_stats['saccade_velocities'])}")
 
     fig, ax = plt.subplots(figsize=(12, 10))
     current_trial_idx = [0]  # Use list to allow modification in nested function
@@ -4391,6 +4405,20 @@ def interactive_fixation_viewer(trials: list[dict], animal_id: Optional[str] = N
 
         is_failed = trial.get('trial_failed', False)
         target_visible = trial.get('target_visible', 1)
+
+        # Generate random walk simulation if requested
+        if show_random_walk and state_stats is not None:
+            start_x = eye_x[0]
+            start_y = eye_y[0]
+            duration = eye_times[-1] - eye_times[0]
+
+            rw_x, rw_y, rw_times = simulate_markov_random_walk_trial(
+                start_x, start_y, duration, state_stats, dt_mean=0.05
+            )
+
+            # Plot random walk trajectory (gray, dashed, thin)
+            ax.plot(rw_x, rw_y, '--', color='lightgray', linewidth=2, alpha=0.6,
+                   label='Random walk', zorder=0)
 
         # Detect fixations (uses shared module-level function)
         fixations = detect_fixations(eye_x, eye_y, eye_times, min_duration, max_movement)
