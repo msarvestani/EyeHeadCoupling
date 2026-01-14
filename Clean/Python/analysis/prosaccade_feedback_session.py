@@ -1383,6 +1383,8 @@ def compute_movement_statistics_with_states(trials: list[dict],
         - 'initial_state_probs': dict with 'fixation' and 'saccade' probabilities
         - 'fixation_durations': np.ndarray of fixation state durations
         - 'saccade_durations': np.ndarray of saccade state durations
+        - 'x_bounds': tuple of (min_x, max_x) from empirical data
+        - 'y_bounds': tuple of (min_y, max_y) from empirical data
     """
     fixation_velocities = []
     fixation_angles = []
@@ -1397,6 +1399,10 @@ def compute_movement_statistics_with_states(trials: list[dict],
     fixation_durations = []
     saccade_durations = []
 
+    # Track position bounds for random walk constraints
+    all_x_positions = []
+    all_y_positions = []
+
     for trial in trials:
         if not trial.get('has_eye_data', False):
             continue
@@ -1407,6 +1413,10 @@ def compute_movement_statistics_with_states(trials: list[dict],
 
         if len(eye_x) < 3:
             continue
+
+        # Collect positions for computing bounds
+        all_x_positions.extend(eye_x)
+        all_y_positions.extend(eye_y)
 
         # Compute velocities
         dx = np.diff(eye_x)
@@ -1492,6 +1502,15 @@ def compute_movement_statistics_with_states(trials: list[dict],
         'saccade': initial_states['saccade'] / total_initial if total_initial > 0 else 0.5,
     }
 
+    # Compute position bounds from empirical data
+    if len(all_x_positions) > 0 and len(all_y_positions) > 0:
+        x_bounds = (np.min(all_x_positions), np.max(all_x_positions))
+        y_bounds = (np.min(all_y_positions), np.max(all_y_positions))
+    else:
+        # Default bounds if no data
+        x_bounds = (-2.0, 2.0)
+        y_bounds = (-2.0, 2.0)
+
     return {
         'fixation_velocities': np.array(fixation_velocities),
         'fixation_angles': np.array(fixation_angles),
@@ -1501,6 +1520,8 @@ def compute_movement_statistics_with_states(trials: list[dict],
         'initial_state_probs': initial_state_probs,
         'fixation_durations': np.array(fixation_durations),
         'saccade_durations': np.array(saccade_durations),
+        'x_bounds': x_bounds,
+        'y_bounds': y_bounds,
     }
 
 
@@ -1584,6 +1605,7 @@ def simulate_markov_random_walk_trial(start_x: float, start_y: float, duration: 
     - Fixation state: Sample from low velocity/turning angle distributions
     - Saccade state: Sample from high velocity/turning angle distributions
     - Transitions between states based on empirical transition probabilities
+    - Position bounds: Enforced via reflection to keep positions realistic
 
     This preserves temporal structure better than independent sampling.
 
@@ -1599,6 +1621,7 @@ def simulate_markov_random_walk_trial(start_x: float, start_y: float, duration: 
         - saccade_velocities, saccade_angles
         - transition_probs
         - initial_state_probs
+        - x_bounds, y_bounds (optional): position bounds for reflection
     dt_mean : float
         Mean time step in seconds (default: 0.05 for ~20 Hz)
 
@@ -1664,6 +1687,23 @@ def simulate_markov_random_walk_trial(start_x: float, start_y: float, duration: 
         displacement = velocity * dt
         x += displacement * np.cos(direction)
         y += displacement * np.sin(direction)
+
+        # Apply boundary constraints with reflection if bounds are provided
+        if 'x_bounds' in state_stats and 'y_bounds' in state_stats:
+            x_min, x_max = state_stats['x_bounds']
+            y_min, y_max = state_stats['y_bounds']
+
+            # Reflect x position if out of bounds
+            if x < x_min:
+                x = x_min + (x_min - x)  # Reflect across min boundary
+            elif x > x_max:
+                x = x_max - (x - x_max)  # Reflect across max boundary
+
+            # Reflect y position if out of bounds
+            if y < y_min:
+                y = y_min + (y_min - y)  # Reflect across min boundary
+            elif y > y_max:
+                y = y_max - (y - y_max)  # Reflect across max boundary
 
         # Record position
         t += dt
@@ -1775,6 +1815,12 @@ def calculate_random_walk_chance_performance(trials: list[dict],
     print(f"\n  Initial state probabilities:")
     print(f"    Start in fixation: {100*state_stats['initial_state_probs']['fixation']:.1f}%")
     print(f"    Start in saccade: {100*state_stats['initial_state_probs']['saccade']:.1f}%")
+
+    print(f"\n  Position bounds from empirical data:")
+    x_min, x_max = state_stats['x_bounds']
+    y_min, y_max = state_stats['y_bounds']
+    print(f"    X range: [{x_min:.3f}, {x_max:.3f}]")
+    print(f"    Y range: [{y_min:.3f}, {y_max:.3f}]")
 
     # Step 2: Run Markov random walk simulations for each trial
     print(f"\nStep 2: Running {n_simulations} Markov random walk simulations per trial...")
