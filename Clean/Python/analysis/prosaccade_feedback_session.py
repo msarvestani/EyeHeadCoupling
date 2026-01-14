@@ -1462,6 +1462,7 @@ def calculate_random_walk_chance_performance(trials: list[dict],
         - 'overall_chance': float, overall chance performance rate
         - 'by_diameter': dict mapping diameter -> chance rate
         - 'by_diameter_counts': dict mapping diameter -> (n_success, n_total)
+        - 'by_diameter_se': dict mapping diameter -> standard error
         - 'n_velocities': int, number of velocity samples
         - 'n_angles': int, number of turning angle samples
         - 'velocity_stats': dict with mean, median, std of velocities
@@ -1481,6 +1482,7 @@ def calculate_random_walk_chance_performance(trials: list[dict],
             'overall_chance': 0.0,
             'by_diameter': {},
             'by_diameter_counts': {},
+            'by_diameter_se': {},
             'n_velocities': 0,
             'n_angles': 0,
             'velocity_stats': {},
@@ -1518,6 +1520,7 @@ def calculate_random_walk_chance_performance(trials: list[dict],
             'overall_chance': 0.0,
             'by_diameter': {},
             'by_diameter_counts': {},
+            'by_diameter_se': {},
             'n_velocities': len(velocities),
             'n_angles': len(turning_angles),
             'velocity_stats': {
@@ -1590,6 +1593,7 @@ def calculate_random_walk_chance_performance(trials: list[dict],
     # Compute per-diameter statistics
     by_diameter_rates = {}
     by_diameter_counts = {}
+    by_diameter_se = {}  # Standard errors
 
     print("\n  Chance performance by target diameter:")
     for diameter in sorted(by_diameter.keys()):
@@ -1598,10 +1602,17 @@ def calculate_random_walk_chance_performance(trials: list[dict],
         n_total = len(successes)
         rate = n_success / n_total if n_total > 0 else 0.0
 
+        # Calculate binomial standard error: SE = sqrt(p * (1-p) / n)
+        if n_total > 0:
+            se = np.sqrt(rate * (1 - rate) / n_total)
+        else:
+            se = 0.0
+
         by_diameter_rates[diameter] = rate
         by_diameter_counts[diameter] = (n_success, n_total)
+        by_diameter_se[diameter] = se
 
-        print(f"    Diameter {diameter:.3f}: {100*rate:.2f}% ({n_success}/{n_total})")
+        print(f"    Diameter {diameter:.3f}: {100*rate:.2f}% ± {100*se:.2f}% ({n_success}/{n_total})")
 
     # Save detailed results to CSV if requested
     if results_dir is not None:
@@ -1623,6 +1634,7 @@ def calculate_random_walk_chance_performance(trials: list[dict],
         'overall_chance': overall_chance,
         'by_diameter': by_diameter_rates,
         'by_diameter_counts': by_diameter_counts,
+        'by_diameter_se': by_diameter_se,
         'n_velocities': len(velocities),
         'n_angles': len(turning_angles),
         'velocity_stats': {
@@ -1912,19 +1924,26 @@ def plot_psychometric_curve(eot_df: pd.DataFrame,target_df: pd.DataFrame, result
     # Plot random walk chance performance if provided
     if random_walk_chance is not None and 'by_diameter' in random_walk_chance:
         chance_by_diameter = random_walk_chance['by_diameter']
-        # Extract chance rates for the same diameters
+        chance_se_by_diameter = random_walk_chance.get('by_diameter_se', {})
+
+        # Extract chance rates and standard errors for the same diameters
         chance_rates = []
+        chance_errors = []
         chance_diameters = []
         for d in diameters:
             if d in chance_by_diameter:
                 chance_diameters.append(d)
                 chance_rates.append(chance_by_diameter[d] * 100)  # Convert to percentage
+                # Get standard error, default to 0 if not available
+                se = chance_se_by_diameter.get(d, 0.0) * 100  # Convert to percentage
+                chance_errors.append(se)
 
         if len(chance_rates) > 0:
-            ax.plot(chance_diameters, chance_rates,
-                   'o--', markersize=8, linewidth=2,
-                   color='gray', markeredgecolor='black', markeredgewidth=1,
-                   label='Random Walk Chance', alpha=0.8)
+            ax.errorbar(chance_diameters, chance_rates, yerr=chance_errors,
+                       fmt='o--', markersize=8, linewidth=2, capsize=5, capthick=2,
+                       color='gray', ecolor='darkgray',
+                       markeredgecolor='black', markeredgewidth=1,
+                       label='Random Walk Chance', alpha=0.8)
 
     # Annotate number of trials for each diameter
     for i, (d, sr, n) in enumerate(zip(diameters, success_rates, n_trials_per_diameter)):
