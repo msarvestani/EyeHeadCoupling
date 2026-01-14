@@ -1294,6 +1294,354 @@ def calculate_chance_level(trials: list[dict], n_shuffles: int = 1000,
     return np.mean(success_rates)
 
 
+def compute_movement_statistics(trials: list[dict]) -> Tuple[np.ndarray, np.ndarray]:
+    """Compute velocities and turning angles from eye movement trajectories.
+
+    Extracts empirical distributions of:
+    - Velocity: distance / time between consecutive samples
+    - Turning angle: change in movement direction between consecutive segments
+
+    Parameters
+    ----------
+    trials : list of dict
+        List of trial dictionaries containing eye trajectory data
+
+    Returns
+    -------
+    tuple of (velocities, turning_angles)
+        velocities : np.ndarray
+            Array of velocity samples (units/second)
+        turning_angles : np.ndarray
+            Array of turning angle samples (radians, wrapped to [-pi, pi])
+    """
+    velocities = []
+    turning_angles = []
+
+    for trial in trials:
+        if not trial.get('has_eye_data', False):
+            continue
+
+        eye_x = np.array(trial.get('eye_x', []))
+        eye_y = np.array(trial.get('eye_y', []))
+        eye_times = np.array(trial.get('eye_times', []))
+
+        if len(eye_x) < 3:
+            continue
+
+        # Compute velocities
+        dx = np.diff(eye_x)
+        dy = np.diff(eye_y)
+        dt = np.diff(eye_times)
+
+        # Avoid division by zero
+        valid_dt = dt > 0
+        distances = np.sqrt(dx**2 + dy**2)
+        trial_velocities = distances[valid_dt] / dt[valid_dt]
+        velocities.extend(trial_velocities)
+
+        # Compute turning angles (change in direction between consecutive movements)
+        # Direction of each movement segment
+        angles = np.arctan2(dy[valid_dt], dx[valid_dt])
+
+        # Change in angle between consecutive segments
+        angle_diffs = np.diff(angles)
+
+        # Wrap to [-pi, pi]
+        angle_diffs = np.arctan2(np.sin(angle_diffs), np.cos(angle_diffs))
+
+        turning_angles.extend(angle_diffs)
+
+    return np.array(velocities), np.array(turning_angles)
+
+
+def simulate_random_walk_trial(start_x: float, start_y: float, duration: float,
+                               velocities_pool: np.ndarray, angles_pool: np.ndarray,
+                               dt_mean: float = 0.05) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Simulate a single random walk trial by sampling from empirical movement statistics.
+
+    Generates a trajectory starting from (start_x, start_y) for the specified duration,
+    using velocities and turning angles sampled from the provided pools.
+
+    Parameters
+    ----------
+    start_x, start_y : float
+        Initial position
+    duration : float
+        Total trial duration in seconds
+    velocities_pool : np.ndarray
+        Array of velocities to sample from (units/second)
+    angles_pool : np.ndarray
+        Array of turning angles to sample from (radians)
+    dt_mean : float
+        Mean time step in seconds (default: 0.05 for ~20 Hz)
+
+    Returns
+    -------
+    tuple of (eye_x, eye_y, eye_times)
+        eye_x : np.ndarray
+            X positions of simulated trajectory
+        eye_y : np.ndarray
+            Y positions of simulated trajectory
+        eye_times : np.ndarray
+            Timestamps of simulated trajectory
+    """
+    # Initialize position and direction
+    x, y = start_x, start_y
+    direction = np.random.uniform(0, 2*np.pi)  # Random initial direction
+
+    # Track trajectory
+    trajectory_x = [x]
+    trajectory_y = [y]
+    trajectory_times = [0.0]
+
+    t = 0.0
+
+    while t < duration:
+        # Sample time step with some variability (exponential distribution)
+        dt = np.random.exponential(dt_mean)
+        dt = min(dt, duration - t)  # Don't exceed trial duration
+
+        if dt <= 0:
+            break
+
+        # Sample velocity and turning angle from empirical distributions
+        velocity = np.random.choice(velocities_pool)
+        turning_angle = np.random.choice(angles_pool)
+
+        # Update direction
+        direction += turning_angle
+
+        # Update position
+        displacement = velocity * dt
+        x += displacement * np.cos(direction)
+        y += displacement * np.sin(direction)
+
+        # Record position
+        t += dt
+        trajectory_x.append(x)
+        trajectory_y.append(y)
+        trajectory_times.append(t)
+
+    return np.array(trajectory_x), np.array(trajectory_y), np.array(trajectory_times)
+
+
+def calculate_random_walk_chance_performance(trials: list[dict],
+                                             n_simulations: int = 100,
+                                             min_fixation_duration: float = 0.65,
+                                             max_movement: float = 0.1,
+                                             dt_mean: float = 0.05,
+                                             results_dir: Optional[Path] = None) -> dict:
+    """Calculate chance performance using random walk simulations based on empirical eye movement statistics.
+
+    Algorithm:
+    1. Compute velocities and turning angles from all actual eye trajectories
+    2. For each trial, run N random walk simulations starting from actual start position
+    3. Use same trial duration, target position/size, and cursor size as actual trial
+    4. Assess each random walk trial using calculate_trial_success_from_fixations()
+    5. Aggregate success rates by target diameter
+
+    Parameters
+    ----------
+    trials : list of dict
+        List of trial data dictionaries with eye trajectories
+    n_simulations : int
+        Number of random walk simulations per trial (default: 100)
+    min_fixation_duration : float
+        Minimum fixation duration for success (default: 0.65 seconds)
+    max_movement : float
+        Maximum movement for fixation detection (default: 0.1 units)
+    dt_mean : float
+        Mean time step for simulation (default: 0.05 seconds for ~20 Hz)
+    results_dir : Path, optional
+        Directory to save results
+
+    Returns
+    -------
+    dict
+        Dictionary with keys:
+        - 'overall_chance': float, overall chance performance rate
+        - 'by_diameter': dict mapping diameter -> chance rate
+        - 'by_diameter_counts': dict mapping diameter -> (n_success, n_total)
+        - 'n_velocities': int, number of velocity samples
+        - 'n_angles': int, number of turning angle samples
+        - 'velocity_stats': dict with mean, median, std of velocities
+        - 'angle_stats': dict with mean, median, std of turning angles
+    """
+    print("\n" + "="*80)
+    print("CALCULATING RANDOM WALK CHANCE PERFORMANCE")
+    print("="*80)
+
+    # Step 1: Compute movement statistics from all trials
+    print("\nStep 1: Computing movement statistics from actual eye trajectories...")
+    velocities, turning_angles = compute_movement_statistics(trials)
+
+    if len(velocities) == 0 or len(turning_angles) == 0:
+        print("ERROR: No movement statistics computed. Need trials with eye data.")
+        return {
+            'overall_chance': 0.0,
+            'by_diameter': {},
+            'by_diameter_counts': {},
+            'n_velocities': 0,
+            'n_angles': 0,
+            'velocity_stats': {},
+            'angle_stats': {}
+        }
+
+    print(f"  Computed {len(velocities)} velocity samples")
+    print(f"  Velocity statistics:")
+    print(f"    Mean: {np.mean(velocities):.4f}")
+    print(f"    Median: {np.median(velocities):.4f}")
+    print(f"    Std: {np.std(velocities):.4f}")
+    print(f"    Range: [{np.min(velocities):.4f}, {np.max(velocities):.4f}]")
+
+    print(f"\n  Computed {len(turning_angles)} turning angle samples")
+    print(f"  Turning angle statistics (radians):")
+    print(f"    Mean: {np.mean(turning_angles):.4f}")
+    print(f"    Median: {np.median(turning_angles):.4f}")
+    print(f"    Std: {np.std(turning_angles):.4f}")
+    print(f"    Range: [{np.min(turning_angles):.4f}, {np.max(turning_angles):.4f}]")
+
+    # Step 2: Run random walk simulations for each trial
+    print(f"\nStep 2: Running {n_simulations} random walk simulations per trial...")
+
+    # Track results overall and by diameter
+    overall_successes = 0
+    overall_total = 0
+    by_diameter = {}  # diameter -> list of success indicators (0 or 1)
+
+    # Filter to trials with eye data
+    valid_trials = [t for t in trials if t.get('has_eye_data', False) and len(t.get('eye_x', [])) > 0]
+
+    if len(valid_trials) == 0:
+        print("ERROR: No valid trials with eye data found.")
+        return {
+            'overall_chance': 0.0,
+            'by_diameter': {},
+            'by_diameter_counts': {},
+            'n_velocities': len(velocities),
+            'n_angles': len(turning_angles),
+            'velocity_stats': {
+                'mean': np.mean(velocities),
+                'median': np.median(velocities),
+                'std': np.std(velocities)
+            },
+            'angle_stats': {
+                'mean': np.mean(turning_angles),
+                'median': np.median(turning_angles),
+                'std': np.std(turning_angles)
+            }
+        }
+
+    print(f"  Processing {len(valid_trials)} valid trials...")
+
+    for trial_idx, trial in enumerate(valid_trials):
+        if (trial_idx + 1) % 50 == 0:
+            print(f"    Progress: {trial_idx + 1}/{len(valid_trials)} trials")
+
+        # Get trial parameters
+        eye_x = np.array(trial['eye_x'])
+        eye_y = np.array(trial['eye_y'])
+        eye_times = np.array(trial['eye_times'])
+
+        start_x = eye_x[0]
+        start_y = eye_y[0]
+        duration = eye_times[-1] - eye_times[0]
+
+        target_x = trial['target_x']
+        target_y = trial['target_y']
+        target_diameter = trial['target_diameter']
+        target_radius = target_diameter / 2.0
+        cursor_diameter = trial.get('cursor_diameter', 0.2)
+        cursor_radius = cursor_diameter / 2.0
+        contact_threshold = target_radius + cursor_radius
+
+        # Track results for this diameter
+        if target_diameter not in by_diameter:
+            by_diameter[target_diameter] = []
+
+        # Run N simulations for this trial
+        for _ in range(n_simulations):
+            # Generate random walk trajectory
+            sim_x, sim_y, sim_times = simulate_random_walk_trial(
+                start_x, start_y, duration, velocities, turning_angles, dt_mean
+            )
+
+            # Assess success using existing fixation-based criterion
+            success, _ = calculate_trial_success_from_fixations(
+                sim_x, sim_y, sim_times,
+                target_x, target_y,
+                contact_threshold,
+                min_fixation_duration,
+                max_movement
+            )
+
+            # Record result
+            success_int = 1 if success else 0
+            by_diameter[target_diameter].append(success_int)
+            overall_successes += success_int
+            overall_total += 1
+
+    # Step 3: Aggregate results
+    print("\nStep 3: Aggregating results...")
+
+    overall_chance = overall_successes / overall_total if overall_total > 0 else 0.0
+    print(f"  Overall chance performance: {100*overall_chance:.2f}% ({overall_successes}/{overall_total})")
+
+    # Compute per-diameter statistics
+    by_diameter_rates = {}
+    by_diameter_counts = {}
+
+    print("\n  Chance performance by target diameter:")
+    for diameter in sorted(by_diameter.keys()):
+        successes = by_diameter[diameter]
+        n_success = sum(successes)
+        n_total = len(successes)
+        rate = n_success / n_total if n_total > 0 else 0.0
+
+        by_diameter_rates[diameter] = rate
+        by_diameter_counts[diameter] = (n_success, n_total)
+
+        print(f"    Diameter {diameter:.3f}: {100*rate:.2f}% ({n_success}/{n_total})")
+
+    # Save detailed results to CSV if requested
+    if results_dir is not None:
+        csv_path = results_dir / 'random_walk_chance_performance.csv'
+        print(f"\n  Saving results to {csv_path}")
+
+        with open(csv_path, 'w', newline='') as csvfile:
+            csv_writer = csv.writer(csvfile)
+            csv_writer.writerow(['target_diameter', 'n_simulations', 'n_success', 'chance_rate'])
+
+            for diameter in sorted(by_diameter_rates.keys()):
+                n_success, n_total = by_diameter_counts[diameter]
+                rate = by_diameter_rates[diameter]
+                csv_writer.writerow([diameter, n_total, n_success, rate])
+
+    print("\n" + "="*80)
+
+    return {
+        'overall_chance': overall_chance,
+        'by_diameter': by_diameter_rates,
+        'by_diameter_counts': by_diameter_counts,
+        'n_velocities': len(velocities),
+        'n_angles': len(turning_angles),
+        'velocity_stats': {
+            'mean': np.mean(velocities),
+            'median': np.median(velocities),
+            'std': np.std(velocities),
+            'min': np.min(velocities),
+            'max': np.max(velocities)
+        },
+        'angle_stats': {
+            'mean': np.mean(turning_angles),
+            'median': np.median(turning_angles),
+            'std': np.std(turning_angles),
+            'min': np.min(turning_angles),
+            'max': np.max(turning_angles)
+        }
+    }
+
+
 def plot_trial_success(eot_df: pd.DataFrame, results_dir: Optional[Path] = None,
                        animal_id: Optional[str] = None, session_date: str = "",
                        trials: Optional[list[dict]] = None, session_time: Optional[str] = None) -> plt.Figure:
