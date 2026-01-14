@@ -1377,8 +1377,12 @@ def compute_movement_statistics_with_states(trials: list[dict],
         Dictionary containing:
         - 'fixation_velocities': np.ndarray of velocities during fixation
         - 'fixation_angles': np.ndarray of turning angles during fixation
+        - 'fixation_vx': np.ndarray of x-velocity components during fixation
+        - 'fixation_vy': np.ndarray of y-velocity components during fixation
         - 'saccade_velocities': np.ndarray of velocities during saccade
         - 'saccade_angles': np.ndarray of turning angles during saccade
+        - 'saccade_vx': np.ndarray of x-velocity components during saccade
+        - 'saccade_vy': np.ndarray of y-velocity components during saccade
         - 'transition_probs': dict with 'fix_to_fix', 'fix_to_sac', 'sac_to_fix', 'sac_to_sac'
         - 'initial_state_probs': dict with 'fixation' and 'saccade' probabilities
         - 'fixation_durations': np.ndarray of fixation state durations
@@ -1390,6 +1394,12 @@ def compute_movement_statistics_with_states(trials: list[dict],
     fixation_angles = []
     saccade_velocities = []
     saccade_angles = []
+
+    # Track directional velocity components (dx/dt and dy/dt) separately
+    fixation_vx = []  # x-component of velocity during fixation
+    fixation_vy = []  # y-component of velocity during fixation
+    saccade_vx = []   # x-component of velocity during saccade
+    saccade_vy = []   # y-component of velocity during saccade
 
     # Track state transitions
     transitions = {'fix_to_fix': 0, 'fix_to_sac': 0, 'sac_to_fix': 0, 'sac_to_sac': 0}
@@ -1427,10 +1437,14 @@ def compute_movement_statistics_with_states(trials: list[dict],
         distances = np.sqrt(dx**2 + dy**2)
         velocities = distances[valid_dt] / dt[valid_dt]
 
+        # Compute directional velocity components
+        vx = dx[valid_dt] / dt[valid_dt]  # x-component of velocity
+        vy = dy[valid_dt] / dt[valid_dt]  # y-component of velocity
+
         if len(velocities) < 2:
             continue
 
-        # Classify states based on velocity threshold
+        # Classify states based on velocity threshold (total speed)
         states = ['fixation' if v < velocity_threshold else 'saccade' for v in velocities]
 
         # Record initial state
@@ -1441,15 +1455,19 @@ def compute_movement_statistics_with_states(trials: list[dict],
         angle_diffs = np.diff(angles)
         angle_diffs = np.arctan2(np.sin(angle_diffs), np.cos(angle_diffs))
 
-        # Separate velocities and angles by state
+        # Separate velocities, velocity components, and angles by state
         # Note: angle_diffs has length len(velocities)-1
         for i, state in enumerate(states):
             if state == 'fixation':
                 fixation_velocities.append(velocities[i])
+                fixation_vx.append(vx[i])
+                fixation_vy.append(vy[i])
                 if i < len(angle_diffs):
                     fixation_angles.append(angle_diffs[i])
             else:
                 saccade_velocities.append(velocities[i])
+                saccade_vx.append(vx[i])
+                saccade_vy.append(vy[i])
                 if i < len(angle_diffs):
                     saccade_angles.append(angle_diffs[i])
 
@@ -1514,8 +1532,12 @@ def compute_movement_statistics_with_states(trials: list[dict],
     return {
         'fixation_velocities': np.array(fixation_velocities),
         'fixation_angles': np.array(fixation_angles),
+        'fixation_vx': np.array(fixation_vx),
+        'fixation_vy': np.array(fixation_vy),
         'saccade_velocities': np.array(saccade_velocities),
         'saccade_angles': np.array(saccade_angles),
+        'saccade_vx': np.array(saccade_vx),
+        'saccade_vy': np.array(saccade_vy),
         'transition_probs': transition_probs,
         'initial_state_probs': initial_state_probs,
         'fixation_durations': np.array(fixation_durations),
@@ -1602,12 +1624,13 @@ def simulate_markov_random_walk_trial(start_x: float, start_y: float, duration: 
     """Simulate a single random walk trial using a Markov model with fixation/saccade states.
 
     Uses a two-state Markov model:
-    - Fixation state: Sample from low velocity/turning angle distributions
-    - Saccade state: Sample from high velocity/turning angle distributions
+    - Fixation state: Sample from low x and y velocity component distributions
+    - Saccade state: Sample from high x and y velocity component distributions
     - Transitions between states based on empirical transition probabilities
     - Position bounds: Enforced via reflection to keep positions realistic
 
-    This preserves temporal structure better than independent sampling.
+    This preserves both temporal structure and anisotropic movement patterns
+    (e.g., more horizontal than vertical movement).
 
     Parameters
     ----------
@@ -1617,8 +1640,8 @@ def simulate_markov_random_walk_trial(start_x: float, start_y: float, duration: 
         Total trial duration in seconds
     state_stats : dict
         Dictionary from compute_movement_statistics_with_states() containing:
-        - fixation_velocities, fixation_angles
-        - saccade_velocities, saccade_angles
+        - fixation_vx, fixation_vy: x and y velocity components for fixation
+        - saccade_vx, saccade_vy: x and y velocity components for saccade
         - transition_probs
         - initial_state_probs
         - x_bounds, y_bounds (optional): position bounds for reflection
@@ -1635,9 +1658,8 @@ def simulate_markov_random_walk_trial(start_x: float, start_y: float, duration: 
         eye_times : np.ndarray
             Timestamps of simulated trajectory
     """
-    # Initialize position and direction
+    # Initialize position
     x, y = start_x, start_y
-    direction = np.random.uniform(0, 2*np.pi)  # Random initial direction
 
     # Track trajectory
     trajectory_x = [x]
@@ -1660,33 +1682,24 @@ def simulate_markov_random_walk_trial(start_x: float, start_y: float, duration: 
         if dt <= 0:
             break
 
-        # Sample velocity and turning angle based on current state
+        # Sample x and y velocity components separately based on current state
+        # This preserves anisotropic movement patterns (e.g., more horizontal than vertical)
         if current_state == 'fixation':
-            if len(state_stats['fixation_velocities']) > 0:
-                velocity = np.random.choice(state_stats['fixation_velocities'])
+            if len(state_stats['fixation_vx']) > 0:
+                vx = np.random.choice(state_stats['fixation_vx'])
+                vy = np.random.choice(state_stats['fixation_vy'])
             else:
-                velocity = 0.1  # Fallback
-            if len(state_stats['fixation_angles']) > 0:
-                turning_angle = np.random.choice(state_stats['fixation_angles'])
-            else:
-                turning_angle = 0.0  # Fallback
+                vx, vy = 0.0, 0.0  # Fallback
         else:  # saccade
-            if len(state_stats['saccade_velocities']) > 0:
-                velocity = np.random.choice(state_stats['saccade_velocities'])
+            if len(state_stats['saccade_vx']) > 0:
+                vx = np.random.choice(state_stats['saccade_vx'])
+                vy = np.random.choice(state_stats['saccade_vy'])
             else:
-                velocity = 5.0  # Fallback
-            if len(state_stats['saccade_angles']) > 0:
-                turning_angle = np.random.choice(state_stats['saccade_angles'])
-            else:
-                turning_angle = 0.0  # Fallback
+                vx, vy = 0.0, 0.0  # Fallback
 
-        # Update direction
-        direction += turning_angle
-
-        # Update position
-        displacement = velocity * dt
-        x += displacement * np.cos(direction)
-        y += displacement * np.sin(direction)
+        # Update position using velocity components
+        x += vx * dt
+        y += vy * dt
 
         # Apply boundary constraints with reflection if bounds are provided
         if 'x_bounds' in state_stats and 'y_bounds' in state_stats:
