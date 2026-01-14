@@ -105,15 +105,16 @@ def test_random_walk_functions(session_folder: str):
     else:
         print("No trial with eye data found for testing.")
 
-    # Test 3: Calculate full chance performance
+    # Test 3: Calculate full chance performance using Markov model
     print("\n" + "="*80)
-    print("TEST 3: Calculating Chance Performance (10 simulations per trial)")
+    print("TEST 3: Calculating Markov Chance Performance (10 simulations per trial)")
     print("="*80)
 
     # Use smaller number for quick test
     results = calculate_random_walk_chance_performance(
         trials,
         n_simulations=10,  # Small number for quick test
+        velocity_threshold=2.0,  # Classify fixation vs saccade
         results_dir=folder_path / 'results'
     )
 
