@@ -2311,12 +2311,15 @@ def plot_trajectories_by_diameter(trials: list[dict], results_dir: Optional[Path
                                   session_time: Optional[str] = None,
                                   min_fixation_duration: float = 0.45,
                                   max_fixation_movement: float = 0.15,
-                                  eye_df: Optional[pd.DataFrame] = None) -> plt.Figure:
-    """Plot fixation points grouped by target diameter.
-    
+                                  eye_df: Optional[pd.DataFrame] = None,
+                                  show_random_walk: bool = True,
+                                  velocity_threshold: float = 2.0) -> plt.Figure:
+    """Plot fixation points grouped by target diameter with optional random walk comparison.
+
     Creates a figure with subplots, one for each unique target diameter.
-    Each subplot shows fixation points with successful trials in green and failed trials in red.
-    
+    Each subplot shows fixation points with successful trials in green, failed trials in red,
+    and optional random walk fixations in grey.
+
     Parameters
     ----------
     trials : list of dict
@@ -2335,7 +2338,11 @@ def plot_trajectories_by_diameter(trials: list[dict], results_dir: Optional[Path
         Maximum movement threshold for fixation (default: 0.15)
     eye_df : pd.DataFrame, optional
         Complete eye tracking dataframe with fixation data (including inter-trial intervals)
-    
+    show_random_walk : bool
+        Whether to show random walk fixations in grey (default: True)
+    velocity_threshold : float
+        Velocity threshold for fixation/saccade classification in random walk (default: 2.0)
+
     Returns
     -------
     matplotlib.figure.Figure
@@ -2359,7 +2366,15 @@ def plot_trajectories_by_diameter(trials: list[dict], results_dir: Optional[Path
     if len(diameter_trials) == 0:
         print("Warning: No trials with eye data and diameter information found")
         return None
-    
+
+    # Compute Markov model statistics once for all random walks
+    state_stats = None
+    if show_random_walk:
+        print("  Computing movement statistics for random walk generation...")
+        state_stats = compute_movement_statistics_with_states(trials, velocity_threshold)
+        print(f"    Fixation samples: {len(state_stats['fixation_vx'])}")
+        print(f"    Saccade samples: {len(state_stats['saccade_vx'])}")
+
     # Sort diameters for consistent plotting
     sorted_diameters = sorted(diameter_trials.keys())
     n_diameters = len(sorted_diameters)
@@ -2423,13 +2438,35 @@ def plot_trajectories_by_diameter(trials: list[dict], results_dir: Optional[Path
                 fix_x = eye_x[start:end]
                 fix_y = eye_y[start:end]
                 ax.plot(fix_x, fix_y, marker, color=color, markersize=6, alpha=0.8)
-            
+
                 # Calculate centerpoint of this fixation
                 centerpoint_x = np.mean(fix_x)
                 centerpoint_y = np.mean(fix_y)
 
                 # Store centerpoint
                 all_centerpoints.append([centerpoint_x, centerpoint_y])
+
+            # Generate and plot random walk fixation if requested
+            if show_random_walk and state_stats is not None:
+                # Generate random walk for this trial
+                start_x = eye_x[0]
+                start_y = eye_y[0]
+                duration = eye_times[-1] - eye_times[0]
+
+                rw_x, rw_y, rw_times = simulate_markov_random_walk_trial(
+                    start_x, start_y, duration, state_stats, dt_mean=0.05
+                )
+
+                # Detect fixations in random walk
+                rw_fixations = detect_fixations(rw_x, rw_y, rw_times,
+                                                min_fixation_duration, max_fixation_movement)
+
+                # Plot last random walk fixation in grey
+                if len(rw_fixations) > 0:
+                    start, end, duration, span = rw_fixations[-1]
+                    rw_fix_x = rw_x[start:end]
+                    rw_fix_y = rw_y[start:end]
+                    ax.plot(rw_fix_x, rw_fix_y, 'o', color='grey', markersize=4, alpha=0.5)
             
             # # Plot inter-trial fixations in purple (if eye_df is provided)
             # if eye_df is not None and 'in_fixation' in eye_df.columns:
@@ -2526,14 +2563,20 @@ def plot_trajectories_by_diameter(trials: list[dict], results_dir: Optional[Path
         if idx == 0:
             from matplotlib.lines import Line2D
             legend_elements = [
-                Line2D([0], [0], marker='o', color='w', markerfacecolor='green', 
+                Line2D([0], [0], marker='o', color='w', markerfacecolor='green',
                     markersize=8, label='Success fixations'),
-                Line2D([0], [0], marker='x', color='red', markersize=8, 
+                Line2D([0], [0], marker='x', color='red', markersize=8,
                     linewidth=2, label='Failed fixations'),
-                Line2D([0], [0], marker='o', color='w', markerfacecolor='purple', 
+                Line2D([0], [0], marker='o', color='w', markerfacecolor='purple',
                     markersize=8, label='Inter-trial fixations'),
                 Line2D([0], [0], color='blue', linewidth=2, linestyle='--', label='Target')
             ]
+            # Add random walk fixations to legend if shown
+            if show_random_walk:
+                legend_elements.append(
+                    Line2D([0], [0], marker='o', color='w', markerfacecolor='grey',
+                        markersize=8, alpha=0.5, label='Random walk fixations')
+                )
             ax.legend(handles=legend_elements, loc='upper right', fontsize=9)
     
     # Hide extra subplots if we have more subplots than diameters
