@@ -1354,6 +1354,156 @@ def compute_movement_statistics(trials: list[dict]) -> Tuple[np.ndarray, np.ndar
     return np.array(velocities), np.array(turning_angles)
 
 
+def compute_movement_statistics_with_states(trials: list[dict],
+                                            velocity_threshold: float = 2.0) -> dict:
+    """Compute movement statistics separated by fixation/saccade states using Markov model.
+
+    Classifies each movement segment as either 'fixation' (low velocity) or 'saccade' (high velocity),
+    then computes:
+    - State-specific velocity and turning angle distributions
+    - State transition probabilities for Markov model
+    - State duration distributions
+
+    Parameters
+    ----------
+    trials : list of dict
+        List of trial dictionaries containing eye trajectory data
+    velocity_threshold : float
+        Velocity threshold (units/second) to distinguish fixation from saccade (default: 2.0)
+
+    Returns
+    -------
+    dict
+        Dictionary containing:
+        - 'fixation_velocities': np.ndarray of velocities during fixation
+        - 'fixation_angles': np.ndarray of turning angles during fixation
+        - 'saccade_velocities': np.ndarray of velocities during saccade
+        - 'saccade_angles': np.ndarray of turning angles during saccade
+        - 'transition_probs': dict with 'fix_to_fix', 'fix_to_sac', 'sac_to_fix', 'sac_to_sac'
+        - 'initial_state_probs': dict with 'fixation' and 'saccade' probabilities
+        - 'fixation_durations': np.ndarray of fixation state durations
+        - 'saccade_durations': np.ndarray of saccade state durations
+    """
+    fixation_velocities = []
+    fixation_angles = []
+    saccade_velocities = []
+    saccade_angles = []
+
+    # Track state transitions
+    transitions = {'fix_to_fix': 0, 'fix_to_sac': 0, 'sac_to_fix': 0, 'sac_to_sac': 0}
+    initial_states = {'fixation': 0, 'saccade': 0}
+
+    # Track state durations (in number of segments)
+    fixation_durations = []
+    saccade_durations = []
+
+    for trial in trials:
+        if not trial.get('has_eye_data', False):
+            continue
+
+        eye_x = np.array(trial.get('eye_x', []))
+        eye_y = np.array(trial.get('eye_y', []))
+        eye_times = np.array(trial.get('eye_times', []))
+
+        if len(eye_x) < 3:
+            continue
+
+        # Compute velocities
+        dx = np.diff(eye_x)
+        dy = np.diff(eye_y)
+        dt = np.diff(eye_times)
+
+        valid_dt = dt > 0
+        distances = np.sqrt(dx**2 + dy**2)
+        velocities = distances[valid_dt] / dt[valid_dt]
+
+        if len(velocities) < 2:
+            continue
+
+        # Classify states based on velocity threshold
+        states = ['fixation' if v < velocity_threshold else 'saccade' for v in velocities]
+
+        # Record initial state
+        initial_states[states[0]] += 1
+
+        # Compute turning angles for valid segments
+        angles = np.arctan2(dy[valid_dt], dx[valid_dt])
+        angle_diffs = np.diff(angles)
+        angle_diffs = np.arctan2(np.sin(angle_diffs), np.cos(angle_diffs))
+
+        # Separate velocities and angles by state
+        # Note: angle_diffs has length len(velocities)-1
+        for i, state in enumerate(states):
+            if state == 'fixation':
+                fixation_velocities.append(velocities[i])
+                if i < len(angle_diffs):
+                    fixation_angles.append(angle_diffs[i])
+            else:
+                saccade_velocities.append(velocities[i])
+                if i < len(angle_diffs):
+                    saccade_angles.append(angle_diffs[i])
+
+        # Count state transitions
+        current_state = states[0]
+        current_duration = 1
+
+        for i in range(1, len(states)):
+            if states[i] == current_state:
+                # Stay in same state
+                current_duration += 1
+                if current_state == 'fixation':
+                    transitions['fix_to_fix'] += 1
+                else:
+                    transitions['sac_to_sac'] += 1
+            else:
+                # Transition to different state
+                # Record duration of previous state
+                if current_state == 'fixation':
+                    fixation_durations.append(current_duration)
+                    transitions['fix_to_sac'] += 1
+                else:
+                    saccade_durations.append(current_duration)
+                    transitions['sac_to_fix'] += 1
+
+                current_state = states[i]
+                current_duration = 1
+
+        # Record final state duration
+        if current_state == 'fixation':
+            fixation_durations.append(current_duration)
+        else:
+            saccade_durations.append(current_duration)
+
+    # Calculate transition probabilities
+    total_fix_transitions = transitions['fix_to_fix'] + transitions['fix_to_sac']
+    total_sac_transitions = transitions['sac_to_sac'] + transitions['sac_to_fix']
+
+    transition_probs = {
+        'fix_to_fix': transitions['fix_to_fix'] / total_fix_transitions if total_fix_transitions > 0 else 0.5,
+        'fix_to_sac': transitions['fix_to_sac'] / total_fix_transitions if total_fix_transitions > 0 else 0.5,
+        'sac_to_fix': transitions['sac_to_fix'] / total_sac_transitions if total_sac_transitions > 0 else 0.5,
+        'sac_to_sac': transitions['sac_to_sac'] / total_sac_transitions if total_sac_transitions > 0 else 0.5,
+    }
+
+    # Calculate initial state probabilities
+    total_initial = initial_states['fixation'] + initial_states['saccade']
+    initial_state_probs = {
+        'fixation': initial_states['fixation'] / total_initial if total_initial > 0 else 0.5,
+        'saccade': initial_states['saccade'] / total_initial if total_initial > 0 else 0.5,
+    }
+
+    return {
+        'fixation_velocities': np.array(fixation_velocities),
+        'fixation_angles': np.array(fixation_angles),
+        'saccade_velocities': np.array(saccade_velocities),
+        'saccade_angles': np.array(saccade_angles),
+        'transition_probs': transition_probs,
+        'initial_state_probs': initial_state_probs,
+        'fixation_durations': np.array(fixation_durations),
+        'saccade_durations': np.array(saccade_durations),
+    }
+
+
 def simulate_random_walk_trial(start_x: float, start_y: float, duration: float,
                                velocities_pool: np.ndarray, angles_pool: np.ndarray,
                                dt_mean: float = 0.05) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -1425,20 +1575,129 @@ def simulate_random_walk_trial(start_x: float, start_y: float, duration: float,
     return np.array(trajectory_x), np.array(trajectory_y), np.array(trajectory_times)
 
 
+def simulate_markov_random_walk_trial(start_x: float, start_y: float, duration: float,
+                                       state_stats: dict,
+                                       dt_mean: float = 0.05) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Simulate a single random walk trial using a Markov model with fixation/saccade states.
+
+    Uses a two-state Markov model:
+    - Fixation state: Sample from low velocity/turning angle distributions
+    - Saccade state: Sample from high velocity/turning angle distributions
+    - Transitions between states based on empirical transition probabilities
+
+    This preserves temporal structure better than independent sampling.
+
+    Parameters
+    ----------
+    start_x, start_y : float
+        Initial position
+    duration : float
+        Total trial duration in seconds
+    state_stats : dict
+        Dictionary from compute_movement_statistics_with_states() containing:
+        - fixation_velocities, fixation_angles
+        - saccade_velocities, saccade_angles
+        - transition_probs
+        - initial_state_probs
+    dt_mean : float
+        Mean time step in seconds (default: 0.05 for ~20 Hz)
+
+    Returns
+    -------
+    tuple of (eye_x, eye_y, eye_times)
+        eye_x : np.ndarray
+            X positions of simulated trajectory
+        eye_y : np.ndarray
+            Y positions of simulated trajectory
+        eye_times : np.ndarray
+            Timestamps of simulated trajectory
+    """
+    # Initialize position and direction
+    x, y = start_x, start_y
+    direction = np.random.uniform(0, 2*np.pi)  # Random initial direction
+
+    # Track trajectory
+    trajectory_x = [x]
+    trajectory_y = [y]
+    trajectory_times = [0.0]
+
+    # Choose initial state based on empirical probabilities
+    if np.random.random() < state_stats['initial_state_probs']['fixation']:
+        current_state = 'fixation'
+    else:
+        current_state = 'saccade'
+
+    t = 0.0
+
+    while t < duration:
+        # Sample time step
+        dt = np.random.exponential(dt_mean)
+        dt = min(dt, duration - t)
+
+        if dt <= 0:
+            break
+
+        # Sample velocity and turning angle based on current state
+        if current_state == 'fixation':
+            if len(state_stats['fixation_velocities']) > 0:
+                velocity = np.random.choice(state_stats['fixation_velocities'])
+            else:
+                velocity = 0.1  # Fallback
+            if len(state_stats['fixation_angles']) > 0:
+                turning_angle = np.random.choice(state_stats['fixation_angles'])
+            else:
+                turning_angle = 0.0  # Fallback
+        else:  # saccade
+            if len(state_stats['saccade_velocities']) > 0:
+                velocity = np.random.choice(state_stats['saccade_velocities'])
+            else:
+                velocity = 5.0  # Fallback
+            if len(state_stats['saccade_angles']) > 0:
+                turning_angle = np.random.choice(state_stats['saccade_angles'])
+            else:
+                turning_angle = 0.0  # Fallback
+
+        # Update direction
+        direction += turning_angle
+
+        # Update position
+        displacement = velocity * dt
+        x += displacement * np.cos(direction)
+        y += displacement * np.sin(direction)
+
+        # Record position
+        t += dt
+        trajectory_x.append(x)
+        trajectory_y.append(y)
+        trajectory_times.append(t)
+
+        # Transition to next state based on Markov transition probabilities
+        if current_state == 'fixation':
+            if np.random.random() > state_stats['transition_probs']['fix_to_fix']:
+                current_state = 'saccade'
+        else:  # saccade
+            if np.random.random() > state_stats['transition_probs']['sac_to_sac']:
+                current_state = 'fixation'
+
+    return np.array(trajectory_x), np.array(trajectory_y), np.array(trajectory_times)
+
+
 def calculate_random_walk_chance_performance(trials: list[dict],
                                              n_simulations: int = 100,
                                              min_fixation_duration: float = 0.65,
                                              max_movement: float = 0.1,
                                              dt_mean: float = 0.05,
+                                             velocity_threshold: float = 2.0,
                                              results_dir: Optional[Path] = None) -> dict:
-    """Calculate chance performance using random walk simulations based on empirical eye movement statistics.
+    """Calculate chance performance using Markov random walk simulations with fixation/saccade states.
 
     Algorithm:
-    1. Compute velocities and turning angles from all actual eye trajectories
-    2. For each trial, run N random walk simulations starting from actual start position
-    3. Use same trial duration, target position/size, and cursor size as actual trial
-    4. Assess each random walk trial using calculate_trial_success_from_fixations()
-    5. Aggregate success rates by target diameter
+    1. Compute state-specific movement statistics (fixation vs saccade) from all actual eye trajectories
+    2. Calculate Markov transition probabilities between states
+    3. For each trial, run N Markov random walk simulations starting from actual start position
+    4. Use same trial duration, target position/size, and cursor size as actual trial
+    5. Assess each random walk trial using calculate_trial_success_from_fixations()
+    6. Aggregate success rates by target diameter
 
     Parameters
     ----------
@@ -1452,6 +1711,8 @@ def calculate_random_walk_chance_performance(trials: list[dict],
         Maximum movement for fixation detection (default: 0.1 units)
     dt_mean : float
         Mean time step for simulation (default: 0.05 seconds for ~20 Hz)
+    velocity_threshold : float
+        Velocity threshold (units/second) to distinguish fixation from saccade (default: 2.0)
     results_dir : Path, optional
         Directory to save results
 
@@ -1463,48 +1724,60 @@ def calculate_random_walk_chance_performance(trials: list[dict],
         - 'by_diameter': dict mapping diameter -> chance rate
         - 'by_diameter_counts': dict mapping diameter -> (n_success, n_total)
         - 'by_diameter_se': dict mapping diameter -> standard error
-        - 'n_velocities': int, number of velocity samples
-        - 'n_angles': int, number of turning angle samples
-        - 'velocity_stats': dict with mean, median, std of velocities
-        - 'angle_stats': dict with mean, median, std of turning angles
+        - 'state_stats': dict with Markov model statistics
+        - 'n_fixation_samples': int, number of fixation velocity samples
+        - 'n_saccade_samples': int, number of saccade velocity samples
     """
     print("\n" + "="*80)
-    print("CALCULATING RANDOM WALK CHANCE PERFORMANCE")
+    print("CALCULATING MARKOV RANDOM WALK CHANCE PERFORMANCE")
     print("="*80)
 
-    # Step 1: Compute movement statistics from all trials
-    print("\nStep 1: Computing movement statistics from actual eye trajectories...")
-    velocities, turning_angles = compute_movement_statistics(trials)
+    # Step 1: Compute movement statistics with state classification
+    print("\nStep 1: Computing movement statistics with fixation/saccade state classification...")
+    print(f"  Using velocity threshold: {velocity_threshold:.2f} units/s")
+    state_stats = compute_movement_statistics_with_states(trials, velocity_threshold)
 
-    if len(velocities) == 0 or len(turning_angles) == 0:
+    n_fix_vel = len(state_stats['fixation_velocities'])
+    n_sac_vel = len(state_stats['saccade_velocities'])
+
+    if n_fix_vel == 0 and n_sac_vel == 0:
         print("ERROR: No movement statistics computed. Need trials with eye data.")
         return {
             'overall_chance': 0.0,
             'by_diameter': {},
             'by_diameter_counts': {},
             'by_diameter_se': {},
-            'n_velocities': 0,
-            'n_angles': 0,
-            'velocity_stats': {},
-            'angle_stats': {}
+            'n_fixation_samples': 0,
+            'n_saccade_samples': 0,
+            'state_stats': {}
         }
 
-    print(f"  Computed {len(velocities)} velocity samples")
-    print(f"  Velocity statistics:")
-    print(f"    Mean: {np.mean(velocities):.4f}")
-    print(f"    Median: {np.median(velocities):.4f}")
-    print(f"    Std: {np.std(velocities):.4f}")
-    print(f"    Range: [{np.min(velocities):.4f}, {np.max(velocities):.4f}]")
+    print(f"\n  Fixation state statistics:")
+    print(f"    N velocity samples: {n_fix_vel}")
+    if n_fix_vel > 0:
+        print(f"    Mean velocity: {np.mean(state_stats['fixation_velocities']):.4f}")
+        print(f"    Median velocity: {np.median(state_stats['fixation_velocities']):.4f}")
+        print(f"    Std velocity: {np.std(state_stats['fixation_velocities']):.4f}")
 
-    print(f"\n  Computed {len(turning_angles)} turning angle samples")
-    print(f"  Turning angle statistics (radians):")
-    print(f"    Mean: {np.mean(turning_angles):.4f}")
-    print(f"    Median: {np.median(turning_angles):.4f}")
-    print(f"    Std: {np.std(turning_angles):.4f}")
-    print(f"    Range: [{np.min(turning_angles):.4f}, {np.max(turning_angles):.4f}]")
+    print(f"\n  Saccade state statistics:")
+    print(f"    N velocity samples: {n_sac_vel}")
+    if n_sac_vel > 0:
+        print(f"    Mean velocity: {np.mean(state_stats['saccade_velocities']):.4f}")
+        print(f"    Median velocity: {np.median(state_stats['saccade_velocities']):.4f}")
+        print(f"    Std velocity: {np.std(state_stats['saccade_velocities']):.4f}")
 
-    # Step 2: Run random walk simulations for each trial
-    print(f"\nStep 2: Running {n_simulations} random walk simulations per trial...")
+    print(f"\n  Markov transition probabilities:")
+    print(f"    Fixation -> Fixation: {100*state_stats['transition_probs']['fix_to_fix']:.1f}%")
+    print(f"    Fixation -> Saccade: {100*state_stats['transition_probs']['fix_to_sac']:.1f}%")
+    print(f"    Saccade -> Fixation: {100*state_stats['transition_probs']['sac_to_fix']:.1f}%")
+    print(f"    Saccade -> Saccade: {100*state_stats['transition_probs']['sac_to_sac']:.1f}%")
+
+    print(f"\n  Initial state probabilities:")
+    print(f"    Start in fixation: {100*state_stats['initial_state_probs']['fixation']:.1f}%")
+    print(f"    Start in saccade: {100*state_stats['initial_state_probs']['saccade']:.1f}%")
+
+    # Step 2: Run Markov random walk simulations for each trial
+    print(f"\nStep 2: Running {n_simulations} Markov random walk simulations per trial...")
 
     # Track results overall and by diameter
     overall_successes = 0
@@ -1521,18 +1794,9 @@ def calculate_random_walk_chance_performance(trials: list[dict],
             'by_diameter': {},
             'by_diameter_counts': {},
             'by_diameter_se': {},
-            'n_velocities': len(velocities),
-            'n_angles': len(turning_angles),
-            'velocity_stats': {
-                'mean': np.mean(velocities),
-                'median': np.median(velocities),
-                'std': np.std(velocities)
-            },
-            'angle_stats': {
-                'mean': np.mean(turning_angles),
-                'median': np.median(turning_angles),
-                'std': np.std(turning_angles)
-            }
+            'n_fixation_samples': n_fix_vel,
+            'n_saccade_samples': n_sac_vel,
+            'state_stats': state_stats
         }
 
     print(f"  Processing {len(valid_trials)} valid trials...")
@@ -1564,9 +1828,9 @@ def calculate_random_walk_chance_performance(trials: list[dict],
 
         # Run N simulations for this trial
         for _ in range(n_simulations):
-            # Generate random walk trajectory
-            sim_x, sim_y, sim_times = simulate_random_walk_trial(
-                start_x, start_y, duration, velocities, turning_angles, dt_mean
+            # Generate Markov random walk trajectory
+            sim_x, sim_y, sim_times = simulate_markov_random_walk_trial(
+                start_x, start_y, duration, state_stats, dt_mean
             )
 
             # Assess success using existing fixation-based criterion
@@ -1635,22 +1899,9 @@ def calculate_random_walk_chance_performance(trials: list[dict],
         'by_diameter': by_diameter_rates,
         'by_diameter_counts': by_diameter_counts,
         'by_diameter_se': by_diameter_se,
-        'n_velocities': len(velocities),
-        'n_angles': len(turning_angles),
-        'velocity_stats': {
-            'mean': np.mean(velocities),
-            'median': np.median(velocities),
-            'std': np.std(velocities),
-            'min': np.min(velocities),
-            'max': np.max(velocities)
-        },
-        'angle_stats': {
-            'mean': np.mean(turning_angles),
-            'median': np.median(turning_angles),
-            'std': np.std(turning_angles),
-            'min': np.min(turning_angles),
-            'max': np.max(turning_angles)
-        }
+        'n_fixation_samples': n_fix_vel,
+        'n_saccade_samples': n_sac_vel,
+        'state_stats': state_stats
     }
 
 
