@@ -1106,8 +1106,8 @@ def plot_time_to_target(trials: list[dict], results_dir: Optional[Path] = None,
 
 
 def detect_fixations(eye_x: np.ndarray, eye_y: np.ndarray, eye_times: np.ndarray,
-                     min_fixation_duration: float = 0.65,
-                     max_movement: float = 0.1) -> list[tuple]:
+                     min_fixation_duration: float = 0.7,
+                     max_movement: float = 0.2) -> list[tuple]:
     """Detect fixation windows based on frame-to-frame movement velocity.
 
     A fixation is a period where consecutive frame-to-frame movements are below
@@ -1184,8 +1184,8 @@ def calculate_trial_success_from_fixations(eye_x: np.ndarray, eye_y: np.ndarray,
                                           eye_times: np.ndarray,
                                           target_x: float, target_y: float,
                                           contact_threshold: float,
-                                          min_fixation_duration: float = 0.65,
-                                          max_movement: float = 0.1) -> tuple[bool, float]:
+                                          min_fixation_duration: float = 0.7,
+                                          max_movement: float = 0.2) -> tuple[bool, float]:
     """Determine trial success based on the last fixation.
 
     Success criterion:
@@ -1208,7 +1208,7 @@ def calculate_trial_success_from_fixations(eye_x: np.ndarray, eye_y: np.ndarray,
     contact_threshold : float
         Distance threshold for being "on target" (target_radius + cursor_radius)
     min_fixation_duration : float
-        Minimum fixation duration for success (default: 0.65s)
+        Minimum fixation duration for success (default: 0.7s)
     max_movement : float
         Maximum movement for fixation detection (default: 0.1 units)
 
@@ -1247,8 +1247,8 @@ def calculate_trial_success_from_fixations(eye_x: np.ndarray, eye_y: np.ndarray,
 
 def calculate_chance_level(trials: list[dict], n_shuffles: int = 1000,
                            target_filter: Optional[callable] = None,
-                           min_fixation_duration: float = 0.65,
-                           max_movement: float = 0.1,
+                           min_fixation_duration: float = 0.7,
+                           max_movement: float = 0.2,
                            results_dir: Optional[Path] = None) -> float:
     """Calculate chance level by matching actual fixation positions against shuffled targets.
 
@@ -1849,8 +1849,8 @@ def simulate_markov_random_walk_trial(start_x: float, start_y: float, duration: 
 
 def calculate_random_walk_chance_performance(trials: list[dict],
                                              n_simulations: int = 100,
-                                             min_fixation_duration: float = 0.65,
-                                             max_movement: float = 0.1,
+                                             min_fixation_duration: float = 0.7,
+                                             max_movement: float = 0.2,
                                              dt_mean: float = 0.05,
                                              velocity_threshold: float = 2.0,
                                              results_dir: Optional[Path] = None) -> dict:
@@ -4542,7 +4542,7 @@ def plot_visible_invisible_detailed_stats(trials: list[dict], results_dir: Optio
 
 
 # Fixation detection parameters - shared across analysis functions
-FIXATION_MIN_DURATION = 0.65  # seconds
+FIXATION_MIN_DURATION = 0.7  # seconds
 FIXATION_MAX_MOVEMENT = 0.2  # stimulus units
 def interactive_fixation_viewer(trials: list[dict], animal_id: Optional[str] = None,
                                  session_date: str = "",
@@ -4980,8 +4980,8 @@ def save_detailed_fixation_data(trials: list[dict], results_dir: Optional[Path] 
 
 
 def calculate_and_validate_trial_success(trials: list[dict], eot_df: pd.DataFrame,
-                                         min_fixation_duration: float = 0.65,
-                                         max_movement: float = 0.1) -> pd.DataFrame:
+                                         min_fixation_duration: float = 0.7,
+                                         max_movement: float = 0.2) -> pd.DataFrame:
     """Calculate trial success from fixation data and compare to actual trial success.
 
     For each trial, this function:
