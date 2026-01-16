@@ -3821,7 +3821,8 @@ def plot_final_positions_by_target(trials: list[dict], min_duration: float = 0.0
 
 def compare_left_right_performance(trials: list[dict], left_x: float = -0.7, right_x: float = 0.7,
                                    tolerance: float = 0.1, results_dir: Optional[Path] = None,
-                                   animal_id: Optional[str] = None, session_date: str = "") -> tuple:
+                                   animal_id: Optional[str] = None, session_date: str = "",
+                                   random_walk_results: Optional[dict] = None) -> tuple:
     """Compare performance metrics for left vs right target trials.
 
     Parameters
@@ -3840,6 +3841,10 @@ def compare_left_right_performance(trials: list[dict], left_x: float = -0.7, rig
         Animal identifier for filename
     session_date : str, optional
         Session date for title
+    random_walk_results : dict, optional
+        Pre-computed random walk chance performance results from
+        calculate_random_walk_chance_performance(). If provided, uses
+        the overall_chance value for both left and right targets.
 
     Returns
     -------
@@ -3917,18 +3922,25 @@ def compare_left_right_performance(trials: list[dict], left_x: float = -0.7, rig
     ]
     success_odds_ratio, success_p = scipy_stats.fisher_exact(contingency_table)
 
-    # Calculate chance levels for left and right separately
-    print("  Calculating chance level for left targets (1000 shuffles)...")
-    left_chance = calculate_chance_level(trials, n_shuffles=1000,
-                                         target_filter=lambda t: abs(t['target_x'] - left_x) < tolerance,
-                                         results_dir=results_dir)
-    print(f"  Left chance level: {100*left_chance:.1f}%")
-
-    print("  Calculating chance level for right targets (1000 shuffles)...")
-    right_chance = calculate_chance_level(trials, n_shuffles=1000,
-                                          target_filter=lambda t: abs(t['target_x'] - right_x) < tolerance,
-                                          results_dir=results_dir)
-    print(f"  Right chance level: {100*right_chance:.1f}%")
+    # Use random walk chance level (same for both left and right)
+    if random_walk_results is not None:
+        # Use pre-computed random walk results
+        left_chance = random_walk_results['overall_chance']
+        right_chance = random_walk_results['overall_chance']
+        print(f"  Using pre-computed random walk chance level: {100*left_chance:.1f}%")
+        print(f"  Left chance level: {100*left_chance:.1f}%")
+        print(f"  Right chance level: {100*right_chance:.1f}%")
+    else:
+        # Calculate random walk chance if not provided
+        print("  Calculating random walk chance performance (100 simulations per trial)...")
+        rw_results = calculate_random_walk_chance_performance(
+            trials, n_simulations=100, results_dir=results_dir
+        )
+        left_chance = rw_results['overall_chance']
+        right_chance = rw_results['overall_chance']
+        print(f"  Random walk chance level: {100*left_chance:.1f}%")
+        print(f"  Left chance level: {100*left_chance:.1f}%")
+        print(f"  Right chance level: {100*right_chance:.1f}%")
 
     # Create comparison plot
     fig, axes = plt.subplots(2, 3, figsize=(18, 10))
@@ -4023,7 +4035,7 @@ def compare_left_right_performance(trials: list[dict], left_x: float = -0.7, rig
     ax.set_title(f'Success/Failure Rates\np = {success_p:.4f}', fontsize=12, fontweight='bold')
     ax.set_ylim(0, max(success_counts) * 1.3)
     ax.grid(True, alpha=0.3, axis='y')
-    ax.legend([bars[0], bars[1], bars[2]], ['Success', 'Failure', 'Chance'], loc='upper right', fontsize=9)
+    ax.legend([bars[0], bars[1], bars[2]], ['Success', 'Failure', 'RW Chance'], loc='upper right', fontsize=9)
 
     # Plot 5: Summary statistics table
     ax = axes[1, 2]
@@ -5751,7 +5763,8 @@ def analyze_folder(folder_path: str | Path, results_dir: Optional[str | Path] = 
                                                            right_x=detected_right_x,
                                                            results_dir=results_dir,
                                                            animal_id=animal_id,
-                                                           session_date=date_str)
+                                                           session_date=date_str,
+                                                           random_walk_results=random_walk_results)
     else:
         print(f"  Not enough unique X positions for left/right comparison")
         fig_lr, lr_stats = None, None
