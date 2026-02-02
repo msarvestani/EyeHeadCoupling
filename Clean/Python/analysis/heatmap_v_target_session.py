@@ -2,6 +2,15 @@
 
 This script creates a single figure with 3 vertical subplots, one for each session,
 to allow easy comparison of eye position density across different sessions.
+
+This script specifically applies to 3 sessions run on Paris on 2026-01-13
+X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2026-01-13T13_26_58
+
+
+Usage:   python heatmap_v_target_session.py 
+X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2026-01-13T13_26_58
+X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2026-01-13T13_13_35
+X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2026-01-13T13_00_15       
 """
 
 from __future__ import annotations
