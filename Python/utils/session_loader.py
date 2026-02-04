@@ -228,7 +228,7 @@ def list_sessions_from_manifest(
     """
 
     manifest_path = (
-        Path(__file__).resolve().parent.parent.parent / "data" / "session_manifest.yml"
+        Path(__file__).resolve().parent.parent.parent / "session_manifest.yml"
     )
 
     try:
