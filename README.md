@@ -5,7 +5,7 @@ Tools for studying the relationship between eye and head movements in rats and t
 ## Directory Structure
 - `MATLAB/` – legacy MATLAB code.
 - `Python/` – all Python analysis code, utilities and notebooks.
-- `data/` – session configuration files and sample data.
+- `session_manifest.yml` – session configuration file in the root directory.
 
 ## Setup
 1. Clone the repository
@@ -27,8 +27,8 @@ Session metadata lives in `session_manifest.yml` and maps session identifiers to
 ```yaml
 sessions:
   session_01:
-    session_path: /data/session_01
-    results_dir: /data/session_01/results
+    session_path: /path/to/session_01
+    results_dir: /path/to/session_01/results
 ```
 
 Use `utils.session_loader.load_session` to access entries.

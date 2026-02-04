@@ -1,6 +1,6 @@
 """Run fixation analysis across multiple sessions.
 
-This script selects sessions from ``data/session_manifest.yml`` based on the
+This script selects sessions from ``session_manifest.yml`` based on the
 requested experiment type and executes the full fixation analysis pipeline
 for each one.
 """
@@ -280,7 +280,7 @@ def plot_metric_trends(
         plt.close(fig)
 
 
-# Usage: python Clean/Python/analysis/fixation_population.py --animal-name Paris
+# Usage: python Python/analysis/fixation_population.py --animal-name Paris
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Run analysis across sessions filtered by experiment type",
@@ -300,7 +300,7 @@ if __name__ == "__main__":
         args.experiment_type, animal_name=args.animal_name
     )
     root_dir = Path(__file__).resolve().parents[2]
-    manifest_path = root_dir / "data" / "session_manifest.yml"
+    manifest_path = root_dir / "session_manifest.yml"
     try:
         with manifest_path.open() as f:
             manifest = yaml.safe_load(f) or {}

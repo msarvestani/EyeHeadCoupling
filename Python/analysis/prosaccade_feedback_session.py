@@ -5960,13 +5960,13 @@ def main(session_id: str, trial_min_duration: float = 0.01, trial_max_duration: 
 
 # Usage Examples:
 # 1. With session manifest:
-#    python Clean/Python/analysis/prosaccade_feedback_session.py SESSION_ID
+#    python Python/analysis/prosaccade_feedback_session.py SESSION_ID
 #
 # 2. Direct folder (Linux/Mac):
-#    python Clean/Python/analysis/prosaccade_feedback_session.py --folder /path/to/data --animal Tsh001
+#    python Python/analysis/prosaccade_feedback_session.py --folder /path/to/data --animal Tsh001
 #
 # 3. Direct folder (Windows - no quotes needed on command line):
-#    python Clean/Python/analysis/prosaccade_feedback_session.py --folder X:\path\to\data --animal Tsh001
+#    python Python/analysis/prosaccade_feedback_session.py --folder X:\path\to\data --animal Tsh001
 #
 # Note: On command line, DO NOT use Python string syntax like r'...' or '...'
 #       Just provide the path directly without quotes (unless path has spaces)

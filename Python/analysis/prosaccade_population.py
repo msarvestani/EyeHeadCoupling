@@ -1,6 +1,6 @@
 """Run prosaccade analysis across multiple sessions.
 
-This script selects sessions from ``data/session_manifest.yml`` based on the
+This script selects sessions from ``session_manifest.yml`` based on the
 requested experiment type and executes the full prosaccade analysis pipeline
 for each one.
 """
@@ -155,7 +155,7 @@ def plot_prosaccade_trends_from_dictionary(
     fig.savefig(results_root / f"{experiment_type}_saccade_percentage_trends{animal_suffix}.svg")
 
 
-# Usage: python Clean/Python/analysis/prosaccade_population.py --experiment-type prosaccade [--animal-name ANIMAL_NAME]
+# Usage: python Python/analysis/prosaccade_population.py --experiment-type prosaccade [--animal-name ANIMAL_NAME]
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Run analysis across sessions filtered by experiment type",
@@ -184,7 +184,7 @@ if __name__ == "__main__":
     )
     root_dir = Path(__file__).resolve().parents[2]
         
-    manifest_path = root_dir / "data" / "session_manifest.yml"
+    manifest_path = root_dir / "session_manifest.yml"
     with manifest_path.open("r", encoding="utf-8") as fh:
         manifest = yaml.safe_load(fh) or {}
 
