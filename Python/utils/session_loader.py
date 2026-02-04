@@ -60,7 +60,7 @@ def load_session(session_id: str) -> SessionConfig:
     """
 
     manifest_path = (
-        Path(__file__).resolve().parent.parent.parent / "data" / "session_manifest.yml"
+        Path(__file__).resolve().parent.parent.parent / "session_manifest.yml"
     )
 
     with manifest_path.open("r", encoding="utf-8") as fh:
