@@ -23,7 +23,7 @@ Tools for studying the relationship between eye and head movements in rats and t
    ```
 
 ## Session Manifest
-Session metadata lives in `data/session_manifest.yml` and maps session identifiers to their settings:
+Session metadata lives in `session_manifest.yml` and maps session identifiers to their settings:
 ```yaml
 sessions:
   session_01:
