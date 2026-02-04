@@ -1,21 +1,39 @@
-function EyeHeadCouplingAnalysis_streamlined()
+%function EyeHeadCouplingAnalysis_streamlined()
 % created by EK 7/1/25
-main_dir =  "C:\Users\emk263\Erin\Data\Eye_head_coupling";
-data_directory = fullfile(main_dir,'rat_data\');
-save_directory = fullfile(main_dir,'Analysis\analysis_testingnewmodel_rat');
+
+%% init
+clear all
+close all
+clc
+warning off
+%%
+file_database_path = fullfile(cd, 'file_database.mat')
+file_database = load(file_database_path)
+file_database = file_database.file_database;
+file_database_stats=file_database;
+
+% main_dir =  "C:\Users\emk263\Erin\Data\Eye_head_coupling";
+% data_directory = fullfile(main_dir,'tsh_data\');
+% save_directory = fullfile(main_dir,'Analysis\analysis_testingnewmodel_tsh');
+
+save_directory = fullfile(cd,'analysis_final_testingplotting_EK');
+dlc_directory = "X:\Experimental_Data\EyeHeadCoupling_RatTS_server\EyeTrackingDLC\all_videos\DLC_resnet50_EyeSep30shuffle1_1920000";
+% dlc_directory = "X:\Experimental_Data\EyeHeadCoupling_RatTS_server\EyeTrackingDLC\all_videos\DLC_resnet50_EyeSep30shuffle1_1500000";
 
 single_filename = "";
-% single_filename = "Tsh001_2025-06-11T12_50_45";
+% single_filename = "Rat015_2024-09-30T12_02_07";
+% single_data_directory = 'X:\Experimental_Data\EyeHeadCoupling_RatTS_server\Rat15_Too_server';
 overwrite = 1; %0=create a new directory, 1=put files in existing directory, possibly overwriting old ones
 
 plotting_params.make_saccade_processing_plots = 0; % plots showing the dlc/saccade data at different steps in the cleaning/preprocessing process
-plotting_params.make_saccade_summary_plots = 1; % plots summarizing all detected saccades across the session
+plotting_params.make_saccade_summary_plots = 0; % plots summarizing all detected saccades across the session
 plotting_params.make_imu_summary_plots = 0; % plots summarizing IMU over time
 plotting_params.make_full_session_zoomedin_plots = 0; % imu summary plot for each 30 second section in the recording
 plotting_params.make_imu_videos = 0; % imu videos showing IMU and saccade
+plotting_params.make_imu_videos_clean = 0; % imu videos showing IMU and saccade (cleaned up for posters/presentations)
 plotting_params.make_saccade_videos = 0; %imu/saccade videos but without imu and showing both eyes
-plotting_params.plot_random_subset = 1; % only make plots for a subset of saccades
-plotting_params.num_saccades_to_plot = 10;
+plotting_params.plot_random_subset = 0; % only make plots for a subset of saccades
+plotting_params.num_saccades_to_plot = 30;
 
 
 %% general code structure
@@ -42,7 +60,6 @@ plotting_params.num_saccades_to_plot = 10;
     % parameters.framerate = 60;
     parameters.framerate = 61; %EK changed 7/1/25, this is roughly the average across all the sessions
     parameters.pupil_likelihood_thresh = 0.7;
-    parameters.eye_likelihood_thresh = 0.7;
     parameters.outlier_stddev_thresh = 20;
     parameters.outlier_thresh = 40;
     parameters.smoothing_window = 9;
@@ -58,6 +75,8 @@ plotting_params.num_saccades_to_plot = 10;
     parameters.dlc_model_name = "DLC_resnet50_EyeSep30shuffle1_1920000"; %new eye model as of 7/25/25
 
     % tree shrew parameters
+    tsh_parameters.pupil_likelihood_thresh = 0.7;
+    tsh_parameters.eye_likelihood_thresh = 0.7;
     tsh_parameters.pix2deg_calibration = 4;
     tsh_parameters.use_eye_centered = 0;
     tsh_parameters.filter_lower_x = 7; %not seeing any movement on this axis in TS data so we'll just use same as rats
@@ -68,8 +87,10 @@ plotting_params.num_saccades_to_plot = 10;
     tsh_parameters.filter_higher_z = 20;
 
     % rat parameters
+    rat_parameters.pupil_likelihood_thresh = 0.5;
+    rat_parameters.eye_likelihood_thresh = 0.1;
     rat_parameters.pix2deg_calibration = 5;
-    rat_parameters.use_eye_centered = 1;
+    rat_parameters.use_eye_centered = 0;
     rat_parameters.filter_lower_x = 7;
     rat_parameters.filter_higher_x = 12;
     rat_parameters.filter_lower_y = 10;
@@ -94,8 +115,10 @@ plotting_params.num_saccades_to_plot = 10;
     imu_video_save_directory = fullfile(figures_save_directory,'imu_videos\');
     imu_video_save_directory_licks = fullfile(figures_save_directory,'imu_videos_licks\');
     saccade_video_save_directory = fullfile(figures_save_directory,'saccade_videos\');
+    imu_videos_clean_directory = fullfile(figures_save_directory,'imu_videos_clean\');
     saccade_imu_table_fname = fullfile(save_directory,'saccade_imu_population_table');
     dlc_likelihood_table_fname = fullfile(save_directory,'dlc_likelihood_table');
+    file_database_stats_fname = fullfile(save_directory,'file_database_stats');
     
     if ~isfolder(save_directory)
         mkdir(save_directory)
@@ -104,9 +127,10 @@ plotting_params.num_saccades_to_plot = 10;
         mkdir(figures_save_directory)
     end
 
-    % get all foldernames for Rat data sessions
-    data_folders = dir(data_directory);
-    data_folders = struct2table(data_folders);
+    % get all foldernames for data sessions
+    data_folders = file_database;
+    % data_folders = dir(data_directory);
+    % data_folders = struct2table(data_folders);
     data_foldernames = string(data_folders.name);
     data_folders = data_folders((contains(data_foldernames,'Rat')|contains(data_foldernames,'Tsh')),:);
     n_folders = height(data_folders);
@@ -124,6 +148,11 @@ plotting_params.num_saccades_to_plot = 10;
         close all
         % generate all data filenames for this folder
         % try
+            if exist('filename')
+                save(strcat(save_directory,"\file_database_stats.mat"),'file_database_stats');
+                writetable(file_database_stats,strcat(save_directory,"\file_database_stats.csv"));
+            end
+
             if single_filename ~= ""
                 filename = single_filename;
             else
@@ -131,6 +160,8 @@ plotting_params.num_saccades_to_plot = 10;
             end
             
             if contains(filename,"Tsh")
+                parameters.pupil_likelihood_thresh = tsh_parameters.pupil_likelihood_thresh;
+                parameters.eye_likelihood_thresh = tsh_parameters.eye_likelihood_thresh;
                 parameters.pix2deg_calibration = tsh_parameters.pix2deg_calibration;
                 parameters.use_eye_centered = tsh_parameters.use_eye_centered;
                 parameters.filter_lower_x = tsh_parameters.filter_lower_x;
@@ -139,8 +170,10 @@ plotting_params.num_saccades_to_plot = 10;
                 parameters.filter_higher_y = tsh_parameters.filter_higher_y;
                 parameters.filter_lower_z = tsh_parameters.filter_lower_z;
                 parameters.filter_higher_z = tsh_parameters.filter_higher_z;
-                parameters.dlc_model_name = "DLC_resnet50_EyeSep30shuffle1_1920000"; %new eye model as of 7/25/25
+                % parameters.dlc_model_name = "DLC_resnet50_EyeSep30shuffle1_1920000"; %new eye model as of 7/25/25
             elseif contains(filename,"Rat")
+                parameters.pupil_likelihood_thresh = rat_parameters.pupil_likelihood_thresh;
+                parameters.eye_likelihood_thresh = rat_parameters.eye_likelihood_thresh;
                 parameters.pix2deg_calibration = rat_parameters.pix2deg_calibration;
                 parameters.use_eye_centered = rat_parameters.use_eye_centered;
                 parameters.filter_lower_x = rat_parameters.filter_lower_x;
@@ -149,7 +182,7 @@ plotting_params.num_saccades_to_plot = 10;
                 parameters.filter_higher_y = rat_parameters.filter_higher_y;
                 parameters.filter_lower_z = rat_parameters.filter_lower_z;
                 parameters.filter_higher_z = rat_parameters.filter_higher_z;
-                parameters.dlc_model_name = "DLC_resnet50_EyeSep30shuffle1_1500000"; %new eye model as of 11/20/24
+                % parameters.dlc_model_name = "DLC_resnet50_EyeSep30shuffle1_1500000"; %new eye model as of 11/20/24
             end
 
             filename = filename{1}
@@ -157,36 +190,45 @@ plotting_params.num_saccades_to_plot = 10;
             animalid = filename(1:6);
             timestamp = filename(8:26);
             date = datetime(str2num(timestamp(1:4)),str2num(timestamp(6:7)),str2num(timestamp(9:10)),str2num(timestamp(12:13)),str2num(timestamp(15:16)),str2num(timestamp(18:19)));
-            fpath = strcat(data_directory,filename,'\');
-            eye_left_dlc_fname = fullfile(fpath,strcat(animalid,"_E_L_",timestamp(1:end-5),"??_??",parameters.dlc_model_name,".csv"));
-            eye_right_dlc_fname = fullfile(fpath,strcat(animalid,"_E_R_",timestamp(1:end-5),"??_??",parameters.dlc_model_name,".csv"));
-            imu_fname = fullfile(fpath,strcat(animalid,"_IMU_",timestamp(1:end-5),"??_??",".csv"));
-            camera_fname = fullfile(fpath,strcat(animalid,"_CameraLogger_",timestamp(1:end-5),"??_??",".csv"));
-            licks_fname = fullfile(fpath,strcat(animalid,"_JuiceLogger_",timestamp(1:end-5),"??_??",".csv"));
-            eye_left_vid_fname = fullfile(fpath,strcat(animalid,"_E_L_",timestamp(1:end-5),"??_??",parameters.dlc_model_name,"_labeled.mp4"));
-            eye_right_vid_fname = fullfile(fpath,strcat(animalid,"_E_R_",timestamp(1:end-5),"??_??",parameters.dlc_model_name,"_labeled.mp4"));
-            head_left_vid_fname = fullfile(fpath,strcat(animalid,"_H_L_",timestamp(1:end-5),"??_??",".mp4"));
-            head_right_vid_fname = fullfile(fpath,strcat(animalid,"_H_R_",timestamp(1:end-5),"??_??",".mp4"));
+            if single_filename ~= ""
+                data_directory = single_data_directory;
+            else
+                data_directory = string(data_folders.folder(foldernum));
+            end
+            fpath = strcat(data_directory,'\',filename,'\');
+            eye_left_dlc_fname = fullfile(dlc_directory,strcat(animalid,"_E_L_",timestamp(1:end-4),"?_??",parameters.dlc_model_name,".csv"));
+            eye_right_dlc_fname = fullfile(dlc_directory,strcat(animalid,"_E_R_",timestamp(1:end-4),"?_??",parameters.dlc_model_name,".csv"));
+            imu_fname = fullfile(fpath,strcat(animalid,"_IMU_",timestamp(1:end-4),"?_??",".csv"));
+            camera_fname = fullfile(fpath,strcat(animalid,"_CameraLogger_",timestamp(1:end-4),"?_??",".csv"));
+            licks_fname = fullfile(fpath,strcat(animalid,"_JuiceLogger_",timestamp(1:end-4),"?_??",".csv"));
+            eye_left_vid_fname = fullfile(dlc_directory,strcat(animalid,"_E_L_",timestamp(1:end-4),"?_??",parameters.dlc_model_name,"_labeled.mp4"));
+            eye_right_vid_fname = fullfile(dlc_directory,strcat(animalid,"_E_R_",timestamp(1:end-4),"?_??",parameters.dlc_model_name,"_labeled.mp4"));
+            head_left_vid_fname = fullfile(fpath,strcat(animalid,"_H_L_",timestamp(1:end-4),"?_??",".mp4"));
+            head_right_vid_fname = fullfile(fpath,strcat(animalid,"_H_R_",timestamp(1:end-4),"?_??",".mp4"));
     
             eye_left_dlc_fname = dir(eye_left_dlc_fname);
-            eye_left_dlc_fname = strcat(fpath,eye_left_dlc_fname(1).name);
+            eye_left_dlc_fname = strcat(dlc_directory,'\',eye_left_dlc_fname(1).name);
             eye_right_dlc_fname = dir(eye_right_dlc_fname);
-            eye_right_dlc_fname = strcat(fpath,eye_right_dlc_fname(1).name);
-            imu_fname = dir(imu_fname);
-            imu_fname = strcat(fpath,imu_fname(1).name);
+            eye_right_dlc_fname = strcat(dlc_directory,'\',eye_right_dlc_fname(1).name);
+            imu_fname = dir(imu_fname)
+            imu_fname = strcat(fpath,imu_fname(1).name)
             camera_fname = dir(camera_fname);
             camera_fname = strcat(fpath,camera_fname(1).name);
             licks_fname = dir(licks_fname);
             licks_fname = strcat(fpath,licks_fname(1).name);
             eye_left_vid_fname = dir(eye_left_vid_fname);
-            eye_left_vid_fname = strcat(fpath,eye_left_vid_fname(1).name);
+            eye_left_vid_fname = strcat(dlc_directory,'\',eye_left_vid_fname(1).name);
             eye_right_vid_fname = dir(eye_right_vid_fname);
-            eye_right_vid_fname = strcat(fpath,eye_right_vid_fname(1).name);
-            if plotting_params.make_imu_videos
-                head_left_vid_fname = dir(head_left_vid_fname);
-                head_left_vid_fname = strcat(fpath,head_left_vid_fname(1).name);
-                head_right_vid_fname = dir(head_right_vid_fname);
-                head_right_vid_fname = strcat(fpath,head_right_vid_fname(1).name);
+            eye_right_vid_fname = strcat(dlc_directory,'\',eye_right_vid_fname(1).name);
+            if plotting_params.make_imu_videos || plotting_params.make_imu_videos_clean
+                try
+                    head_left_vid_fname = dir(head_left_vid_fname);
+                    head_left_vid_fname = strcat(fpath,head_left_vid_fname(1).name);
+                    head_right_vid_fname = dir(head_right_vid_fname);
+                    head_right_vid_fname = strcat(fpath,head_right_vid_fname(1).name);
+                catch
+                    continue;
+                end
             end
     
     
@@ -219,11 +261,11 @@ plotting_params.num_saccades_to_plot = 10;
             end
             if isempty(readtable(licks_fname,'NumHeaderLines',1))
                 disp("Lick sensor file is empty")
-                continue;
+                % continue;
             end
             if dateshift(date,'start','day') == dateshift(datetime(2024,11,13),'start', 'day')
                 disp("Lick file is weird for this day")
-                continue;
+                % continue;
             end
             if ~isfile(eye_left_vid_fname) && (plotting_params.make_imu_videos)
                 disp(strcat("No left eye DLC video file found (with filename ",eye_left_vid_fname,")"))
@@ -241,15 +283,17 @@ plotting_params.num_saccades_to_plot = 10;
                     continue;
                 end
             end
-            eye_left_vidObj = VideoReader(eye_left_vid_fname);
-            eye_right_vidObj = VideoReader(eye_right_vid_fname);
-            if ~isfile(head_left_vid_fname) && (plotting_params.make_imu_videos)
+            if plotting_params.make_imu_videos || plotting_params.make_imu_videos_clean
+                eye_left_vidObj = VideoReader(eye_left_vid_fname);
+                eye_right_vidObj = VideoReader(eye_right_vid_fname);
+            end
+            if ~isfile(head_left_vid_fname) && (plotting_params.make_imu_videos || plotting_params.make_imu_videos_clean)
                 disp(strcat("No left head video file found (with filename ",head_left_vid_fname,")"))
             end
-            if ~isfile(head_right_vid_fname) && (plotting_params.make_imu_videos)
+            if ~isfile(head_right_vid_fname) && (plotting_params.make_imu_videos || plotting_params.make_imu_videos_clean)
                 disp(strcat("No right head video file found (with filename ",head_right_vid_fname,")"))
             end
-            if plotting_params.make_imu_videos
+            if plotting_params.make_imu_videos || plotting_params.make_imu_videos_clean
                 head_left_vidObj = VideoReader(head_left_vid_fname);
                 head_right_vidObj = VideoReader(head_right_vid_fname);
             end
@@ -274,6 +318,8 @@ plotting_params.num_saccades_to_plot = 10;
                 imu=table2array(imu(2:end,1:end-1));
             end
     
+            file_database_stats.mean_imu(foldernum) = mean(imu(:,1:3),"all",'omitnan');
+
             % load cameraLogger file (for converting lick files to same timescale as DLC files
             cameraT = readtable(camera_fname,"NumHeaderLines",1);
             %calculate framerate from cameraLogger file
@@ -318,9 +364,13 @@ plotting_params.num_saccades_to_plot = 10;
     
     
             % make sure that DLC, IMU and cameraLogger files are the same length
+            minlength = min([length(T),length(imu),length(cameraT)]);
+            file_database_stats.dlc_length(foldernum) = length(T);
+            file_database_stats.imu_length(foldernum) = length(imu);
+            file_database_stats.camera_length(foldernum) = length(cameraT);
+
             if length(T)~=length(imu) | length(T)~=length(cameraT)
                 fprintf("All files do not have the same number of data points (eye DLC = %d, IMU = %d, cameraLogger = %d)\n",length(T),length(imu),length(cameraT))
-                minlength = min([length(T),length(imu),length(cameraT)]);
                 fprintf("Removing %d extra data points from eye DLC files, continuing\n",length(T)-minlength)
                 fprintf("Removing %d extra data points from IMU file, continuing\n",length(imu)-minlength)
                 fprintf("Removing %d extra data points from cameraLogger file, continuing\n",length(cameraT)-minlength)
@@ -331,10 +381,15 @@ plotting_params.num_saccades_to_plot = 10;
             
             imu = imu-mean(imu,1);
     
-            % load/format licking data (licking = licking onset/offset times as TRUE/FALSE)
+            % load/format licking data (licking = licking onset/offset times as TRUE/FALSE) 
             licktable = readtable(licks_fname,'NumHeaderLines',1);
-            licks_idx = table2array(licktable(:,1));
-            licks_TF=table2array(licktable(:,3));
+            try
+                licks_idx = table2array(licktable(:,1));
+                licks_TF=table2array(licktable(:,3));
+            catch
+                licks_idx = [];
+                licks_TF = [];
+            end
             licks_frame = zeros(length(licks_idx),1);
             for i = 1:length(licks_idx)
                 [minval,closestidx]=min(abs(cameraT-licks_idx(i)));
@@ -359,6 +414,7 @@ plotting_params.num_saccades_to_plot = 10;
     
             ts=0:1/parameters.framerate:(length(T)-1)/parameters.framerate; %set up timestamps (in sec) to use for plotting
             ts_mins=ts/parameters.framerate; %set up timestamps (in min) to use for plotting
+            file_database_stats.session_duration(foldernum) = max(ts_mins);
         % catch
         %     disp(strcat("Something went wrong with loading the files/data from ",filename,")"))
         %     continue;
@@ -461,7 +517,12 @@ plotting_params.num_saccades_to_plot = 10;
         end
         if any(means_l(1:4) < 0.9) || any(means_l([5,6,7,8,9,10,12]) < 0.95) || any(means_l(11) < 0.9)
             disp("The DLC tracking data for the left eye does not meet the likelihood criteria")
+            file_database_stats.dlc_likelihood_criteria_l(foldernum) = 0;
+        else
+            file_database_stats.dlc_likelihood_criteria_l(foldernum) = 1;
         end
+        file_database_stats.dlc_likelihood_mean_l_eye(foldernum) = mean(means_l(1:4));
+        file_database_stats.dlc_likelihood_mean_l_pupil(foldernum) = mean(means_l(5:12));
 
         means_r = zeros(12,1);
         for i=3:3:36
@@ -469,8 +530,13 @@ plotting_params.num_saccades_to_plot = 10;
         end
         if any(means_r(1:4) < 0.9) || any(means_r([5,6,7,8,9,10,12]) < 0.95) || any(means_r(11) < 0.9)
             disp("The DLC tracking data for the right eye does not meet the likelihood criteria")
-        end
-        
+            file_database_stats.dlc_likelihood_criteria_r(foldernum) = 0;
+        else
+            file_database_stats.dlc_likelihood_criteria_r(foldernum) = 1;
+        end        
+        file_database_stats.dlc_likelihood_mean_r_eye(foldernum) = mean(means_r(1:4));
+        file_database_stats.dlc_likelihood_mean_r_pupil(foldernum) = mean(means_r(5:12));
+
         dlc_likelihood_table.filename(filecount) = {filename};
         dlc_likelihood_table.likelihoods(filecount,:) = [means_l',means_r'];
 
@@ -493,7 +559,12 @@ plotting_params.num_saccades_to_plot = 10;
                 end
             end
         end
-    
+
+        T_l = T(:,:,1);
+        T_r = T(:,:,2);
+        file_database_stats.dlc_percent_good_l(foldernum) = sum(~isnan(T_l(:,:)),'all')/numel(T_l);
+        file_database_stats.dlc_percent_good_r(foldernum) = sum(~isnan(T_r(:,:)),'all')/numel(T_r);
+
         
         % if plotting_params.make_saccade_processing_plots % make plots showing the dlc/saccade data at different steps in the cleaning/preprocessing process
         %     %%%make saccade processing plot 2 - likelihoods for each keypoint now that low likelihoods have been removed
@@ -855,6 +926,7 @@ plotting_params.num_saccades_to_plot = 10;
         ix = unique([ix_cell{1}' ix_cell{2}']);
 
         ix = ix(ix<length(T)-round(parameters.framerate) & ix>round(parameters.framerate));
+
         
         % combine1 = find((dl(ix+1,1)>parameters.saccade_thresh/2 | dl(ix-1,1)>parameters.saccade_thresh/2)&(dl_raw(ix+1,1)>parameters.saccade_thresh/2 | dl_raw(ix-1,1)>parameters.saccade_thresh/2));
         % combine2 = find((dl(ix+1,2)>parameters.saccade_thresh/2 | dl(ix-1,2)>parameters.saccade_thresh/2)&(dl_raw(ix+1,2)>parameters.saccade_thresh/2 | dl_raw(ix-1,2)>parameters.saccade_thresh/2));
@@ -898,6 +970,7 @@ plotting_params.num_saccades_to_plot = 10;
 
 
         if isempty(ix)
+            disp("No saccades detected")
             continue;
         end
 
@@ -1012,8 +1085,15 @@ plotting_params.num_saccades_to_plot = 10;
         saccade_imu_table.sac_mag = max(saccade_imu_table{:,["left_mag","right_mag"]},[],2);
         ix = saccade_imu_table.saccade_frame;
     
-        
+        file_database_stats.num_saccades(foldernum) = length(ix);
+
+
         %% save imu info in saccade imu table
+        file_database_stats.max_imu_ts(foldernum) = max(imu_ts);
+        if max(imu_ts)>100000000
+            disp("IMU timestamps are weird, skip this file")
+            continue;
+        end
 
         stds = zeros(0,3);
         binsz=600;
@@ -1031,10 +1111,7 @@ plotting_params.num_saccades_to_plot = 10;
         % median_std = [0.000670566383685815, 0.000639472666829974, 0.000844034025101936]; %median stdevs across all the recordings
         % median_std = [0.000430634819488357, 0.000385643857544995, 0.000524476925645335]; %median stdevs across all the recordings (5-20Hz filtered imu)
 
-        if max(imu_ts)>1000000000
-            disp("IMU timestamps are weird, skip this file")
-            continue;
-        end
+
 
         T = imu_ts(end) - imu_ts(1); % Total time
         N = length(imu_ts); % Number of samples
@@ -1833,12 +1910,13 @@ plotting_params.num_saccades_to_plot = 10;
             % saccades_to_plot = saccades_to_plot(saccade_imu_table.head_movement==1);
 
             for j = saccades_to_plot
-                % try
+                try
                     sac = ix(j);
                     plot_window_size = round(parameters.framerate*2);
                     plot_window = sac-plot_window_size:sac+plot_window_size;
                     plot_ts = (plot_window-sac)/parameters.framerate;
-                    animate_window_size = round(parameters.framerate);
+                    % animate_window_size = round(parameters.framerate);
+                    animate_window_size = round(parameters.framerate/4);
                     animate_window = sac-animate_window_size:sac+animate_window_size;
                     animate_ts= (-animate_window_size:animate_window_size)/parameters.framerate;
     
@@ -1855,8 +1933,8 @@ plotting_params.num_saccades_to_plot = 10;
                         eye_vidObj = eye_left_vidObj;
                         eye_idx = 1;
                         other_eye_idx = 2;
-                        % frames_head = read(head_right_vidObj,[sac-animate_window_size sac+animate_window_size]); %TEMPORARY TESTING BC THE CAMERA FRAMES ARE 1 OFF FROM EACHOTHER (SHOULD CHECK THIS IS HOW IT WORKS IN BONSAI)
-                        % head_vidObj = head_right_vidObj;
+                        frames_head = read(head_right_vidObj,[sac-animate_window_size sac+animate_window_size]); %TEMPORARY TESTING BC THE CAMERA FRAMES ARE 1 OFF FROM EACHOTHER (SHOULD CHECK THIS IS HOW IT WORKS IN BONSAI)
+                        head_vidObj = head_right_vidObj;
                         frames_head = read(head_left_vidObj,[sac-animate_window_size sac+animate_window_size]); %TEMPORARY TESTING BC THE CAMERA FRAMES ARE 1 OFF FROM EACHOTHER (SHOULD CHECK THIS IS HOW IT WORKS IN BONSAI)
                         head_vidObj = head_left_vidObj;
                     else
@@ -1865,8 +1943,8 @@ plotting_params.num_saccades_to_plot = 10;
                         eye_vidObj = eye_right_vidObj;
                         eye_idx = 2;
                         other_eye_idx = 1;
-                        % frames_head = read(head_left_vidObj,[sac-animate_window_size sac+animate_window_size]); %TEMPORARY TESTING BC THE CAMERA FRAMES ARE 1 OFF FROM EACHOTHER (SHOULD CHECK THIS IS HOW IT WORKS IN BONSAI)
-                        % head_vidObj = head_left_vidObj;
+                        frames_head = read(head_left_vidObj,[sac-animate_window_size sac+animate_window_size]); %TEMPORARY TESTING BC THE CAMERA FRAMES ARE 1 OFF FROM EACHOTHER (SHOULD CHECK THIS IS HOW IT WORKS IN BONSAI)
+                        head_vidObj = head_left_vidObj;
                         frames_head = read(head_right_vidObj,[sac-animate_window_size sac+animate_window_size]); %TEMPORARY TESTING BC THE CAMERA FRAMES ARE 1 OFF FROM EACHOTHER (SHOULD CHECK THIS IS HOW IT WORKS IN BONSAI)
                         head_vidObj = head_right_vidObj;
                     end
@@ -1876,24 +1954,24 @@ plotting_params.num_saccades_to_plot = 10;
                     figure('position',[0 0 1920 1080]);
     
                     % set up lick plotting coordinates
-                    lick_diff = diff(licking(sac-plot_window_size+1:sac+plot_window_size))';
-                    licks_on = find(lick_diff==1);
-                    licks_off = find(lick_diff==-1);
-                    if ~isempty(licks_on) || ~isempty(licks_off)
-                        if isempty(licks_on) && isscalar(licks_off)
-                            licks_on = 1;
-                        end
-                        if isempty(licks_off) && isscalar(licks_on)
-                            licks_off = length(plot_ts);
-                        end
-                        if licks_on(1)>licks_off(1)
-                            licks_on = [1 licks_on];
-                        end
-                        if licks_on(end)>licks_off(end)
-                            licks_off = [licks_off length(plot_ts)];
-                        end
-                    end
-                    lick_plot_coords = [licks_on;licks_off];
+                    % lick_diff = diff(licking(sac-plot_window_size+1:sac+plot_window_size))';
+                    % licks_on = find(lick_diff==1);
+                    % licks_off = find(lick_diff==-1);
+                    % if ~isempty(licks_on) || ~isempty(licks_off)
+                    %     if isempty(licks_on) && isscalar(licks_off)
+                    %         licks_on = 1;
+                    %     end
+                    %     if isempty(licks_off) && isscalar(licks_on)
+                    %         licks_off = length(plot_ts);
+                    %     end
+                    %     if licks_on(1)>licks_off(1)
+                    %         licks_on = [1 licks_on];
+                    %     end
+                    %     if licks_on(end)>licks_off(end)
+                    %         licks_off = [licks_off length(plot_ts)];
+                    %     end
+                    % end
+                    % lick_plot_coords = [licks_on;licks_off];
     
                     %set up all plots
                     subplot(2,3,1); hold on; %eye video
@@ -1935,14 +2013,14 @@ plotting_params.num_saccades_to_plot = 10;
                     yl = ylim;
                     y = yl(1);
                     h = yl(2) - yl(1);
-                    for i=1:size(lick_plot_coords,2)
-                        x = plot_ts(lick_plot_coords(1,i));
-                        w = plot_ts(lick_plot_coords(2,i)) - plot_ts(lick_plot_coords(1,i));
-                        if w<0
-                            continue;
-                        end
-                        rectangle('position', [x y w h],"FaceColor",'b',"FaceAlpha",0.2,'edgecolor', 'none');
-                    end
+                    % for i=1:size(lick_plot_coords,2)
+                    %     x = plot_ts(lick_plot_coords(1,i));
+                    %     w = plot_ts(lick_plot_coords(2,i)) - plot_ts(lick_plot_coords(1,i));
+                    %     if w<0
+                    %         continue;
+                    %     end
+                    %     rectangle('position', [x y w h],"FaceColor",'b',"FaceAlpha",0.2,'edgecolor', 'none');
+                    % end
     
                     subplot(2,3,5); hold on; %IMU accel x/y/z
                     offset = mean(std(imu(:,1:3))*10);
@@ -1962,14 +2040,14 @@ plotting_params.num_saccades_to_plot = 10;
                     legend([p4 p5 p6],{"accel x","accel y","accel z"})
                     y = yl(1);
                     h = yl(2) - yl(1);
-                    for i=1:size(lick_plot_coords,2)
-                        x = plot_ts(lick_plot_coords(1,i));
-                        w = plot_ts(lick_plot_coords(2,i)) - plot_ts(lick_plot_coords(1,i));
-                        if w<0
-                            continue;
-                        end
-                        rectangle('position', [x y w h],"FaceColor",'b',"FaceAlpha",0.2,'edgecolor', 'none');
-                    end
+                    % for i=1:size(lick_plot_coords,2)
+                    %     x = plot_ts(lick_plot_coords(1,i));
+                    %     w = plot_ts(lick_plot_coords(2,i)) - plot_ts(lick_plot_coords(1,i));
+                    %     if w<0
+                    %         continue;
+                    %     end
+                    %     rectangle('position', [x y w h],"FaceColor",'b',"FaceAlpha",0.2,'edgecolor', 'none');
+                    % end
     
                     subplot(2,3,6); hold on; %IMU gyro x/y/z
                     offset = mean(std(imu(:,4:6))*10);
@@ -1986,15 +2064,15 @@ plotting_params.num_saccades_to_plot = 10;
                     legend([p7 p8 p9],{"gyro x","gyro y","gyro z"})
                     y = yl(1);
                     h = yl(2) - yl(1);
-                    for i=1:size(lick_plot_coords,2)
-                        x = plot_ts(lick_plot_coords(1,i));
-                        w = plot_ts(lick_plot_coords(2,i)) - plot_ts(lick_plot_coords(1,i));
-                        if w<0
-                            continue;
-                        end
-                        rectangle('position', [x y w h],"FaceColor",'b',"FaceAlpha",0.2,'edgecolor', 'none');
-                    end
-    
+                    % for i=1:size(lick_plot_coords,2)
+                    %     x = plot_ts(lick_plot_coords(1,i));
+                    %     w = plot_ts(lick_plot_coords(2,i)) - plot_ts(lick_plot_coords(1,i));
+                    %     if w<0
+                    %         continue;
+                    %     end
+                    %     rectangle('position', [x y w h],"FaceColor",'b',"FaceAlpha",0.2,'edgecolor', 'none');
+                    % end
+                    % 
     
                     sgtitle([filename,' (Sac. mag. (L): ',num2str(saccade_imu_table.left_mag(j),'%6.2f'),', (R): ',num2str(saccade_imu_table.right_mag(j),'%6.2f'),' Frame num: ',num2str(sac),')'],'Interpreter','none');
     
@@ -2084,9 +2162,9 @@ plotting_params.num_saccades_to_plot = 10;
                     end
                     close(saccadeVideo)
                     close all
-                % catch
-                %     continue;
-                % end
+                catch
+                    continue;
+                end
             end
         end
 
@@ -2261,9 +2339,180 @@ plotting_params.num_saccades_to_plot = 10;
 
         end
 
+        %% make cleaned up videos to show IMU and saccade for poster/presentations
+        if plotting_params.make_imu_videos_clean
+            if ~isfolder(imu_videos_clean_directory)
+                mkdir(imu_videos_clean_directory)
+            end
+            %read videos
+            eye_left_vidObj = VideoReader(eye_left_vid_fname);
+            eye_right_vidObj = VideoReader(eye_right_vid_fname);
+            head_left_vidObj = VideoReader(head_left_vid_fname);
+            head_right_vidObj = VideoReader(head_right_vid_fname);
+
+
+
+            if length(ix)>plotting_params.num_saccades_to_plot & plotting_params.plot_random_subset
+                saccades_to_plot = sort(randsample(length(ix),plotting_params.num_saccades_to_plot))';
+            else
+                saccades_to_plot = 1:length(ix);
+            end
+
+            for j = 1:length(saccades_to_plot)
+                sac = ix(saccades_to_plot(j));
+                plot_window = sac-round(parameters.framerate):sac+round(parameters.framerate);
+                plot_ts = (plot_window-sac)/parameters.framerate;
+                animate_window_size = round(parameters.framerate);
+                animate_ts= (-animate_window_size:animate_window_size)/parameters.framerate;
+
+                if max(plot_window)>length(imu)
+                    continue;
+                end
+
+                % if max(abs(processed_imu(sac-round(parameters.framerate):sac,:)./median_std),[],'all')<=2
+                %     continue;
+                % end
+
+                %saccadeVideo=VideoWriter(strjoin([imu_videos_clean_directory,filename,'_saccade',num2str(saccades_to_plot(j))]),'MPEG-4');
+                outName = [imu_videos_clean_directory filename '_saccade' num2str(saccades_to_plot(j)) '.mp4'];
+                saccadeVideo = VideoWriter(outName,'MPEG-4');
+               
+                
+                saccadeVideo.FrameRate = 20;
+                open(saccadeVideo);
+
+                if dl(sac,1) > dl(sac,2) || isnan(dl(sac,2))
+                    frames_eye = read(eye_left_vidObj,[sac-animate_window_size sac+animate_window_size]); %TEMPORARY TESTING BC THE CAMERA FRAMES ARE 1 OFF FROM EACHOTHER (SHOULD CHECK THIS IS HOW IT WORKS IN BONSAI)
+                    eye_vidObj = eye_left_vidObj;
+                    eye_idx = 1;
+                    frames_head = read(head_left_vidObj,[sac-animate_window_size sac+animate_window_size]); %TEMPORARY TESTING BC THE CAMERA FRAMES ARE 1 OFF FROM EACHOTHER (SHOULD CHECK THIS IS HOW IT WORKS IN BONSAI)
+                    head_vidObj = head_left_vidObj;
+                else
+                    frames_eye = read(eye_right_vidObj,[sac-animate_window_size+1 sac+animate_window_size+1]);
+                    frames_eye = flip(frames_eye,2);
+                    eye_vidObj = eye_right_vidObj;
+                    eye_idx = 2;
+                    frames_head = read(head_right_vidObj,[sac-animate_window_size sac+animate_window_size]); %TEMPORARY TESTING BC THE CAMERA FRAMES ARE 1 OFF FROM EACHOTHER (SHOULD CHECK THIS IS HOW IT WORKS IN BONSAI)
+                    head_vidObj = head_right_vidObj;
+                end
+
+                % if anynan(smoothed_x(plot_window,eye_idx)) || anynan(smoothed_y(plot_window,eye_idx))
+                %     continue;
+                % end
+
+                k=1;
+
+                fig = figure('position',[0 0 1200 900],"Color",'w');
+                tiledlayout(2,2,"TileSpacing","compact");
+
+                %set up all plots
+                ax1 = nexttile; hold on; %eye video
+                xlim([0 eye_vidObj.Width]); ylim([33 eye_vidObj.Height-33]);    
+                title("Eye View")
+                set(gca,'YTickLabel',[]);
+                set(gca,'XTickLabel',[]);
+                set(gca,'YTick',[]);
+                set(gca,'XTick',[]);
+
+                ax2 = nexttile; hold on; %pupil position
+                p1 = plot(plot_ts,smoothed_x(plot_window,eye_idx)-mean(smoothed_x(plot_window,eye_idx),"omitnan"),"LineWidth",1.25);
+                p2 = plot(plot_ts,smoothed_y(plot_window,eye_idx)-mean(smoothed_y(plot_window,eye_idx),"omitnan"),"LineWidth",1.25);
+                xlim([plot_ts(1) plot_ts(end)]);
+                bar1 = xline(0,'r',"LineWidth",1.25);
+                xline(0,'--k',"LineWidth",1.25)
+                ylabel("Degrees")
+                title("Pupil position")
+                colororder(ax2,"glow")
+                set(gca,'YTickLabel',[]);
+                set(gca,'XTickLabel',[-1 0 1]);
+                set(gca,'YTick',[]);
+                set(gca,'XTick',[-1 0 1]);
+                yl = ylim;
+                % rectangle("Position",[-0.5 yl(1) 0.5 yl(2)-yl(1)],'FaceColor',[0.6 0.6 0.6],"FaceAlpha",0.2,'LineStyle','none')
+                ylim(yl);
+
+                ax3 = nexttile; hold on; %head video of opposite side of face
+                title("Head View")
+                set(gca,'YTickLabel',[]);
+                set(gca,'XTickLabel',[]);
+                set(gca,'YTick',[]);
+                set(gca,'XTick',[]);
+
+                ax4 = nexttile; hold on; %IMU accel x/y/z
+                offset = mean(std(imu(:,1:3))*10);
+                p4 = plot(plot_ts,imu(plot_window,1)+offset,"LineWidth",1.25);
+                p5 = plot(plot_ts,imu(plot_window,2),"LineWidth",1.25);
+                p6 = plot(plot_ts,imu(plot_window,3)-offset,"LineWidth",1.25);
+                xlim([plot_ts(1) plot_ts(end)]);
+                yl = ylim;
+                bar7 = xline(0,'r',"LineWidth",1.25);
+                xline(0,'--k',"LineWidth",1.25)
+                xlabel("Time since saccade (sec)")
+                title("IMU - accelerometer")
+                ylabel("Gs")
+                colororder(ax4,["#2519b0" "r" "#016e13"])
+                set(gca,'YTickLabel',[]);
+                set(gca,'XTickLabel',[-1 0 1]);
+                set(gca,'YTick',[]);
+                set(gca,'XTick',[-1 0 1]);
+                yl = ylim;
+                % rectangle("Position",[-0.5 yl(1) 0.5 yl(2)-yl(1)],'FaceColor',[0.6 0.6 0.6],"FaceAlpha",0.2,'LineStyle','none')
+                ylim(yl);
+
+                for i = sac-animate_window_size:sac+round(animate_window_size/2)
+                    nexttile(1); hold on; %eye video
+                    frame = frames_eye(:,:,:,k);
+                    imshow(frame); axis on; hold on;
+                    % xlabel('Pixels x'); ylabel('Pixels y');
+                    current_axis = gca;
+                    if ~anynan(x_pupil(i,:,eye_idx)) && ~anynan(y_pupil(i,:,eye_idx))
+                        ellipse_t = fit_ellipse(x_pupil(i,:,eye_idx)',y_pupil(i,:,eye_idx)',current_axis);
+
+                    end        
+                    plot(center_x_rawcoords(i-1,eye_idx),center_y_rawcoords(i-1,eye_idx),'r.','MarkerSize',25);
+                    plot(center_x_rawcoords(i,eye_idx),center_y_rawcoords(i,eye_idx),'g.','MarkerSize',25);
+
+                    nexttile(2); hold on; %pupil position
+                    set(bar1,"Visible","off")
+                    bar1 = xline(animate_ts(k),'r',"LineWidth",1.25);
+
+                    nexttile(3); hold on; %head video
+                    frame = frames_head(:,:,:,k);
+                    imshow(frame); axis on; hold on;
+                    xlim([0 head_vidObj.Width]); ylim([0 head_vidObj.Height]); 
+
+                    nexttile(4); hold on; %IMU accel x
+                    set(bar7,"Visible","off")
+                    bar7 = xline(animate_ts(k),'r',"LineWidth",1.25);
+
+                    k=k+1;
+                    fontsize(fig,16,"points")
+                    % fontname(fig, "Times New Roman")
+
+                    frame = getframe(gcf);
+                    writeVideo(saccadeVideo,frame);
+                    % if sum(ismember(i-3:i+1,ix))>0
+                    %     pause;
+                    %     % pause(0.5)
+                    % end
+                end
+                close(saccadeVideo)
+                close all
+            end
+        end
+
         %% make summary plots per day
 
 
+
+
+        file_database_stats.successfully_processed(foldernum) = 1;
+        if exist('saccade_imu_population_table','var')
+            save(strcat(saccade_imu_table_fname,'.mat'),'saccade_imu_population_table')
+        end
+        if exist('file_database_stats','var')
+            save(strcat(saccade_imu_table_fname,'.mat'),'file_database_stats')
+        end
     end
 
     %% concatenate mass table of all saccade/imu information for all sessions in folder
@@ -2274,11 +2523,11 @@ plotting_params.num_saccades_to_plot = 10;
         save(strcat(dlc_likelihood_table_fname,'.mat'),'dlc_likelihood_table')
         fig = figure;
         bar(dlc_likelihood_table.likelihoods)
-        savefile = strcat(figures_save_directory,filename,'_dlc_likelihoods_by_day.png');
+        savefile = strcat(figures_save_directory,'dlc_likelihoods_by_day.png');
         saveas(fig,savefile)    
         fig = figure;
         bar(dlc_likelihood_table.likelihoods')
-        savefile = strcat(figures_save_directory,filename,'_dlc_likelihoods_by_keypoint.png');
+        savefile = strcat(figures_save_directory,'dlc_likelihoods_by_keypoint.png');
         saveas(fig,savefile)    
 
         fig = figure;
@@ -2298,7 +2547,7 @@ plotting_params.num_saccades_to_plot = 10;
         bar(mean(dlc_likelihood_table.likelihoods(:,13:24),2))
         ylim([0.8 1])
         title("Right eye by day")
-        savefile = strcat(figures_save_directory,filename,'_dlc_likelihoods_means.png');
+        savefile = strcat(figures_save_directory,'dlc_likelihoods_means.png');
         saveas(fig,savefile)   
 
         % fig = figure;
@@ -2320,4 +2569,4 @@ plotting_params.num_saccades_to_plot = 10;
         % title("Right eye by day")
 
     end
-end
+%end

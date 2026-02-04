@@ -1,8 +1,8 @@
-function EyeHeadCouplingAnalysis_population_streamlined()
+%function EyeHeadCouplingAnalysis_populationPlots()
 
 close all
 
-path = "C:\Users\emk263\Erin\Data\Eye_head_coupling\Analysis\analysis_testingnewmodel_rat";
+path = fullfile(cd,'analysis_final_testingplotting');
 load(fullfile(path, "saccade_imu_population_table.mat"),'saccade_imu_population_table')
 
 parameters.framerate = 61; %EK changed 7/1/25, this is roughly the average across all the sessions
@@ -560,4 +560,4 @@ for iFig = 1:length(FigList)
   saveas(FigHandle, strcat(path, '\fig_',FigName,'.png'));
 end
 
-end
+%end
