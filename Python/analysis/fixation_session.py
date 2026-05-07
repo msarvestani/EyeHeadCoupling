@@ -61,7 +61,7 @@ def main(session_id: str) -> pd.DataFrame:
         plt.close(fig_saccades)
 
 
-    max_interval_s = float(config.params.get("max_interval_s", 1.0))
+    max_interval_fixations = float(config.params.get("max_interval_fixations", 1.0))
 
     (
         pairs_cf,
@@ -81,7 +81,7 @@ def main(session_id: str) -> pd.DataFrame:
         cue_time=data.cue_time,
         go_frame=data.go_frame,
         go_time=data.go_time,
-        max_interval_s=max_interval_s,
+        max_interval_fixations=max_interval_fixations,
         results_dir=config.results_dir,
         animal_id=config.animal_id,
         eye_name=config.eye_name,

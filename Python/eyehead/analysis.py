@@ -826,7 +826,7 @@ def sort_saccades(
 def plot_fixation_intervals_by_trial(
     pairs_dt: np.ndarray,
     valid_trials: np.ndarray,
-    max_interval_s: float,
+    max_interval_fixations: float,
     results_dir: Optional[Path] = None,
     animal_id: Optional[str] = None,
     eye_name: str = "Eye",
@@ -839,8 +839,8 @@ def plot_fixation_intervals_by_trial(
     pairs_dt : array-like
         Cue→go intervals in seconds ordered by cue time.
     valid_trials : array-like of bool
-        Mask indicating which trials satisfy ``max_interval_s``.
-    max_interval_s : float
+        Mask indicating which trials satisfy ``max_interval_fixations``.
+    max_interval_fixations : float
         Maximum allowed interval used to determine ``valid_trials``.
     results_dir : Path, optional
         If provided, the generated figure is saved in this directory.
@@ -861,7 +861,7 @@ def plot_fixation_intervals_by_trial(
 
     fig, ax = plt.subplots(figsize=(6, 4))
     ax.set_xlabel("Trial index")
-    ax.set_ylabel("Cue→go interval (s)")
+    ax.set_ylabel("Cue→go interval (s): \nTime until fixation and going to next trial")
 
     total_trials = int(intervals.size)
     valid_count = int(valid.sum()) if total_trials > 0 else 0
@@ -869,7 +869,7 @@ def plot_fixation_intervals_by_trial(
     if total_trials == 0:
         ax.set_title(
             "Cue→Go intervals "
-            f"(max={max_interval_s:.2f}s)\nNo paired trials available"
+            f"(max={max_interval_fixations:.2f}s)\nNo paired trials available"
         )
         fig.tight_layout()
         return fig, ax
@@ -897,11 +897,11 @@ def plot_fixation_intervals_by_trial(
         )
 
     ax.axhline(
-        max_interval_s,
+        max_interval_fixations,
         color="0.3",
         linestyle="--",
         linewidth=1.2,
-        label=f"Max interval ({max_interval_s:.2f}s)",
+        label=f"Max interval ({max_interval_fixations:.2f}s)",
     )
 
     ax.set_xlim(-0.5, total_trials - 0.5 if total_trials > 0 else 0.5)
@@ -914,7 +914,7 @@ def plot_fixation_intervals_by_trial(
 
     ax.set_title(
         "Cue→Go intervals "
-        f"(max={max_interval_s:.2f}s)\n{summary}"
+        f"(max={max_interval_fixations:.2f}s)\n{summary}"
     )
 
     handles, _ = ax.get_legend_handles_labels()
@@ -946,7 +946,7 @@ def plot_eye_fixations_between_cue_and_go_by_trial(
     cue_time: np.ndarray,
     go_frame: np.ndarray,
     go_time: np.ndarray,
-    max_interval_s: float = 1.0,
+    max_interval_fixations: float = 1.0,
     color_all: str = "0.85",
     s_all: int = 2,
     alpha_all: float = 0.25,
@@ -982,7 +982,7 @@ def plot_eye_fixations_between_cue_and_go_by_trial(
         Timestamps for ``eye_pos``.
     cue_frame, cue_time, go_frame, go_time : array-like
         Frame numbers and timestamps of cue and go events.
-    max_interval_s : float, default 1.0
+    max_interval_fixations : float, default 1.0
         Maximum allowed cue→go interval for a trial to be considered valid.
     color_all, s_all, alpha_all :
         Matplotlib styling for all eye samples.
@@ -1011,7 +1011,7 @@ def plot_eye_fixations_between_cue_and_go_by_trial(
     pairs_dt : ndarray of float
         Time difference between paired events (go - cue).
     valid_trials : ndarray of bool
-        Mask indicating which pairs fall within ``max_interval_s``.
+        Mask indicating which pairs fall within ``max_interval_fixations``.
     fig, ax : Figure and Axes, optional
         Handles to the generated scatter plot when ``plot`` is ``True``;
         otherwise ``None``.
@@ -1061,7 +1061,7 @@ def plot_eye_fixations_between_cue_and_go_by_trial(
     pairs_gf = np.asarray(pairs_gf, dtype=int)
     pairs_dt = np.asarray(pairs_dt)
 
-    valid_trials = (pairs_dt >= 0) & (pairs_dt < max_interval_s)
+    valid_trials = (pairs_dt >= 0) & (pairs_dt < max_interval_fixations)
     total_trials = valid_trials.size
     valid_count = int(valid_trials.sum())
     valid_fraction = valid_count / total_trials if total_trials > 0 else np.nan
@@ -1111,13 +1111,13 @@ def plot_eye_fixations_between_cue_and_go_by_trial(
             ratio_text = "0/0 (n/a)"
         ax.set_title(
             "Eye positions between cue and go "
-            f"(<{max_interval_s:.2f}s)\nValid trials: {ratio_text}"
+            f"(<{max_interval_fixations:.2f}s)\nValid trials: {ratio_text}"
         )
 
         interval_fig, _ = plot_fixation_intervals_by_trial(
             pairs_dt=pairs_dt,
             valid_trials=valid_trials,
-            max_interval_s=max_interval_s,
+            max_interval_fixations=max_interval_fixations,
             results_dir=results_dir,
             animal_id=animal_id,
             eye_name=eye_name,
