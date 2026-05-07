@@ -29,6 +29,7 @@ def plot_pericue_path_length(
     eye_pos: np.ndarray,
     cue_times: np.ndarray,
     *,
+    valid_trials: np.ndarray | None = None,
     pre_s: float = 2.0,
     post_s: float = 10.0,
     bin_s: float = 0.25,
@@ -43,6 +44,8 @@ def plot_pericue_path_length(
     eye_ts = np.asarray(eye_timestamp).ravel()
     xy = np.asarray(eye_pos)[:, :2]
     cue_ts = np.asarray(cue_times).ravel()
+    if valid_trials is not None:
+        cue_ts = cue_ts[np.asarray(valid_trials, dtype=bool)]
 
     bin_edges = np.arange(-pre_s, post_s + bin_s / 2, bin_s)
     bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
@@ -83,7 +86,7 @@ def plot_pericue_path_length(
     ax.set_ylabel("Mean path length (deg)")
     ax.set_title(
         f"Eye path length around cue onset  "
-        f"(n={n_trials} trials, {bin_s:.2f} s bins)"
+        f"(n={n_trials} valid trials, {bin_s:.2f} s bins)"
     )
     ax.legend()
     fig.tight_layout()
@@ -199,6 +202,7 @@ def main(session_id: str) -> pd.DataFrame:
         eye_timestamp=data.eye_timestamp,
         eye_pos=saccades["eye_pos"],
         cue_times=data.cue_time,
+        valid_trials=valid_trials,
     )
     eye_part = (config.eye_name or "Eye").replace(" ", "")
     id_part = str(config.animal_id).strip() if config.animal_id is not None else ""
