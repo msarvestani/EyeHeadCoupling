@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import MISSING, dataclass, field, fields
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
@@ -38,6 +39,34 @@ class SessionConfig:
             return self.params[item]
         except KeyError as exc:  # pragma: no cover - error path
             raise AttributeError(item) from exc
+
+
+def _path_parts(p: str) -> List[str]:
+    """Split a path string on both forward and backward slashes."""
+    return [part for part in re.split(r"[/\\]", p) if part]
+
+
+def _parse_animal_id_from_folder(folder_name: str) -> Optional[str]:
+    """Extract animal_id from a folder name like 'Tsh001_2025-07-08T15_04_12'."""
+    match = re.match(r"^(.+?)_\d{4}-\d{2}-\d{2}", folder_name)
+    return match.group(1) if match else None
+
+
+def _parse_animal_name_from_path(session_path: str) -> Optional[str]:
+    """Extract animal_name from a session path whose parent folder is like 'TSh01_Paris_server'."""
+    parts = _path_parts(session_path)
+    if len(parts) < 2:
+        return None
+    parent = parts[-2]
+    stripped = re.sub(r"_server$", "", parent, flags=re.IGNORECASE)
+    name_parts = stripped.split("_")
+    return name_parts[-1] if len(name_parts) >= 2 else None
+
+
+def _parse_date_from_path(session_path: str) -> Optional[str]:
+    """Extract date string (YYYY-MM-DD) from a session path."""
+    match = re.search(r"\d{4}-\d{2}-\d{2}", session_path)
+    return match.group() if match else None
 
 
 def load_session(session_id: str) -> SessionConfig:
@@ -93,6 +122,7 @@ def load_session(session_id: str) -> SessionConfig:
         "eye_name",
         "animal_name",
         "animal_id",
+        "date",
         "ttl_freq",
         "calibration_factor",
         "folder_path",
@@ -103,6 +133,17 @@ def load_session(session_id: str) -> SessionConfig:
     session_params: Dict[str, Any] = data.get("params") or {}
     params = {k: v for k, v in data.items() if k not in known_keys}
     params.update(session_params)
+
+    # Derive animal_id, animal_name, and date from session_path when not
+    # explicitly provided in the manifest, so old code using these fields
+    # continues to work without them being listed in the manifest.
+    folder_name = _path_parts(folder)[-1] if folder else ""
+    animal_id = data.get("animal_id") or _parse_animal_id_from_folder(folder_name)
+    animal_name = data.get("animal_name") or _parse_animal_name_from_path(folder or "")
+    if "date" not in params:
+        derived_date = data.get("date") or _parse_date_from_path(folder or "")
+        if derived_date:
+            params["date"] = derived_date
 
     if "max_interval_s" not in params and default_max_interval is not None:
         params["max_interval_s"] = default_max_interval
@@ -132,8 +173,8 @@ def load_session(session_id: str) -> SessionConfig:
         results_dir=Path(results) if results else None,
         camera_side=data.get("camera_side"),
         eye_name=data.get("eye_name") or data.get("camera_side"),
-        animal_name=data.get("animal_name"),
-        animal_id=data.get("animal_id"),
+        animal_name=animal_name,
+        animal_id=animal_id,
 
         ttl_freq=data.get("ttl_freq"),
         calibration_factor=data.get("calibration_factor"),
@@ -257,7 +298,9 @@ def list_sessions_from_manifest(
                 continue
 
         if animal_name_lower is not None:
-            meta_animal = meta.get("animal_name")
+            meta_animal = meta.get("animal_name") or _parse_animal_name_from_path(
+                meta.get("session_path") or meta.get("folder_path") or ""
+            )
             if not meta_animal or meta_animal.lower() != animal_name_lower:
                 continue
 
