@@ -208,8 +208,12 @@ def plot_metric_trends(
 
             fix_y = data[fix_col].iloc[i]
             if pd.notna(fix_y):
+                session_date = data["session_date"].iloc[i]
+                date_label = ""
+                if pd.notna(session_date):
+                    date_label = session_date.strftime("%Y-%m-%d") + "\n"
                 ax.annotate(
-                    session_label,
+                    date_label + session_label,
 
                     xy=(order[i], fix_y),
                     xytext=(-6, 6),

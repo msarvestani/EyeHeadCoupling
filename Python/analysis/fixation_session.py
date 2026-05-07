@@ -24,6 +24,71 @@ from eyehead import (
 from eyehead.analysis import _filename_with_animal
 
 
+def plot_pericue_path_length(
+    eye_timestamp: np.ndarray,
+    eye_pos: np.ndarray,
+    cue_times: np.ndarray,
+    *,
+    pre_s: float = 2.0,
+    post_s: float = 10.0,
+    bin_s: float = 0.25,
+) -> plt.Figure:
+    """Plot mean total eye path length in bins aligned to cue onset.
+
+    Each bin's value is the sum of consecutive Euclidean step distances
+    within that bin, averaged across all trials that have a cue event.
+    Trials / bins with fewer than two eye samples contribute NaN and are
+    excluded from the mean and SEM.
+    """
+    eye_ts = np.asarray(eye_timestamp).ravel()
+    xy = np.asarray(eye_pos)[:, :2]
+    cue_ts = np.asarray(cue_times).ravel()
+
+    bin_edges = np.arange(-pre_s, post_s + bin_s / 2, bin_s)
+    bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+    n_bins = len(bin_centers)
+    n_trials = len(cue_ts)
+
+    trial_paths = np.full((n_trials, n_bins), np.nan)
+
+    for t_idx, ct in enumerate(cue_ts):
+        for b_idx in range(n_bins):
+            t0 = ct + bin_edges[b_idx]
+            t1 = ct + bin_edges[b_idx + 1]
+            a = np.searchsorted(eye_ts, t0, side="left")
+            b = np.searchsorted(eye_ts, t1, side="right")
+            if b - a < 2:
+                continue
+            seg = xy[a:b]
+            diffs = np.diff(seg, axis=0)
+            trial_paths[t_idx, b_idx] = np.sum(np.sqrt(np.sum(diffs ** 2, axis=1)))
+
+    n_valid = np.sum(~np.isnan(trial_paths), axis=0)
+    mean_path = np.nanmean(trial_paths, axis=0)
+    with np.errstate(invalid="ignore"):
+        sem_path = np.nanstd(trial_paths, axis=0, ddof=1) / np.sqrt(np.maximum(n_valid, 1))
+    sem_path[n_valid < 2] = np.nan
+
+    fig, ax = plt.subplots(figsize=(10, 4))
+    ax.axvline(0, color="0.35", linestyle="--", linewidth=1.2, label="Cue onset")
+    ax.fill_between(
+        bin_centers,
+        mean_path - sem_path,
+        mean_path + sem_path,
+        alpha=0.25,
+        color="steelblue",
+    )
+    ax.plot(bin_centers, mean_path, color="steelblue", linewidth=1.5)
+    ax.set_xlabel("Time relative to cue (s)")
+    ax.set_ylabel("Mean path length (deg)")
+    ax.set_title(
+        f"Eye path length around cue onset  "
+        f"(n={n_trials} trials, {bin_s:.2f} s bins)"
+    )
+    ax.legend()
+    fig.tight_layout()
+    return fig
+
 
 def main(session_id: str) -> pd.DataFrame:
     """Run fixation analysis for ``session_id``.
@@ -129,6 +194,22 @@ def main(session_id: str) -> pd.DataFrame:
 
         plt.show()
         plt.close(fig)
+
+    fig_pericue = plot_pericue_path_length(
+        eye_timestamp=data.eye_timestamp,
+        eye_pos=saccades["eye_pos"],
+        cue_times=data.cue_time,
+    )
+    eye_part = (config.eye_name or "Eye").replace(" ", "")
+    id_part = str(config.animal_id).strip() if config.animal_id is not None else ""
+    animal_label = config.animal_name or config.animal_id
+    stem_parts = [part for part in (id_part, eye_part, "pericue_path_length") if part]
+    stem = "_".join(stem_parts) if stem_parts else "pericue_path_length"
+    for ext in ("png", "svg"):
+        fname = _filename_with_animal(f"{stem}.{ext}", animal_label)
+        fig_pericue.savefig(config.results_dir / fname, bbox_inches="tight")
+    plt.show()
+    plt.close(fig_pericue)
 
     summary = stats["summary"] if stats else {}
     ms_fix, se_fix, _ = summary.get("mean_step_fix_mean±sem", (np.nan, np.nan, 0))
