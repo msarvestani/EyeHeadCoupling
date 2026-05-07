@@ -487,6 +487,20 @@ sessions:
       saccade_config:
         saccade_threshold: 1.0
 
+
+ session_34:
+    experiment_type: fixation
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-09-24T16_32_15
+    date: 2025-09-24
+    animal_name: Paris
+    animal_id: Tsh001
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+    params:
+      saccade_config:
+        saccade_threshold: 1.0
+
  session_34:
     experiment_type: fixation
     session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-09-29T11_25_33
