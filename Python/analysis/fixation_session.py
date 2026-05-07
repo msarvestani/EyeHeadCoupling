@@ -24,36 +24,16 @@ from eyehead import (
 from eyehead.analysis import _filename_with_animal
 
 
-def plot_pericue_path_length(
-    eye_timestamp: np.ndarray,
-    eye_pos: np.ndarray,
-    cue_times: np.ndarray,
-    *,
-    valid_trials: np.ndarray | None = None,
-    pre_s: float = 2.0,
-    post_s: float = 10.0,
-    bin_s: float = 0.25,
-) -> plt.Figure:
-    """Plot mean total eye path length in bins aligned to cue onset.
-
-    Each bin's value is the sum of consecutive Euclidean step distances
-    within that bin, averaged across all trials that have a cue event.
-    Trials / bins with fewer than two eye samples contribute NaN and are
-    excluded from the mean and SEM.
-    """
-    eye_ts = np.asarray(eye_timestamp).ravel()
-    xy = np.asarray(eye_pos)[:, :2]
-    cue_ts = np.asarray(cue_times).ravel()
-    if valid_trials is not None:
-        cue_ts = cue_ts[np.asarray(valid_trials, dtype=bool)]
-
-    bin_edges = np.arange(-pre_s, post_s + bin_s / 2, bin_s)
-    bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
-    n_bins = len(bin_centers)
+def _compute_path_bins(
+    eye_ts: np.ndarray,
+    xy: np.ndarray,
+    cue_ts: np.ndarray,
+    bin_edges: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return (mean_path, sem_path) arrays over bins for the given cue times."""
+    n_bins = len(bin_edges) - 1
     n_trials = len(cue_ts)
-
     trial_paths = np.full((n_trials, n_bins), np.nan)
-
     for t_idx, ct in enumerate(cue_ts):
         for b_idx in range(n_bins):
             t0 = ct + bin_edges[b_idx]
@@ -65,30 +45,98 @@ def plot_pericue_path_length(
             seg = xy[a:b]
             diffs = np.diff(seg, axis=0)
             trial_paths[t_idx, b_idx] = np.sum(np.sqrt(np.sum(diffs ** 2, axis=1)))
-
-    n_valid = np.sum(~np.isnan(trial_paths), axis=0)
+    n_ok = np.sum(~np.isnan(trial_paths), axis=0)
     mean_path = np.nanmean(trial_paths, axis=0)
     with np.errstate(invalid="ignore"):
-        sem_path = np.nanstd(trial_paths, axis=0, ddof=1) / np.sqrt(np.maximum(n_valid, 1))
-    sem_path[n_valid < 2] = np.nan
+        sem_path = np.nanstd(trial_paths, axis=0, ddof=1) / np.sqrt(np.maximum(n_ok, 1))
+    sem_path[n_ok < 2] = np.nan
+    return mean_path, sem_path
 
-    fig, ax = plt.subplots(figsize=(10, 4))
+
+def _draw_path_panel(
+    ax: plt.Axes,
+    bin_centers: np.ndarray,
+    mean_path: np.ndarray,
+    sem_path: np.ndarray,
+    title: str,
+    color: str,
+    bin_s: float,
+) -> None:
     ax.axvline(0, color="0.35", linestyle="--", linewidth=1.2, label="Cue onset")
     ax.fill_between(
         bin_centers,
         mean_path - sem_path,
         mean_path + sem_path,
         alpha=0.25,
-        color="steelblue",
+        color=color,
     )
-    ax.plot(bin_centers, mean_path, color="steelblue", linewidth=1.5)
-    ax.set_xlabel("Time relative to cue (s)")
+    ax.plot(bin_centers, mean_path, color=color, linewidth=1.5)
     ax.set_ylabel("Mean path length (deg)")
-    ax.set_title(
-        f"Eye path length around cue onset  "
-        f"(n={n_trials} valid trials, {bin_s:.2f} s bins)"
+    ax.set_title(title)
+    ax.legend(loc="upper right", fontsize=8)
+
+
+def plot_pericue_path_length(
+    eye_timestamp: np.ndarray,
+    eye_pos: np.ndarray,
+    cue_times: np.ndarray,
+    *,
+    valid_trials: np.ndarray | None = None,
+    pre_s: float = 2.0,
+    post_s: float = 10.0,
+    bin_s: float = 0.25,
+) -> plt.Figure:
+    """Plot mean eye path length in bins aligned to cue onset.
+
+    Three stacked panels show valid trials (top), invalid trials (middle),
+    and all trials (bottom). When valid_trials is None all panels show all
+    trials with equivalent content.
+    """
+    eye_ts = np.asarray(eye_timestamp).ravel()
+    xy = np.asarray(eye_pos)[:, :2]
+    cue_ts_all = np.asarray(cue_times).ravel()
+
+    bin_edges = np.arange(-pre_s, post_s + bin_s / 2, bin_s)
+    bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+
+    if valid_trials is not None:
+        mask = np.asarray(valid_trials, dtype=bool)
+        cue_ts_valid = cue_ts_all[mask]
+        cue_ts_invalid = cue_ts_all[~mask]
+    else:
+        cue_ts_valid = cue_ts_all
+        cue_ts_invalid = cue_ts_all
+
+    total = len(cue_ts_all)
+    n_valid = len(cue_ts_valid)
+    n_invalid = len(cue_ts_invalid)
+    pct_valid = 100.0 * n_valid / total if total > 0 else 0.0
+    pct_invalid = 100.0 * n_invalid / total if total > 0 else 0.0
+
+    mean_valid, sem_valid = _compute_path_bins(eye_ts, xy, cue_ts_valid, bin_edges)
+    mean_invalid, sem_invalid = _compute_path_bins(eye_ts, xy, cue_ts_invalid, bin_edges)
+    mean_all, sem_all = _compute_path_bins(eye_ts, xy, cue_ts_all, bin_edges)
+
+    fig, axes = plt.subplots(3, 1, figsize=(10, 10), sharex=True)
+
+    _draw_path_panel(
+        axes[0], bin_centers, mean_valid, sem_valid,
+        f"Valid trials  (n={n_valid}, {pct_valid:.1f}%,  {bin_s:.2f} s bins)",
+        "steelblue", bin_s,
     )
-    ax.legend()
+    _draw_path_panel(
+        axes[1], bin_centers, mean_invalid, sem_invalid,
+        f"Invalid trials  (n={n_invalid}, {pct_invalid:.1f}%,  {bin_s:.2f} s bins)",
+        "tomato", bin_s,
+    )
+    _draw_path_panel(
+        axes[2], bin_centers, mean_all, sem_all,
+        f"All trials  (n={total},  {bin_s:.2f} s bins)",
+        "dimgray", bin_s,
+    )
+
+    axes[2].set_xlabel("Time relative to cue (s)")
+    fig.suptitle("Eye path length around cue onset", y=1.01)
     fig.tight_layout()
     return fig
 
