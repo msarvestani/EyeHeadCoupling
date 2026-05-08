@@ -166,11 +166,12 @@ def plot_pericue_pre_post_summary(
     -------
     fig : plt.Figure
     metrics : dict
-        pre_valid_mean, post_valid_mean, pre_invalid_mean, post_invalid_mean
-        active_stabilization  (pre_invalid - post_valid) / pre_invalid
-            Uses pre_invalid as the unbiased baseline (typical eye movement at
-            any random moment). Inherently penalises selection bias: if
-            pre_valid is already lower than pre_invalid the numerator shrinks.
+        pre_valid_mean, post_valid_mean, pre_invalid_mean, post_invalid_mean,
+        active_stabilization = (pre_valid - post_valid) × pre_valid / pre_invalid²
+            Equivalent to cue_suppression × selection_bias².  Squaring the
+            selection_bias term means a session that catches naturally still
+            periods (pre_valid << pre_invalid) is penalised more aggressively
+            than a linear product would allow.
     """
     from scipy import stats as scipy_stats
 
@@ -235,9 +236,14 @@ def plot_pericue_pre_post_summary(
     mi_pre, si_pre = _mean_sem(pre_i)
     mi_post, si_post = _mean_sem(post_i)
 
+    # cue_suppression × selection_bias²
+    # = (pre_valid - post_valid)/pre_valid × (pre_valid/pre_invalid)²
+    # = (pre_valid - post_valid) × pre_valid / pre_invalid²
+    # Squaring selection_bias penalises selection bias more aggressively than
+    # a linear term so a biased session can't outscore a genuine one.
     active_stabilization = (
-        (mi_pre - mv_post) / mi_pre
-        if np.isfinite(mi_pre) and np.isfinite(mv_post) and mi_pre > 0
+        (mv_pre - mv_post) * mv_pre / (mi_pre ** 2)
+        if np.isfinite(mi_pre) and np.isfinite(mv_pre) and np.isfinite(mv_post) and mi_pre > 0
         else np.nan
     )
 
@@ -292,7 +298,7 @@ def plot_pericue_pre_post_summary(
     ax.set_title(
         "Pre- vs post-cue path length by trial outcome\n"
         f"valid n={mask.sum()}, invalid n={(~mask).sum()}  |  "
-        f"active stabilization={active_stabilization:.2f}"
+        f"active stabilization={active_stabilization:.3f}"
     )
     fig.tight_layout()
     return fig, metrics
@@ -436,31 +442,11 @@ def main(session_id: str) -> pd.DataFrame:
     plt.close(fig_prepost)
     # --- end control figure ---
 
-    summary = stats["summary"] if stats else {}
-    ms_fix, se_fix, _ = summary.get("mean_step_fix_mean±sem", (np.nan, np.nan, 0))
-    ms_rnd, se_rnd, _ = summary.get("mean_step_rand_mean±sem", (np.nan, np.nan, 0))
-    sp_fix, se_spf = summary.get("mean_speed_fix_mean±sem", (np.nan, np.nan))
-    sp_rnd, se_spr = summary.get("mean_speed_rand_mean±sem", (np.nan, np.nan))
-    dr_fix, se_drf = summary.get("net_drift_fix_mean±sem", (np.nan, np.nan))
-    dr_rnd, se_drr = summary.get("net_drift_rand_mean±sem", (np.nan, np.nan))
-
     df = pd.DataFrame(
         {
             "session_id": [session_id],
             "animal_name": [config.animal_name],
             "session_date": [date_str],
-            "mean_step_fix": [ms_fix],
-            "mean_step_fix_sem": [se_fix],
-            "mean_step_rand": [ms_rnd],
-            "mean_step_rand_sem": [se_rnd],
-            "mean_speed_fix": [sp_fix],
-            "mean_speed_fix_sem": [se_spf],
-            "mean_speed_rand": [sp_rnd],
-            "mean_speed_rand_sem": [se_spr],
-            "net_drift_fix": [dr_fix],
-            "net_drift_fix_sem": [se_drf],
-            "net_drift_rand": [dr_rnd],
-            "net_drift_rand_sem": [se_drr],
             "valid_trials": [valid_count],
             "total_trials": [total_trials_value],
             "valid_trial_fraction": [valid_fraction],
