@@ -298,27 +298,27 @@ sessions:
 #     camera_side: L
 
 
-#  Tsh001_2025-07-30T15_29_31:
-#  #starting here we made it so she had to fixate on the blue fixation dot before the trial could go on
-#     experiment_type: fixation
-#     session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-07-30T15_29_31
-#     calibration_factor : 3.76
-#     ttl_freq: 60
-#     camera_side: L
+ Tsh001_2025-07-30T15_29_31:
+ #starting here we made it so she had to fixate on the blue fixation dot before the trial could go on
+    experiment_type: fixation
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-07-30T15_29_31
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
 
-#  Tsh001_2025-07-30T15_47_15:
-#     experiment_type: fixation
-#     session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-07-30T15_47_15
-#     calibration_factor : 3.76
-#     ttl_freq: 60
-#     camera_side: L
+ Tsh001_2025-07-30T15_47_15:
+    experiment_type: fixation
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-07-30T15_47_15
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
 
-#  Tsh001_2025-07-31T15_23_59:
-#     experiment_type: fixation
-#     session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-07-31T15_23_59
-#     calibration_factor : 3.76
-#     ttl_freq: 60
-#     camera_side: L
+ Tsh001_2025-07-31T15_23_59:
+    experiment_type: fixation
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-07-31T15_23_59
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
 
  Tsh001_2025-07-31T15_56_37:
     experiment_type: fixation
