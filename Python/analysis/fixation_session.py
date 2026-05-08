@@ -167,8 +167,17 @@ def plot_pericue_pre_post_summary(
     difference reflects a genuine cue-driven response rather than the reward
     algorithm selecting naturally still periods.
 
-    Statistics: Wilcoxon signed-rank (paired pre vs post within each group),
-    Mann-Whitney U (valid-pre vs invalid-pre between groups).
+    Returns
+    -------
+    fig : plt.Figure
+    metrics : dict
+        suppression_index   (pre_valid - post_valid) / pre_valid
+        specificity         post_valid / post_invalid
+        p_valid             Wilcoxon p, valid pre vs post
+        p_invalid           Wilcoxon p, invalid pre vs post
+        p_pre_equivalence   Mann-Whitney p, valid-pre vs invalid-pre
+        fixation_quality    valid_fraction * suppression_index
+        pre_valid_mean, post_valid_mean, pre_invalid_mean, post_invalid_mean
     """
     from scipy import stats as scipy_stats
 
@@ -233,6 +242,37 @@ def plot_pericue_pre_post_summary(
     mi_pre, si_pre = _mean_sem(pre_i)
     mi_post, si_post = _mean_sem(post_i)
 
+    # Fixation quality metrics
+    suppression_index = (
+        (mv_pre - mv_post) / mv_pre
+        if np.isfinite(mv_pre) and np.isfinite(mv_post) and mv_pre > 0
+        else np.nan
+    )
+    specificity = (
+        mv_post / mi_post
+        if np.isfinite(mv_post) and np.isfinite(mi_post) and mi_post > 0
+        else np.nan
+    )
+    valid_fraction = float(mask.sum()) / len(mask) if len(mask) > 0 else np.nan
+    fixation_quality = (
+        valid_fraction * suppression_index
+        if np.isfinite(valid_fraction) and np.isfinite(suppression_index)
+        else np.nan
+    )
+
+    metrics = {
+        "pre_valid_mean": mv_pre,
+        "post_valid_mean": mv_post,
+        "pre_invalid_mean": mi_pre,
+        "post_invalid_mean": mi_post,
+        "suppression_index": suppression_index,
+        "specificity": specificity,
+        "p_valid_pre_vs_post": p_valid,
+        "p_invalid_pre_vs_post": p_invalid,
+        "p_pre_equivalence": p_pre,
+        "fixation_quality": fixation_quality,
+    }
+
     # x positions: valid group centred at 0.5, invalid group at 3.0
     xs = [0.0, 1.0, 2.5, 3.5]
     means = [mv_pre, mv_post, mi_pre, mi_post]
@@ -266,9 +306,9 @@ def plot_pericue_pre_post_summary(
         ax.text((x1 + x2) / 2, y + gap * 0.5, label,
                 ha="center", va="bottom", fontsize=10)
 
-    y1 = y_max + gap            # valid pre vs post
-    y2 = y_max + gap            # invalid pre vs post
-    y3 = y_max + gap * 2.5     # valid-pre vs invalid-pre (cross-group)
+    y1 = y_max + gap
+    y2 = y_max + gap
+    y3 = y_max + gap * 2.5
 
     _bracket(xs[0], xs[1], y1, _stars(p_valid))
     _bracket(xs[2], xs[3], y2, _stars(p_invalid))
@@ -277,10 +317,11 @@ def plot_pericue_pre_post_summary(
     ax.set_ylim(bottom=0, top=y3 + gap * 2)
     ax.set_title(
         "Pre- vs post-cue path length by trial outcome\n"
-        f"valid n={mask.sum()}, invalid n={(~mask).sum()}"
+        f"valid n={mask.sum()}, invalid n={(~mask).sum()}  |  "
+        f"suppression={suppression_index:.2f}  quality={fixation_quality:.2f}"
     )
     fig.tight_layout()
-    return fig
+    return fig, metrics
 
 
 def main(session_id: str) -> pd.DataFrame:
@@ -406,7 +447,7 @@ def main(session_id: str) -> pd.DataFrame:
     plt.close(fig_pericue)
 
     # --- pre/post summary (control figure — remove this block to drop it) ---
-    fig_prepost = plot_pericue_pre_post_summary(
+    fig_prepost, prepost_metrics = plot_pericue_pre_post_summary(
         eye_timestamp=data.eye_timestamp,
         eye_pos=saccades["eye_pos"],
         cue_times=data.cue_time,
@@ -449,6 +490,16 @@ def main(session_id: str) -> pd.DataFrame:
             "valid_trials": [valid_count],
             "total_trials": [total_trials_value],
             "valid_trial_fraction": [valid_fraction],
+            "pre_valid_mean": [prepost_metrics["pre_valid_mean"]],
+            "post_valid_mean": [prepost_metrics["post_valid_mean"]],
+            "pre_invalid_mean": [prepost_metrics["pre_invalid_mean"]],
+            "post_invalid_mean": [prepost_metrics["post_invalid_mean"]],
+            "suppression_index": [prepost_metrics["suppression_index"]],
+            "specificity": [prepost_metrics["specificity"]],
+            "p_valid_pre_vs_post": [prepost_metrics["p_valid_pre_vs_post"]],
+            "p_invalid_pre_vs_post": [prepost_metrics["p_invalid_pre_vs_post"]],
+            "p_pre_equivalence": [prepost_metrics["p_pre_equivalence"]],
+            "fixation_quality": [prepost_metrics["fixation_quality"]],
         }
     )
     return df
