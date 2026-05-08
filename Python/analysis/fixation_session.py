@@ -82,8 +82,8 @@ def plot_pericue_path_length(
     cue_times: np.ndarray,
     *,
     valid_trials: np.ndarray | None = None,
-    pre_s: float = 2.0,
-    post_s: float = 10.0,
+    pre_s: float = 1.5,
+    post_s: float = 5.0,
     bin_s: float = 0.25,
 ) -> plt.Figure:
     """Plot mean eye path length in bins aligned to cue onset.
@@ -136,8 +136,8 @@ def plot_pericue_path_length(
     )
 
     axes[2].set_xlabel("Time relative to cue (s)")
-    fig.suptitle("Eye path length around cue onset", y=1.01)
-    fig.tight_layout()
+    fig.suptitle("Eye path length around cue onset")
+    #fig.tight_layout()
     return fig
 
 

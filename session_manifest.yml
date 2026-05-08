@@ -1,5 +1,5 @@
 results_root: X:\Analysis\EyeHeadCoupling
-max_interval_fixations: 1.5 #this is how long we count a fixation of 0.7 sec valid after cue is presented.......
+max_interval_fixations: 1 #this is how long we count a fixation of 0.7 sec valid after cue is presented.......
 
 saccade_config:
   saccade_threshold: 3.0
@@ -287,6 +287,65 @@ sessions:
         saccade_threshold: 1.0
 
 ################################### Clean Paris Fixation Sessions ###################################
+ ########### these are the first fixation sessions, where they were interleaved with saccades      
+
+ Tsh001_2025-07-22T15_25_56:
+ #this is where we showed the blue fixation dot, but there was no punishment or reward for fixating
+    experiment_type: fixation-control
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-07-22T15_25_56
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+
+
+ Tsh001_2025-07-30T15_29_31:
+ #starting here we made it so she had to fixate on the blue fixation dot before the trial could go on
+    experiment_type: fixation
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-07-30T15_29_31
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+
+ Tsh001_2025-07-30T15_47_15:
+    experiment_type: fixation
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-07-30T15_47_15
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+
+ Tsh001_2025-07-31T15_23_59:
+    experiment_type: fixation
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-07-31T15_23_59
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+
+ Tsh001_2025-07-31T15_56_37:
+    experiment_type: fixation
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-07-31T15_56_37
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+
+ Tsh001_2025-08-01T15_15_48:
+    experiment_type: fixation
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-08-01T15_15_48
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+
+ Tsh001_2025-08-06T16_40_40:
+    experiment_type: fixation
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-08-06T16_40_40
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+    params:
+      saccade_config:
+        saccade_threshold: 1.0
+
+########### below are clean fixation-only sessions        
+
  Tsh001_2025-09-25T15_10_02:
     experiment_type: fixation
     session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-09-25T15_10_02
