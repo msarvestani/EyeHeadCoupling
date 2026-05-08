@@ -30,7 +30,14 @@ def _compute_path_bins(
     cue_ts: np.ndarray,
     bin_edges: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Return (mean_path, sem_path) arrays over bins for the given cue times."""
+    """Return (mean_path, sem_path) arrays over bins for the given cue times.
+
+    Each trial's path is baseline-corrected by subtracting the value in the
+    bin nearest to cue onset (t=0) before averaging, so the mean is 0 at
+    cue onset and the SEM reflects the corrected variability.
+    """
+    bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+    baseline_idx = int(np.argmin(np.abs(bin_centers)))
     n_bins = len(bin_edges) - 1
     n_trials = len(cue_ts)
     trial_paths = np.full((n_trials, n_bins), np.nan)
@@ -45,6 +52,9 @@ def _compute_path_bins(
             seg = xy[a:b]
             diffs = np.diff(seg, axis=0)
             trial_paths[t_idx, b_idx] = np.sum(np.sqrt(np.sum(diffs ** 2, axis=1)))
+    # Subtract each trial's cue-onset bin so every trial is baseline-corrected
+    # before averaging; trials missing that bin become fully NaN.
+    trial_paths -= trial_paths[:, baseline_idx : baseline_idx + 1]
     n_ok = np.sum(~np.isnan(trial_paths), axis=0)
     mean_path = np.nanmean(trial_paths, axis=0)
     with np.errstate(invalid="ignore"):
@@ -71,7 +81,7 @@ def _draw_path_panel(
         color=color,
     )
     ax.plot(bin_centers, mean_path, color=color, linewidth=1.5)
-    ax.set_ylabel("Mean path length (deg)")
+    ax.set_ylabel("Path length change from cue onset (deg)")
     ax.set_title(title)
     ax.legend(loc="upper right", fontsize=8)
 
