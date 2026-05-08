@@ -54,7 +54,7 @@ def _compute_path_bins(
             trial_paths[t_idx, b_idx] = np.sum(np.sqrt(np.sum(diffs ** 2, axis=1)))
     # Subtract each trial's cue-onset bin so every trial is baseline-corrected
     # before averaging; trials missing that bin become fully NaN.
-    trial_paths -= trial_paths[:, baseline_idx : baseline_idx + 1]
+    trial_paths -= trial_paths[:, baseline_idx: baseline_idx + 1]
     n_ok = np.sum(~np.isnan(trial_paths), axis=0)
     mean_path = np.nanmean(trial_paths, axis=0)
     with np.errstate(invalid="ignore"):
@@ -92,8 +92,8 @@ def plot_pericue_path_length(
     cue_times: np.ndarray,
     *,
     valid_trials: np.ndarray | None = None,
-    pre_s: float = 2.0,
-    post_s: float = 10.0,
+    pre_s: float = 1.5,
+    post_s: float = 5.0,
     bin_s: float = 0.25,
 ) -> plt.Figure:
     """Plot mean eye path length in bins aligned to cue onset.
@@ -146,8 +146,8 @@ def plot_pericue_path_length(
     )
 
     axes[2].set_xlabel("Time relative to cue (s)")
-    fig.suptitle("Eye path length around cue onset", y=1.01)
-    fig.tight_layout()
+    fig.suptitle("Eye path length around cue onset")
+    #fig.tight_layout()
     return fig
 
 
@@ -157,9 +157,9 @@ def plot_pericue_pre_post_summary(
     cue_times: np.ndarray,
     *,
     valid_trials: np.ndarray | None = None,
-    pre_window: tuple[float, float] = (-2.0, -0.25),
-    post_window: tuple[float, float] = (0.25, 2.0),
-) -> tuple[plt.Figure, dict]:
+    pre_window: tuple[float, float] = (-1.0, -0.25),
+    post_window: tuple[float, float] = (0.25, 1.0),
+) -> plt.Figure:
     """Bar plot comparing pre-cue vs post-cue path length for valid and invalid trials.
 
     The critical comparison is valid-pre vs invalid-pre: if these are similar,
