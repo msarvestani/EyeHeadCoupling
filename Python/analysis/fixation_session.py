@@ -151,6 +151,138 @@ def plot_pericue_path_length(
     return fig
 
 
+def plot_pericue_pre_post_summary(
+    eye_timestamp: np.ndarray,
+    eye_pos: np.ndarray,
+    cue_times: np.ndarray,
+    *,
+    valid_trials: np.ndarray | None = None,
+    pre_window: tuple[float, float] = (-2.0, -0.25),
+    post_window: tuple[float, float] = (0.25, 2.0),
+) -> plt.Figure:
+    """Bar plot comparing pre-cue vs post-cue path length for valid and invalid trials.
+
+    The critical comparison is valid-pre vs invalid-pre: if these are similar,
+    the animal was in an equivalent state before the cue and any post-cue
+    difference reflects a genuine cue-driven response rather than the reward
+    algorithm selecting naturally still periods.
+
+    Statistics: Wilcoxon signed-rank (paired pre vs post within each group),
+    Mann-Whitney U (valid-pre vs invalid-pre between groups).
+    """
+    from scipy import stats as scipy_stats
+
+    eye_ts = np.asarray(eye_timestamp).ravel()
+    xy = np.asarray(eye_pos)[:, :2]
+    cue_ts = np.asarray(cue_times).ravel()
+    mask = (
+        np.ones(len(cue_ts), dtype=bool)
+        if valid_trials is None
+        else np.asarray(valid_trials, dtype=bool)
+    )
+
+    def _window_path(ct, t0, t1):
+        a = np.searchsorted(eye_ts, ct + t0, side="left")
+        b = np.searchsorted(eye_ts, ct + t1, side="right")
+        if b - a < 2:
+            return np.nan
+        seg = xy[a:b]
+        return float(np.sum(np.sqrt(np.sum(np.diff(seg, axis=0) ** 2, axis=1))))
+
+    pre = np.array([_window_path(ct, *pre_window) for ct in cue_ts])
+    post = np.array([_window_path(ct, *post_window) for ct in cue_ts])
+
+    pre_v, post_v = pre[mask], post[mask]
+    pre_i, post_i = pre[~mask], post[~mask]
+
+    def _paired_p(a, b):
+        ok = ~np.isnan(a) & ~np.isnan(b)
+        if ok.sum() < 4:
+            return np.nan
+        return float(scipy_stats.wilcoxon(a[ok], b[ok]).pvalue)
+
+    def _indep_p(a, b):
+        a, b = a[~np.isnan(a)], b[~np.isnan(b)]
+        if len(a) < 4 or len(b) < 4:
+            return np.nan
+        return float(scipy_stats.mannwhitneyu(a, b, alternative="two-sided").pvalue)
+
+    p_valid = _paired_p(pre_v, post_v)
+    p_invalid = _paired_p(pre_i, post_i)
+    p_pre = _indep_p(pre_v, pre_i)
+
+    def _mean_sem(arr):
+        ok = arr[~np.isnan(arr)]
+        if len(ok) == 0:
+            return np.nan, np.nan
+        return float(np.mean(ok)), float(np.std(ok, ddof=1) / np.sqrt(len(ok)))
+
+    def _stars(p):
+        if np.isnan(p):
+            return ""
+        if p < 0.001:
+            return "***"
+        if p < 0.01:
+            return "**"
+        if p < 0.05:
+            return "*"
+        return "ns"
+
+    mv_pre, sv_pre = _mean_sem(pre_v)
+    mv_post, sv_post = _mean_sem(post_v)
+    mi_pre, si_pre = _mean_sem(pre_i)
+    mi_post, si_post = _mean_sem(post_i)
+
+    # x positions: valid group centred at 0.5, invalid group at 3.0
+    xs = [0.0, 1.0, 2.5, 3.5]
+    means = [mv_pre, mv_post, mi_pre, mi_post]
+    sems = [sv_pre, sv_post, si_pre, si_post]
+    colors = ["#7fb3d3", "#1a6fa8", "#f5a08a", "#c0392b"]
+
+    fig, ax = plt.subplots(figsize=(7, 5))
+    for x, m, s, c in zip(xs, means, sems, colors):
+        ax.bar(x, m, yerr=s, capsize=5, color=c, width=0.75,
+               error_kw=dict(lw=1.5, ecolor="0.2"))
+
+    ax.set_xticks(xs)
+    ax.set_xticklabels(["Pre-cue", "Post-cue", "Pre-cue", "Post-cue"], fontsize=10)
+    ax.set_ylabel("Mean path length (deg)")
+
+    # Group labels below x-axis
+    ax.text(0.5, -0.15, "Valid trials", ha="center",
+            transform=ax.get_xaxis_transform(), fontsize=11, fontweight="bold",
+            color="#1a6fa8")
+    ax.text(3.0, -0.15, "Invalid trials", ha="center",
+            transform=ax.get_xaxis_transform(), fontsize=11, fontweight="bold",
+            color="#c0392b")
+
+    # Significance brackets
+    y_max = max(m + s for m, s in zip(means, sems) if not np.isnan(m + s))
+    gap = y_max * 0.08
+
+    def _bracket(x1, x2, y, label):
+        ax.plot([x1, x1, x2, x2], [y, y + gap * 0.4, y + gap * 0.4, y],
+                lw=1.2, color="0.25")
+        ax.text((x1 + x2) / 2, y + gap * 0.5, label,
+                ha="center", va="bottom", fontsize=10)
+
+    y1 = y_max + gap            # valid pre vs post
+    y2 = y_max + gap            # invalid pre vs post
+    y3 = y_max + gap * 2.5     # valid-pre vs invalid-pre (cross-group)
+
+    _bracket(xs[0], xs[1], y1, _stars(p_valid))
+    _bracket(xs[2], xs[3], y2, _stars(p_invalid))
+    _bracket(xs[0], xs[2], y3, f"pre: {_stars(p_pre)}")
+
+    ax.set_ylim(bottom=0, top=y3 + gap * 2)
+    ax.set_title(
+        "Pre- vs post-cue path length by trial outcome\n"
+        f"valid n={mask.sum()}, invalid n={(~mask).sum()}"
+    )
+    fig.tight_layout()
+    return fig
+
+
 def main(session_id: str) -> pd.DataFrame:
     """Run fixation analysis for ``session_id``.
 
@@ -272,6 +404,22 @@ def main(session_id: str) -> pd.DataFrame:
         fig_pericue.savefig(config.results_dir / fname, bbox_inches="tight")
     plt.show()
     plt.close(fig_pericue)
+
+    # --- pre/post summary (control figure — remove this block to drop it) ---
+    fig_prepost = plot_pericue_pre_post_summary(
+        eye_timestamp=data.eye_timestamp,
+        eye_pos=saccades["eye_pos"],
+        cue_times=data.cue_time,
+        valid_trials=valid_trials,
+    )
+    stem_parts = [part for part in (id_part, eye_part, "pericue_pre_post") if part]
+    stem = "_".join(stem_parts) if stem_parts else "pericue_pre_post"
+    for ext in ("png", "svg"):
+        fname = _filename_with_animal(f"{stem}.{ext}", animal_label)
+        fig_prepost.savefig(config.results_dir / fname, bbox_inches="tight")
+    plt.show()
+    plt.close(fig_prepost)
+    # --- end control figure ---
 
     summary = stats["summary"] if stats else {}
     ms_fix, se_fix, _ = summary.get("mean_step_fix_mean±sem", (np.nan, np.nan, 0))
