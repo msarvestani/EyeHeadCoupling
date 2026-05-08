@@ -106,7 +106,7 @@ def plot_pericue_path_length(
     xy = np.asarray(eye_pos)[:, :2]
     cue_ts_all = np.asarray(cue_times).ravel()
 
-    bin_edges = np.arange(-pre_s, post_s + bin_s / 2, bin_s)
+    bin_edges = np.arange(-pre_s - bin_s / 2, post_s + bin_s, bin_s)
     bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
 
     if valid_trials is not None:
