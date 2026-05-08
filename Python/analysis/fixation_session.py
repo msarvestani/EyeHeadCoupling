@@ -162,22 +162,15 @@ def plot_pericue_pre_post_summary(
 ) -> tuple[plt.Figure, dict]:
     """Bar plot comparing pre-cue vs post-cue path length for valid and invalid trials.
 
-    The critical comparison is valid-pre vs invalid-pre: if these are similar,
-    the animal was in an equivalent state before the cue and any post-cue
-    difference reflects a genuine cue-driven response rather than the reward
-    algorithm selecting naturally still periods.
-
     Returns
     -------
     fig : plt.Figure
     metrics : dict
-        suppression_index   (pre_valid - post_valid) / pre_valid
-        specificity         post_valid / post_invalid
-        p_valid             Wilcoxon p, valid pre vs post
-        p_invalid           Wilcoxon p, invalid pre vs post
-        p_pre_equivalence   Mann-Whitney p, valid-pre vs invalid-pre
-        fixation_quality    valid_fraction * suppression_index
         pre_valid_mean, post_valid_mean, pre_invalid_mean, post_invalid_mean
+        active_stabilization  (pre_invalid - post_valid) / pre_invalid
+            Uses pre_invalid as the unbiased baseline (typical eye movement at
+            any random moment). Inherently penalises selection bias: if
+            pre_valid is already lower than pre_invalid the numerator shrinks.
     """
     from scipy import stats as scipy_stats
 
@@ -242,21 +235,9 @@ def plot_pericue_pre_post_summary(
     mi_pre, si_pre = _mean_sem(pre_i)
     mi_post, si_post = _mean_sem(post_i)
 
-    # Fixation quality metrics
-    suppression_index = (
-        (mv_pre - mv_post) / mv_pre
-        if np.isfinite(mv_pre) and np.isfinite(mv_post) and mv_pre > 0
-        else np.nan
-    )
-    specificity = (
-        mv_post / mi_post
-        if np.isfinite(mv_post) and np.isfinite(mi_post) and mi_post > 0
-        else np.nan
-    )
-    valid_fraction = float(mask.sum()) / len(mask) if len(mask) > 0 else np.nan
-    fixation_quality = (
-        valid_fraction * suppression_index
-        if np.isfinite(valid_fraction) and np.isfinite(suppression_index)
+    active_stabilization = (
+        (mi_pre - mv_post) / mi_pre
+        if np.isfinite(mi_pre) and np.isfinite(mv_post) and mi_pre > 0
         else np.nan
     )
 
@@ -265,12 +246,7 @@ def plot_pericue_pre_post_summary(
         "post_valid_mean": mv_post,
         "pre_invalid_mean": mi_pre,
         "post_invalid_mean": mi_post,
-        "suppression_index": suppression_index,
-        "specificity": specificity,
-        "p_valid_pre_vs_post": p_valid,
-        "p_invalid_pre_vs_post": p_invalid,
-        "p_pre_equivalence": p_pre,
-        "fixation_quality": fixation_quality,
+        "active_stabilization": active_stabilization,
     }
 
     # x positions: valid group centred at 0.5, invalid group at 3.0
@@ -288,7 +264,6 @@ def plot_pericue_pre_post_summary(
     ax.set_xticklabels(["Pre-cue", "Post-cue", "Pre-cue", "Post-cue"], fontsize=10)
     ax.set_ylabel("Mean path length (deg)")
 
-    # Group labels below x-axis
     ax.text(0.5, -0.15, "Valid trials", ha="center",
             transform=ax.get_xaxis_transform(), fontsize=11, fontweight="bold",
             color="#1a6fa8")
@@ -296,7 +271,6 @@ def plot_pericue_pre_post_summary(
             transform=ax.get_xaxis_transform(), fontsize=11, fontweight="bold",
             color="#c0392b")
 
-    # Significance brackets
     y_max = max(m + s for m, s in zip(means, sems) if not np.isnan(m + s))
     gap = y_max * 0.08
 
@@ -318,7 +292,7 @@ def plot_pericue_pre_post_summary(
     ax.set_title(
         "Pre- vs post-cue path length by trial outcome\n"
         f"valid n={mask.sum()}, invalid n={(~mask).sum()}  |  "
-        f"suppression={suppression_index:.2f}  quality={fixation_quality:.2f}"
+        f"active stabilization={active_stabilization:.2f}"
     )
     fig.tight_layout()
     return fig, metrics
@@ -494,12 +468,7 @@ def main(session_id: str) -> pd.DataFrame:
             "post_valid_mean": [prepost_metrics["post_valid_mean"]],
             "pre_invalid_mean": [prepost_metrics["pre_invalid_mean"]],
             "post_invalid_mean": [prepost_metrics["post_invalid_mean"]],
-            "suppression_index": [prepost_metrics["suppression_index"]],
-            "specificity": [prepost_metrics["specificity"]],
-            "p_valid_pre_vs_post": [prepost_metrics["p_valid_pre_vs_post"]],
-            "p_invalid_pre_vs_post": [prepost_metrics["p_invalid_pre_vs_post"]],
-            "p_pre_equivalence": [prepost_metrics["p_pre_equivalence"]],
-            "fixation_quality": [prepost_metrics["fixation_quality"]],
+            "active_stabilization": [prepost_metrics["active_stabilization"]],
         }
     )
     return df
