@@ -1241,19 +1241,18 @@ def quantify_fixation_stability_vs_random(
         fix_mean_step[i], fix_mean_speed[i], fix_drift[i] = window_metrics(c, g)
 
     session_start, session_end = float(ts[0]), float(ts[-1])
-    allowed = []
-    cursor = session_start
-    for s, e in fix_windows:
-        if s > cursor:
-            allowed.append((cursor, s))
-        cursor = max(cursor, e)
-    if cursor < session_end:
-        allowed.append((cursor, session_end))
 
     rng = np.random.default_rng(rng_seed)
 
-    def sample_random_window(duration: float) -> Optional[Tuple[float, float]]:
-        candidates = [(a, b) for (a, b) in allowed if (b - a) >= duration]
+    def sample_random_window(duration: float, exclude_start: float, exclude_end: float) -> Optional[Tuple[float, float]]:
+        # Pool is the whole session minus only the one fixation window being matched,
+        # so random windows can land during other fixation bouts, failed trials, etc.
+        pool = []
+        if exclude_start - session_start >= duration:
+            pool.append((session_start, exclude_start))
+        if session_end - exclude_end >= duration:
+            pool.append((exclude_end, session_end))
+        candidates = [(a, b) for (a, b) in pool if (b - a) >= duration]
         if not candidates:
             return None
         a, b = candidates[rng.integers(0, len(candidates))]
@@ -1264,8 +1263,8 @@ def quantify_fixation_stability_vs_random(
     rnd_mean_speed = np.empty(len(orig_fix_windows))
     rnd_drift = np.empty(len(orig_fix_windows))
 
-    for i, L in enumerate(fix_len):
-        rw = sample_random_window(L)
+    for i, (L, (c, g)) in enumerate(zip(fix_len, orig_fix_windows)):
+        rw = sample_random_window(L, c, g)
         if rw is None:
             rnd_mean_step[i] = rnd_mean_speed[i] = rnd_drift[i] = np.nan
         else:
