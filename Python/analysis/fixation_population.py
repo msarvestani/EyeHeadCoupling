@@ -284,6 +284,68 @@ def plot_metric_trends(
         plt.close(fig)
 
 
+def plot_active_stabilization(
+    df: pd.DataFrame,
+    save_dir: Path,
+    *,
+    animal_name: str | None = None,
+) -> None:
+    """Plot active_stabilization across sessions with session dates on each point.
+
+    Sessions are sorted by recording date and plotted left-to-right on the
+    x-axis.  Each point is labelled with its session date.
+    """
+    if df.empty or "active_stabilization" not in df.columns:
+        return
+
+    data = df.copy()
+    data["session_date"] = pd.to_datetime(data["session_date"], errors="coerce")
+    data.sort_values("session_date", inplace=True, ignore_index=True)
+
+    metric = pd.to_numeric(data["active_stabilization"], errors="coerce")
+    order = np.arange(len(data))
+
+    fig, ax = plt.subplots(figsize=(max(6, len(data) * 0.9), 4))
+
+    ax.plot(order, metric, linestyle="--", color="0.7", linewidth=1, zorder=1)
+    ax.scatter(order, metric, color="steelblue", s=60, zorder=2)
+
+    for i in order:
+        y = metric.iloc[i]
+        if not np.isfinite(y):
+            continue
+        date_val = data["session_date"].iloc[i]
+        label = date_val.strftime("%Y-%m-%d") if pd.notna(date_val) else ""
+        ax.annotate(
+            label,
+            xy=(i, y),
+            xytext=(0, 8),
+            textcoords="offset points",
+            ha="center",
+            va="bottom",
+            fontsize=7,
+            color="dimgray",
+            rotation=45,
+        )
+
+    ax.axhline(0, color="0.4", linestyle=":", linewidth=0.8)
+    ax.set_xticks(order)
+    ax.set_xticklabels([""] * len(order))
+    ax.set_xlabel("Session (earlier → later)")
+    ax.set_ylabel("Active stabilization\n(cue_suppression × selection_bias²)")
+    title = "Active stabilization across sessions"
+    if animal_name:
+        title += f" ({animal_name})"
+    ax.set_title(title)
+
+    fig.tight_layout()
+    suffix = _animal_suffix(animal_name)
+    for ext in ("png", "svg"):
+        fig.savefig(save_dir / f"active_stabilization_trend{suffix}.{ext}", bbox_inches="tight")
+    plt.show()
+    plt.close(fig)
+
+
 # Usage: python Python/analysis/fixation_population.py --animal-name Paris
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -326,4 +388,9 @@ if __name__ == "__main__":
         results_root,
         animal_name=args.animal_name,
         max_interval_fixations=max_interval_fixations,
+    )
+    plot_active_stabilization(
+        aggregated,
+        results_root,
+        animal_name=args.animal_name,
     )
