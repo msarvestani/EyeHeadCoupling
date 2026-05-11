@@ -376,25 +376,7 @@ sessions:
       saccade_config:
         saccade_threshold: 1.0
 
- Tsh001_2025-09-29T11_42_33:
-    experiment_type: fixation
-    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-09-29T11_42_33
-    calibration_factor : 3.76
-    ttl_freq: 60
-    camera_side: L
-    params:
-      saccade_config:
-        saccade_threshold: 1.0
 
- Tsh001_2025-09-29T12_00_26:
-    experiment_type: fixation
-    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-09-29T12_00_26
-    calibration_factor : 3.76
-    ttl_freq: 60
-    camera_side: L
-    params:
-      saccade_config:
-        saccade_threshold: 1.0
 
 ################################### Clean Apollo Fixation Sessions ###################################
 
