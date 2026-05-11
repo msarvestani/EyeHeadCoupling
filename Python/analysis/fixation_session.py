@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 import argparse
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -458,6 +459,157 @@ def main(session_id: str) -> pd.DataFrame:
         }
     )
     return df
+
+
+def plot_psychometric_central_fixation(eot_df: pd.DataFrame, target_df: pd.DataFrame, results_dir: Optional[Path] = None,
+                                       animal_id: Optional[str] = None, session_date: str = "",
+                                       session_time: Optional[str] = None,
+                                       random_walk_chance: Optional[dict] = None) -> plt.Figure:
+    """Plot psychometric curve showing success rate as a function of target diameter.
+
+    Creates a plot with:
+    - Success rate (%) on y-axis
+    - Target diameter on x-axis
+    - Error bars showing binomial standard error
+    - Number of trials annotated for each diameter
+    - Optional: Random walk chance performance per diameter
+
+    Parameters
+    ----------
+    eot_df : pd.DataFrame
+        End-of-trial dataframe containing 'trial_success' (2=success) and 'diameter' columns
+    target_df : pd.DataFrame
+        Target dataframe containing 'diameter' column
+    results_dir : Path, optional
+        Directory to save the figure
+    animal_id : str, optional
+        Animal identifier for filename
+    session_date : str, optional
+        Session date for title (format: YYYY-MM-DD)
+    session_time : str, optional
+        Session time for title (format: HH:MM)
+    random_walk_chance : dict, optional
+        Results from calculate_random_walk_chance_performance() containing
+        'by_diameter' key with diameter -> chance rate mapping
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+        The generated figure
+    """
+    if 'trial_success' not in eot_df.columns:
+        print("Warning: trial_success column not found in eot_df, cannot plot psychometric curve")
+        return None
+    if 'diameter' not in target_df.columns:
+        print("Warning: diameter column not found in target_df, cannot plot psychometric curve")
+        return None
+
+    if len(eot_df) != len(target_df):
+        print(f"Warning: eot_df has {len(eot_df)} rows but target_df has {len(target_df)} rows")
+        min_len = min(len(eot_df), len(target_df))
+        combined_df = pd.DataFrame({
+            'trial_success': eot_df['trial_success'].iloc[:min_len].values,
+            'diameter': target_df['diameter'].iloc[:min_len].values
+        })
+    else:
+        combined_df = pd.DataFrame({
+            'trial_success': eot_df['trial_success'].values,
+            'diameter': target_df['diameter'].values
+        })
+
+    diameter_groups = combined_df.groupby('diameter')
+
+    diameters = []
+    success_rates = []
+    error_bars = []
+    n_trials_per_diameter = []
+
+    for diameter, group in diameter_groups:
+        n_trials = len(group)
+        n_success = np.sum(group['trial_success'] == 2)
+        success_rate = n_success / n_trials if n_trials > 0 else 0
+
+        if n_trials > 0:
+            std_error = np.sqrt(success_rate * (1 - success_rate) / n_trials)
+        else:
+            std_error = 0
+
+        diameters.append(diameter)
+        success_rates.append(success_rate * 100)
+        error_bars.append(std_error * 100)
+        n_trials_per_diameter.append(n_trials)
+
+    sorted_indices = np.argsort(diameters)
+    diameters = np.array(diameters)[sorted_indices]
+    success_rates = np.array(success_rates)[sorted_indices]
+    error_bars = np.array(error_bars)[sorted_indices]
+    n_trials_per_diameter = np.array(n_trials_per_diameter)[sorted_indices]
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    ax.errorbar(diameters, success_rates, yerr=error_bars,
+                fmt='o-', markersize=10, linewidth=2, capsize=5, capthick=2,
+                color='steelblue', ecolor='darkblue', label='Success Rate')
+
+    if random_walk_chance is not None and 'by_diameter' in random_walk_chance:
+        chance_by_diameter = random_walk_chance['by_diameter']
+        chance_se_by_diameter = random_walk_chance.get('by_diameter_se', {})
+
+        chance_rates = []
+        chance_errors = []
+        chance_diameters = []
+        for d in diameters:
+            if d in chance_by_diameter:
+                chance_diameters.append(d)
+                chance_rates.append(chance_by_diameter[d] * 100)
+                se = chance_se_by_diameter.get(d, 0.0) * 100
+                chance_errors.append(se)
+
+        if len(chance_rates) > 0:
+            ax.errorbar(chance_diameters, chance_rates, yerr=chance_errors,
+                       fmt='o--', markersize=8, linewidth=2, capsize=5, capthick=2,
+                       color='gray', ecolor='darkgray',
+                       markeredgecolor='black', markeredgewidth=1,
+                       label='Random Walk Chance', alpha=0.8)
+
+    for i, (d, sr, n) in enumerate(zip(diameters, success_rates, n_trials_per_diameter)):
+        text_y = sr + error_bars[i] + 3
+        ax.text(d, text_y, f'n={n}', ha='center', va='bottom',
+                fontsize=10, fontweight='bold', color='darkblue')
+
+    ax.axhline(100, color='green', linestyle='--', alpha=0.3, linewidth=1)
+    ax.axhline(0, color='red', linestyle='--', alpha=0.3, linewidth=1)
+
+    ax.set_xlabel('Target Diameter', fontsize=14, fontweight='bold')
+    ax.set_ylabel('Success Rate (%)', fontsize=14, fontweight='bold')
+
+    title = 'Psychometric Curve: Success Rate vs Target Diameter'
+    if animal_id:
+        title += f'\n{animal_id}'
+    if session_date:
+        title += f' - {session_date}'
+        if session_time:
+            title += f' @ {session_time}'
+    elif session_time:
+        title += f' - {session_time}'
+
+    ax.set_title(title, fontsize=14, fontweight='bold')
+    ax.set_ylim(-5, 105)
+    ax.set_xlim(diameters.min() - 0.05, diameters.max() + 0.05)
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc='best', fontsize=11)
+
+    plt.tight_layout()
+
+    if results_dir:
+        results_dir.mkdir(parents=True, exist_ok=True)
+        prefix = f"{animal_id}_" if animal_id else ""
+        date_suffix = f"_{session_date}" if session_date else ""
+        filename = f"{prefix}psychometric_central_fixation{date_suffix}.png"
+        fig.savefig(results_dir / filename, dpi=150, bbox_inches='tight')
+        print(f"Saved psychometric curve to {results_dir / filename}")
+
+    return fig
 
 
 # Usage: python Python/analysis/fixation_session.py SESSION_ID
