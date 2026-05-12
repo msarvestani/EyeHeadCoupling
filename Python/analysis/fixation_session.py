@@ -288,7 +288,10 @@ def plot_pericue_pre_post_summary(
             transform=ax.get_xaxis_transform(), fontsize=11, fontweight="bold",
             color="#c0392b")
 
-    y_max = max(m + s for m, s in zip(means, sems) if not np.isnan(m + s))
+    finite_vals = [m + s for m, s in zip(means, sems) if not np.isnan(m + s)]
+    if not finite_vals:
+        return fig, {}
+    y_max = max(finite_vals)
     gap = y_max * 0.08
 
     def _bracket(x1, x2, y, label):

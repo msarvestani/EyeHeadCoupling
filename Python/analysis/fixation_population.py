@@ -59,7 +59,7 @@ def analyze_all_sessions(
     """
     tables: list[pd.DataFrame] = []
     for session_id in list_sessions_from_manifest(
-        experiment_type, match_prefix=True, animal_name=animal_name
+        experiment_type, match_prefix=False, animal_name=animal_name
     ):
         session_df = fixation_session.main(session_id)
 
