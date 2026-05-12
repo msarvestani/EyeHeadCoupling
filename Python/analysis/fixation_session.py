@@ -24,6 +24,16 @@ from eyehead import (
 )
 from eyehead.analysis import _filename_with_animal
 
+# Bonsai coordinate system: monitor width spans -1.7 to 1.7 units (total 3.4)
+# Viewing distance equals monitor width (both 47 cm), so the 47s cancel:
+#   visual_deg = 2 * arctan(d_bonsai / (2 * 3.4))
+_BONSAI_WIDTH_RANGE = 3.4
+
+
+def bonsai_to_deg(d: float | np.ndarray) -> float | np.ndarray:
+    """Convert a diameter in Bonsai units to visual degrees."""
+    return np.degrees(2 * np.arctan(np.asarray(d) / (2 * _BONSAI_WIDTH_RANGE)))
+
 
 def _compute_path_bins(
     eye_ts: np.ndarray,
@@ -517,6 +527,8 @@ def plot_psychometric_central_fixation(eot_df: pd.DataFrame, target_df: pd.DataF
             'diameter': target_df['diameter'].values
         })
 
+    combined_df['diameter'] = bonsai_to_deg(combined_df['diameter'].values)
+
     diameter_groups = combined_df.groupby('diameter')
 
     diameters = []
@@ -552,8 +564,13 @@ def plot_psychometric_central_fixation(eot_df: pd.DataFrame, target_df: pd.DataF
                 color='steelblue', ecolor='darkblue', label='Success Rate')
 
     if random_walk_chance is not None and 'by_diameter' in random_walk_chance:
-        chance_by_diameter = random_walk_chance['by_diameter']
-        chance_se_by_diameter = random_walk_chance.get('by_diameter_se', {})
+        chance_by_diameter = {
+            bonsai_to_deg(k): v for k, v in random_walk_chance['by_diameter'].items()
+        }
+        chance_se_by_diameter = {
+            bonsai_to_deg(k): v
+            for k, v in random_walk_chance.get('by_diameter_se', {}).items()
+        }
 
         chance_rates = []
         chance_errors = []
@@ -580,7 +597,7 @@ def plot_psychometric_central_fixation(eot_df: pd.DataFrame, target_df: pd.DataF
     ax.axhline(100, color='green', linestyle='--', alpha=0.3, linewidth=1)
     ax.axhline(0, color='red', linestyle='--', alpha=0.3, linewidth=1)
 
-    ax.set_xlabel('Target Diameter', fontsize=14, fontweight='bold')
+    ax.set_xlabel('Target Diameter (°)', fontsize=14, fontweight='bold')
     ax.set_ylabel('Success Rate (%)', fontsize=14, fontweight='bold')
 
     title = 'Psychometric Curve: Success Rate vs Target Diameter'
@@ -595,7 +612,8 @@ def plot_psychometric_central_fixation(eot_df: pd.DataFrame, target_df: pd.DataF
 
     ax.set_title(title, fontsize=14, fontweight='bold')
     ax.set_ylim(-5, 105)
-    ax.set_xlim(diameters.min() - 0.05, diameters.max() + 0.05)
+    margin = (diameters.max() - diameters.min()) * 0.1 + 0.5
+    ax.set_xlim(diameters.min() - margin, diameters.max() + margin)
     ax.grid(True, alpha=0.3)
     ax.legend(loc='best', fontsize=11)
 
