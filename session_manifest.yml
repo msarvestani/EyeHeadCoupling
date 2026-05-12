@@ -379,7 +379,7 @@ sessions:
 ###############Fixation sessions with visual feedback (central dot various sizes - 7  sizes)
 
  Tsh001_2026-01-09T12_54_50:
-    experiment_type: fixation
+    experiment_type: fixation_feedback
     session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2026-01-09T12_54_50
     calibration_factor : 3.76
     ttl_freq: 60
@@ -389,7 +389,7 @@ sessions:
         saccade_threshold: 1.0
 
  Tsh001_2026-01-09T13_14_16:
-    experiment_type: fixation
+    experiment_type: fixation_feedback
     session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2026-01-09T13_14_16
     calibration_factor : 3.76
     ttl_freq: 60
@@ -400,7 +400,7 @@ sessions:
 
 
  Tsh001_2026-01-12T12_33_46:
-    experiment_type: fixation
+    experiment_type: fixation_feedback
     session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2026-01-12T12_33_46
     calibration_factor : 3.76
     ttl_freq: 60
@@ -411,7 +411,7 @@ sessions:
  
 
  Tsh001_2026-01-12T12_47_01:
-    experiment_type: fixation
+    experiment_type: fixation_feedback
     session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2026-01-12T12_47_01
     calibration_factor : 3.76
     ttl_freq: 60
@@ -422,7 +422,7 @@ sessions:
 
 
  Tsh001_2026-01-13T13_00_15:
-    experiment_type: fixation
+    experiment_type: fixation_feedback
     session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2026-01-13T13_00_15
     calibration_factor : 3.76
     ttl_freq: 60
@@ -433,7 +433,7 @@ sessions:
 
 
   Tsh001_2026-01-14T13_46_10:
-    experiment_type: fixation
+    experiment_type: fixation_feedback
     session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2026-01-14T13_46_10
     calibration_factor : 3.76
     ttl_freq: 60
