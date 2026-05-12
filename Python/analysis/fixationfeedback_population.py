@@ -31,6 +31,7 @@ import yaml
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 from utils.session_loader import list_sessions_from_manifest, load_session
 from fixationfeedback_session import load_fixation_feedback_data
+from fixation_session import bonsai_to_deg
 
 
 # ---------------------------------------------------------------------------
@@ -57,7 +58,7 @@ def compute_session_psychometric(
 
     result: dict[float, tuple[float, int]] = {}
     for diam, group in combined.groupby("diameter"):
-        diam_key = round(float(diam), 3)
+        diam_key = round(float(bonsai_to_deg(diam)), 3)
         n_trials = len(group)
         n_success = int((group["trial_success"] == 2).sum())
         result[diam_key] = (n_success / n_trials if n_trials > 0 else 0.0, n_trials)
@@ -161,7 +162,7 @@ def plot_population_psychometric(
     ax.axhline(100, color="green", linestyle="--", alpha=0.3, linewidth=1)
     ax.axhline(0,   color="red",   linestyle="--", alpha=0.3, linewidth=1)
 
-    ax.set_xlabel("Target Diameter", fontsize=14, fontweight="bold")
+    ax.set_xlabel("Target Diameter (°)", fontsize=14, fontweight="bold")
     ax.set_ylabel("Success Rate (%)", fontsize=14, fontweight="bold")
 
     title = "Psychometric Curve: Success Rate vs Target Diameter"
