@@ -388,16 +388,6 @@ sessions:
       saccade_config:
         saccade_threshold: 1.0
 
- Tsh001_2026-01-09T13_14_16:
-    experiment_type: fixation_feedback
-    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2026-01-09T13_14_16
-    calibration_factor : 3.76
-    ttl_freq: 60
-    camera_side: L
-    params:
-      saccade_config:
-        saccade_threshold: 1.0
-
 
  Tsh001_2026-01-12T12_33_46:
     experiment_type: fixation_feedback
@@ -409,16 +399,6 @@ sessions:
       saccade_config:
         saccade_threshold: 1.0
  
-
- Tsh001_2026-01-12T12_47_01:
-    experiment_type: fixation_feedback
-    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2026-01-12T12_47_01
-    calibration_factor : 3.76
-    ttl_freq: 60
-    camera_side: L
-    params:
-      saccade_config:
-        saccade_threshold: 1.0
 
 
  Tsh001_2026-01-13T13_00_15:
@@ -432,9 +412,42 @@ sessions:
         saccade_threshold: 1.0
 
 
-  Tsh001_2026-01-14T13_46_10:
+ Tsh001_2026-01-14T13_46_10:
     experiment_type: fixation_feedback
     session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2026-01-14T13_46_10
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+    params:
+      saccade_config:
+        saccade_threshold: 1.0
+
+
+ Tsh001_2026-01-15T14_12_38:
+    experiment_type: fixation_feedback
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2026-01-15T14_12_38
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+    params:
+      saccade_config:
+        saccade_threshold: 1.0
+
+
+ Tsh001_2026-01-16T12_04_15:
+    experiment_type: fixation_feedback
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2026-01-16T12_04_15
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+    params:
+      saccade_config:
+        saccade_threshold: 1.0
+
+
+ Tsh001_2026-01-19T14_53_16:
+    experiment_type: fixation_feedback
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2026-01-19T14_53_16
     calibration_factor : 3.76
     ttl_freq: 60
     camera_side: L
@@ -493,6 +506,69 @@ sessions:
       saccade_config:
         saccade_threshold: 1.0
 
+######################## Apollo fixation with feedback
+
+ Tsh002_2026-01-09T15_17_59:
+    experiment_type: fixation_feedback
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh02_Apollo_server\Tsh002_2026-01-09T15_17_59
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+    params:
+      saccade_config:
+        saccade_threshold: 1.0
+
+ Tsh002_2026-01-12T14_48_30:
+    experiment_type: fixation_feedback
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh02_Apollo_server\Tsh002_2026-01-12T14_48_30
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+    params:
+      saccade_config:
+        saccade_threshold: 1.0
+
+ Tsh002_2026-01-14T14_43_10:
+    experiment_type: fixation_feedback
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh02_Apollo_server\Tsh002_2026-01-14T14_43_10
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+    params:
+      saccade_config:
+        saccade_threshold: 1.0
+
+ Tsh002_2026-01-15T15_44_26:
+    experiment_type: fixation_feedback
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh02_Apollo_server\Tsh002_2026-01-15T15_44_26
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+    params:
+      saccade_config:
+        saccade_threshold: 1.0
+
+ Tsh002_2026-01-16T12_45_36:
+    experiment_type: fixation_feedback
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh02_Apollo_server\Tsh002_2026-01-16T12_45_36
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+    params:
+      saccade_config:
+        saccade_threshold: 1.0
+
+ Tsh002_2026-01-19T16_03_28:
+    experiment_type: fixation_feedback
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh02_Apollo_server\Tsh002_2026-01-19T16_03_28
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+    params:
+      saccade_config:
+        saccade_threshold: 1.0
+
+############################################################  Bayleaf Fixation Sessions
  Rat022_2025-09-11T12_58_38:
     experiment_type: fixation
     session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\Rat22_Bayleaf_server\Rat022_2025-09-11T12_58_38
