@@ -19,7 +19,6 @@ from eyehead import (
     detect_saccades,
     load_session_data,
     plot_eye_fixations_between_cue_and_go_by_trial,
-    quantify_fixation_stability_vs_random,
     get_session_date_from_path,
 )
 from eyehead.analysis import _filename_with_animal
@@ -379,36 +378,6 @@ def main(session_id: str) -> pd.DataFrame:
         valid_count / total_trials if total_trials > 0 else np.nan
     )
     total_trials_value = total_trials if total_trials > 0 else np.nan
-
-    stats = quantify_fixation_stability_vs_random(
-        eye_timestamp=data.eye_timestamp,
-        eye_pos=saccades["eye_pos"],
-        pairs_ct=pairs_ct,
-        pairs_gt=pairs_gt,
-        valid_trials=valid_trials,
-        plot=True,
-        rng_seed=0,
-    )
-
-
-    if stats and stats.get("figure") is not None:
-        fig = stats["figure"]
-        eye_part = (config.eye_name or "Eye").replace(" ", "")
-        id_part = str(config.animal_id).strip() if config.animal_id is not None else ""
-        stem_parts = [part for part in (id_part, eye_part, "fixation_vs_random") if part]
-        stem = "_".join(stem_parts) if stem_parts else "fixation_vs_random"
-
-        base_png = f"{stem}.png"
-        base_svg = f"{stem}.svg"
-        animal_label = config.animal_name or config.animal_id
-        fname_png = _filename_with_animal(base_png, animal_label)
-        fname_svg = _filename_with_animal(base_svg, animal_label)
-
-        fig.savefig(config.results_dir / fname_png, bbox_inches="tight")
-        fig.savefig(config.results_dir / fname_svg, bbox_inches="tight")
-
-        plt.show()
-        plt.close(fig)
 
     fig_pericue = plot_pericue_path_length(
         eye_timestamp=data.eye_timestamp,
