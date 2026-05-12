@@ -9,7 +9,6 @@ from .analysis import (
     sort_saccades,
     plot_fixation_intervals_by_trial,
     plot_eye_fixations_between_cue_and_go_by_trial,
-    quantify_fixation_stability_vs_random,
 )
 from .filters import butter_noncausal, interpolate_nans
 from .io import (
@@ -37,7 +36,6 @@ __all__ = [
     "sort_saccades",
     "plot_fixation_intervals_by_trial",
     "plot_eye_fixations_between_cue_and_go_by_trial",
-    "quantify_fixation_stability_vs_random",
     "butter_noncausal",
     "interpolate_nans",
     "SessionData",
