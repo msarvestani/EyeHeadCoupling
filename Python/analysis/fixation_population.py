@@ -27,15 +27,15 @@ from utils.session_loader import list_sessions_from_manifest, load_session
 assert main is fixation_session.main
 
 
-def _animal_suffix(animal_name: str | None) -> str:
-    """Return a filesystem-friendly suffix for ``animal_name``."""
+def _animal_prefix(animal_name: str | None) -> str:
+    """Return a filesystem-friendly prefix for ``animal_name``."""
 
     if not animal_name:
         return ""
 
     safe_name = re.sub(r"[^0-9A-Za-z_-]+", "_", animal_name.strip())
     safe_name = safe_name.strip("_")
-    return f"_{safe_name}" if safe_name else ""
+    return f"{safe_name}_" if safe_name else ""
 
 
 def analyze_all_sessions(
@@ -161,7 +161,7 @@ def plot_metric_trends(
         ),
     ]
 
-    suffix = _animal_suffix(animal_name)
+    prefix = _animal_prefix(animal_name)
 
     for fix_col, fix_sem_col, rand_col, rand_sem_col, ylabel, fname in metrics:
         if fix_col not in data or rand_col not in data:
@@ -280,7 +280,7 @@ def plot_metric_trends(
         ax.legend()
 
         fig.tight_layout()
-        fig.savefig(save_dir / f"{fname}{suffix}.png", bbox_inches="tight")
+        fig.savefig(save_dir / f"{prefix}{fname}.png", bbox_inches="tight")
         plt.close(fig)
 
 
@@ -351,9 +351,9 @@ def plot_active_stabilization(
     ax.set_title(title)
 
     fig.tight_layout()
-    suffix = _animal_suffix(animal_name)
+    prefix = _animal_prefix(animal_name)
     for ext in ("png", "svg"):
-        fig.savefig(save_dir / f"active_stabilization_trend{suffix}.{ext}", bbox_inches="tight")
+        fig.savefig(save_dir / f"{prefix}active_stabilization_trend.{ext}", bbox_inches="tight")
     plt.show()
     plt.close(fig)
 
@@ -391,9 +391,9 @@ if __name__ == "__main__":
         max_interval_fixations = None
     results_root = Path(manifest.get("results_root", root_dir))
     results_root.mkdir(parents=True, exist_ok=True)
-    suffix = _animal_suffix(args.animal_name)
+    prefix = _animal_prefix(args.animal_name)
     #aggregated.to_csv(
-        #results_root / f"fixation_population_results{suffix}.csv", index=False
+        #results_root / f"{prefix}fixation_population_results.csv", index=False
     #)
     plot_metric_trends(
         aggregated,
