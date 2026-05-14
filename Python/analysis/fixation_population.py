@@ -157,7 +157,7 @@ def plot_active_stabilization(
     ax.set_xticklabels(np.arange(1, max_sessions + 1), fontsize=8)
     ax.set_xlabel("Session number")
     ax.set_ylabel("Active stabilization\n(cue_suppression × selection_bias²)")
-    ax.set_ylim(-0.05, 1.05)
+    ax.set_ylim(-0.15, 1.05)
 
     full_title = title
     if animal_name:

@@ -108,9 +108,9 @@ def plot_pericue_path_length(
 ) -> plt.Figure:
     """Plot mean eye path length in bins aligned to cue onset.
 
-    Three stacked panels show valid trials (top), invalid trials (middle),
-    and all trials (bottom). When valid_trials is None all panels show all
-    trials with equivalent content.
+    Two stacked panels show valid trials (top), invalid trials (middle). 
+    When valid_trials is None all panels show all trials with equivalent content.
+
     """
     eye_ts = np.asarray(eye_timestamp).ravel()
     xy = np.asarray(eye_pos)[:, :2]
@@ -135,9 +135,8 @@ def plot_pericue_path_length(
 
     mean_valid, sem_valid = _compute_path_bins(eye_ts, xy, cue_ts_valid, bin_edges)
     mean_invalid, sem_invalid = _compute_path_bins(eye_ts, xy, cue_ts_invalid, bin_edges)
-    mean_all, sem_all = _compute_path_bins(eye_ts, xy, cue_ts_all, bin_edges)
 
-    fig, axes = plt.subplots(3, 1, figsize=(10, 10), sharex=True)
+    fig, axes = plt.subplots(2, 1, figsize=(10, 10), sharex=True)
 
     _draw_path_panel(
         axes[0], bin_centers, mean_valid, sem_valid,
@@ -149,13 +148,8 @@ def plot_pericue_path_length(
         f"Invalid trials  (n={n_invalid}, {pct_invalid:.1f}%,  {bin_s:.2f} s bins)",
         "tomato", bin_s,
     )
-    _draw_path_panel(
-        axes[2], bin_centers, mean_all, sem_all,
-        f"All trials  (n={total},  {bin_s:.2f} s bins)",
-        "dimgray", bin_s,
-    )
 
-    axes[2].set_xlabel("Time relative to cue (s)")
+    axes[1].set_xlabel("Time relative to cue (s)")
     fig.suptitle("Eye path length around cue onset")
     #fig.tight_layout()
     return fig
