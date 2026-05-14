@@ -316,13 +316,16 @@ def plot_pericue_pre_post_summary(
     return fig, metrics
 
 
-def main(session_id: str) -> pd.DataFrame:
+def main(session_id: str, show_plots: bool = True) -> pd.DataFrame:
     """Run fixation analysis for ``session_id``.
 
     Parameters
     ----------
     session_id:
         Identifier of the session to analyse.
+    show_plots:
+        When ``False`` figures are saved but not displayed interactively.
+        Useful when running many sessions in batch from fixation_population.
     """
     config = load_session(session_id)
     config.results_dir.mkdir(parents=True, exist_ok=True)
@@ -348,7 +351,8 @@ def main(session_id: str) -> pd.DataFrame:
         plot=False,
     )
     if fig_saccades is not None:
-        #plt.show()
+        if show_plots:
+            plt.show()
         plt.close(fig_saccades)
 
 
@@ -379,7 +383,8 @@ def main(session_id: str) -> pd.DataFrame:
         animal_name=config.animal_name,
         plot=True,
     )
-    #plt.show()
+    if show_plots:
+        plt.show()
     for fig in (fig_pairs, fig_interval):
         if fig is not None:
             plt.close(fig)
@@ -405,7 +410,8 @@ def main(session_id: str) -> pd.DataFrame:
     for ext in ("png", "svg"):
         fname = _filename_with_animal(f"{stem}.{ext}", animal_label)
         fig_pericue.savefig(config.results_dir / fname, bbox_inches="tight")
-    #plt.show()
+    if show_plots:
+        plt.show()
     plt.close(fig_pericue)
 
     # --- pre/post summary (control figure — remove this block to drop it) ---
@@ -420,7 +426,8 @@ def main(session_id: str) -> pd.DataFrame:
     for ext in ("png", "svg"):
         fname = _filename_with_animal(f"{stem}.{ext}", animal_label)
         fig_prepost.savefig(config.results_dir / fname, bbox_inches="tight")
-    #plt.show()
+    if show_plots:
+        plt.show()
     plt.close(fig_prepost)
     # --- end control figure ---
 
