@@ -154,6 +154,7 @@ def plot_active_stabilization(
 
     ax.axhline(0, color="0.4", linestyle=":", linewidth=0.8)
     ax.set_xticks(np.arange(max_sessions))
+    ax.set_yticks([0,0.5,1.0]);
     ax.set_xticklabels(np.arange(1, max_sessions + 1), fontsize=8)
     ax.set_xlabel("Session number")
     ax.set_ylabel("Active stabilization\n(cue_suppression × selection_bias²)")

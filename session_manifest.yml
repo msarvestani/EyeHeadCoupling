@@ -1,5 +1,5 @@
 results_root: X:\Analysis\EyeHeadCoupling
-max_interval_fixations: 1 #this is how long we count a fixation of 0.7 sec valid after cue is presented.......
+max_interval_fixations: 2 #this is how long we count a fixation of 0.7 sec valid after cue is presented.......
 
 saccade_config:
   saccade_threshold: 3.0
@@ -324,7 +324,7 @@ sessions:
 
 ############################################################  Bayleaf Fixation Sessions
  Rat022_2025-09-11T12_58_38:
-    experiment_type: fixation
+    experiment_type: fixation_learning
     session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\Rat22_Bayleaf_server\Rat022_2025-09-11T12_58_38
     calibration_factor : 3.76
     ttl_freq: 60
@@ -334,7 +334,7 @@ sessions:
         saccade_threshold: 1.0
 
  Rat022_2025-09-12T15_52_12:
-    experiment_type: fixation
+    experiment_type: fixation_learning
     session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\Rat22_Bayleaf_server\Rat022_2025-09-12T15_52_12
     calibration_factor : 3.76
     ttl_freq: 60
@@ -343,8 +343,29 @@ sessions:
       saccade_config:
         saccade_threshold: 1.0
 
+ Rat022_2025-09-12T16_13_12:
+    experiment_type: fixation_learning
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\Rat22_Bayleaf_server\Rat022_2025-09-12T16_13_12
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+    params:
+      saccade_config:
+        saccade_threshold: 1.0
+        
+ Rat022_2025-09-18T12_43_05:
+    experiment_type: fixation_learning
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\Rat22_Bayleaf_server\Rat022_2025-09-18T12_43_05
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+    params:
+      saccade_config:
+        saccade_threshold: 1.0
+
+
  Rat022_2025-09-19T14_37_27:
-    experiment_type: fixation
+    experiment_type: fixation_learning
     session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\Rat22_Bayleaf_server\Rat022_2025-09-19T14_37_27
     calibration_factor : 3.76
     ttl_freq: 60
