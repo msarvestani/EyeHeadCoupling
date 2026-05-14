@@ -187,6 +187,13 @@ if __name__ == "__main__":
         help="One or more animal names to include (e.g. --animal-name Paris Apollo)",
     )
     parser.add_argument(
+        "--experiment-type",
+        nargs="+",
+        default=None,
+        choices=["fixation", "fixation_learning"],
+        help="Which experiment type(s) to process (default: both)",
+    )
+    parser.add_argument(
         "--show-session-plots",
         action="store_true",
         default=False,
@@ -207,17 +214,19 @@ if __name__ == "__main__":
     animal_names = args.animal_name or [None]
     title_name = " & ".join(animal_names) if animal_names != [None] else None
 
-    experiment_configs = [
-        (
-            "fixation",
+    all_experiment_configs = {
+        "fixation": (
             "fixation_trend",
             "Fixation without visual feedback across sessions",
         ),
-        (
-            "fixation_learning",
+        "fixation_learning": (
             "fixation_learning_trend",
             "Fixation learning across sessions",
         ),
+    }
+    requested = args.experiment_type or list(all_experiment_configs.keys())
+    experiment_configs = [
+        (exp_type, *all_experiment_configs[exp_type]) for exp_type in requested
     ]
 
     for exp_type, fname_stem, plot_title in experiment_configs:
