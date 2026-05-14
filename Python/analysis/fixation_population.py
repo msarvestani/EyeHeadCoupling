@@ -296,55 +296,74 @@ def plot_active_stabilization(
     *,
     animal_name: str | None = None,
 ) -> None:
-    """Plot active_stabilization across sessions, one point per session."""
+    """Plot active_stabilization across sessions, one point per session.
+
+    When the DataFrame contains multiple animals, each is plotted in a
+    different color with its own session numbering and a legend.
+    """
     if df.empty or "active_stabilization" not in df.columns:
         return
 
     data = df.copy()
     data["session_date"] = pd.to_datetime(data["session_date"], errors="coerce")
-    data.sort_values("session_date", inplace=True, ignore_index=True)
+    data.sort_values(["animal_id", "session_date"], inplace=True, ignore_index=True)
 
-    n_sessions = len(data)
-    x_pos = np.arange(n_sessions)
-    session_numbers = x_pos + 1  # 1-based labels
+    id_col = "animal_id" if "animal_id" in data.columns else "animal_name"
+    animals = data[id_col].dropna().unique()
+    multi = len(animals) > 1
 
-    metric = pd.to_numeric(data["active_stabilization"], errors="coerce").to_numpy()
+    colors = plt.cm.tab10(np.linspace(0, 0.9, max(len(animals), 1)))
+    color_map = {a: colors[i] for i, a in enumerate(animals)}
 
-    fig, ax = plt.subplots(figsize=(max(6, n_sessions * 1.1), 4))
+    max_sessions = max(len(data[data[id_col] == a]) for a in animals)
+    fig, ax = plt.subplots(figsize=(max(6, max_sessions * 1.1), 4))
 
-    ax.plot(x_pos, metric, linestyle="--", color="0.75", linewidth=1, zorder=1)
-    ax.scatter(x_pos, metric, color="steelblue", s=60, zorder=2)
+    for animal in animals:
+        adf = data[data[id_col] == animal].reset_index(drop=True)
+        n = len(adf)
+        x_pos = np.arange(n)
+        metric = pd.to_numeric(adf["active_stabilization"], errors="coerce").to_numpy()
+        color = color_map[animal]
 
-    for i in range(n_sessions):
-        y = metric[i]
-        if not np.isfinite(y):
-            continue
-        date_val = data["session_date"].iloc[i]
-        label = date_val.strftime("%Y-%m-%d") if pd.notna(date_val) else ""
-        ax.annotate(
-            label,
-            xy=(x_pos[i], y),
-            xytext=(0, 8),
-            textcoords="offset points",
-            ha="center",
-            va="bottom",
-            fontsize=7,
-            color="dimgray",
-            rotation=45,
-        )
+        ax.plot(x_pos, metric, linestyle="--", color=color, linewidth=1, alpha=0.7, zorder=1)
+        ax.scatter(x_pos, metric, color=color, s=60, zorder=2,
+                   label=str(animal) if multi else None)
+
+        for i in range(n):
+            y = metric[i]
+            if not np.isfinite(y):
+                continue
+            date_val = adf["session_date"].iloc[i]
+            label = date_val.strftime("%Y-%m-%d") if pd.notna(date_val) else ""
+            ax.annotate(
+                label,
+                xy=(x_pos[i], y),
+                xytext=(0, 8),
+                textcoords="offset points",
+                ha="center",
+                va="bottom",
+                fontsize=7,
+                color=color,
+                rotation=45,
+            )
 
     ax.axhline(0, color="0.4", linestyle=":", linewidth=0.8)
-    ax.set_xticks(x_pos)
-    ax.set_xticklabels(session_numbers, fontsize=8)
+    ax.set_xticks(np.arange(max_sessions))
+    ax.set_xticklabels(np.arange(1, max_sessions + 1), fontsize=8)
     ax.set_xlabel("Session number")
     ax.set_ylabel("Active stabilization\n(cue_suppression × selection_bias²)")
     title = "Active stabilization across sessions"
     if animal_name:
         title += f" ({animal_name})"
     ax.set_title(title)
+    if multi:
+        ax.legend(loc="best", fontsize=9)
 
     fig.tight_layout()
-    prefix = _animal_prefix(animal_name)
+    animal_id = "_".join(str(a) for a in animals) if multi else (
+        data[id_col].dropna().iloc[0] if not data[id_col].dropna().empty else animal_name
+    )
+    prefix = _animal_prefix(animal_id)
     for ext in ("png", "svg"):
         fig.savefig(save_dir / f"{prefix}fixation_trend.{ext}", bbox_inches="tight")
     plt.show()
@@ -363,8 +382,9 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--animal-name",
+        nargs="+",
         default=None,
-        help="Optional animal name to filter sessions",
+        help="One or more animal names to include (e.g. --animal-name Paris Apollo)",
     )
     parser.add_argument(
         "--show-session-plots",
@@ -373,9 +393,14 @@ if __name__ == "__main__":
         help="Display per-session figures interactively (always saved; hidden by default)",
     )
     args = parser.parse_args()
-    aggregated = analyze_all_sessions(
-        args.experiment_type, animal_name=args.animal_name, show_plots=args.show_session_plots
-    )
+    animal_names = args.animal_name or [None]
+    frames = [
+        analyze_all_sessions(
+            args.experiment_type, animal_name=name, show_plots=args.show_session_plots
+        )
+        for name in animal_names
+    ]
+    aggregated = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
     root_dir = Path(__file__).resolve().parents[2]
     manifest_path = root_dir / "session_manifest.yml"
     try:
@@ -390,18 +415,9 @@ if __name__ == "__main__":
         max_interval_fixations = None
     results_root = Path(manifest.get("results_root", root_dir))
     results_root.mkdir(parents=True, exist_ok=True)
-    prefix = _animal_prefix(args.animal_name)
-    #aggregated.to_csv(
-        #results_root / f"{prefix}fixation_population_results.csv", index=False
-    #)
-    plot_metric_trends(
-        aggregated,
-        results_root,
-        animal_name=args.animal_name,
-        max_interval_fixations=max_interval_fixations,
-    )
+    title_name = " & ".join(animal_names) if animal_names != [None] else None
     plot_active_stabilization(
         aggregated,
         results_root,
-        animal_name=args.animal_name,
+        animal_name=title_name,
     )
