@@ -154,10 +154,11 @@ def plot_active_stabilization(
 
     ax.axhline(0, color="0.4", linestyle=":", linewidth=0.8)
     ax.set_xticks(np.arange(max_sessions))
-    ax.set_yticks([0,0.5,1.0]);
     ax.set_xticklabels(np.arange(1, max_sessions + 1), fontsize=8)
     ax.set_xlabel("Session number")
     ax.set_ylabel("Active stabilization\n(cue_suppression × selection_bias²)")
+    ax.set_ylim(-0.05, 1.05)
+
     full_title = title
     if animal_name:
         full_title += f" ({animal_name})"
@@ -166,6 +167,7 @@ def plot_active_stabilization(
         ax.legend(loc="best", fontsize=9)
 
     fig.tight_layout()
+
     animal_id = "_".join(str(a) for a in animals) if multi else (
         data[id_col].dropna().iloc[0] if not data[id_col].dropna().empty else animal_name
     )

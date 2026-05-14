@@ -135,7 +135,7 @@ def plot_population_psychometric(
         with np.errstate(all="ignore"):
             pop_mean = np.nanmean(rate_matrix, axis=0)
             pop_n = np.sum(~np.isnan(rate_matrix), axis=0)
-            pop_sem = np.nanstd(rate_matrix, axis=0, ddof=1) / np.sqrt(pop_n)
+            pop_sd = np.nanstd(rate_matrix, axis=0, ddof=1)
 
 #      # Optional: plot thin per-session curves in the same color family
         # colors = cm.get_cmap(cmap_name)(np.linspace(0.35, 0.75, n_sessions))
@@ -152,16 +152,16 @@ def plot_population_psychometric(
         valid_pop = ~np.isnan(pop_mean)
         animal_label = animal_name or (animal_ids[a_idx] if a_idx < len(animal_ids) else "")
         ax.errorbar(
-            diameters[valid_pop], pop_mean[valid_pop], yerr=pop_sem[valid_pop],
+            diameters[valid_pop], pop_mean[valid_pop], yerr=pop_sd[valid_pop],
             fmt="o-", color=mean_color, ecolor=mean_color,
             markersize=10, linewidth=2.5, capsize=5, capthick=2,
-            label=f"{animal_label} mean ± SEM", zorder=5,
+            label=f"{animal_label} mean ± SD", zorder=5,
         )
 
-        for d, mean_val, sem_val, n in zip(
-            diameters[valid_pop], pop_mean[valid_pop], pop_sem[valid_pop], pop_n[valid_pop]
+        for d, mean_val, sd_val, n in zip(
+            diameters[valid_pop], pop_mean[valid_pop], pop_sd[valid_pop], pop_n[valid_pop]
         ):
-            ax.text(d, mean_val + sem_val + 3, f"n={int(n)}",
+            ax.text(d, mean_val + sd_val + 3, f"n={int(n)}",
                     ha="center", va="bottom", fontsize=9,
                     fontweight="bold", color=mean_color)
 

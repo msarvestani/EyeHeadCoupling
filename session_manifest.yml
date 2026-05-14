@@ -1,5 +1,5 @@
 results_root: X:\Analysis\EyeHeadCoupling
-max_interval_fixations: 2 #this is how long we count a fixation of 0.7 sec valid after cue is presented.......
+max_interval_fixations: 1 #this is how long we count a fixation of 0.7 sec valid after cue is presented.......
 
 saccade_config:
   saccade_threshold: 3.0
