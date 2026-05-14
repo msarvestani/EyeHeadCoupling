@@ -97,6 +97,8 @@ def plot_active_stabilization(
     *,
     animal_name: str | None = None,
     show_plots: bool = False,
+    fname_stem: str = "fixation_trend",
+    title: str = "Fixation without visual feedback across sessions",
 ) -> None:
     """Plot active_stabilization across sessions, one point per session.
 
@@ -154,10 +156,10 @@ def plot_active_stabilization(
     ax.set_xticklabels(np.arange(1, max_sessions + 1), fontsize=8)
     ax.set_xlabel("Session number")
     ax.set_ylabel("Active stabilization\n(cue_suppression × selection_bias²)")
-    title = "Fixation without visual feedback across sessions"
+    full_title = title
     if animal_name:
-        title += f" ({animal_name})"
-    ax.set_title(title)
+        full_title += f" ({animal_name})"
+    ax.set_title(full_title)
     if multi:
         ax.legend(loc="best", fontsize=9)
 
@@ -167,7 +169,7 @@ def plot_active_stabilization(
     )
     prefix = _animal_prefix(animal_id)
     for ext in ("png", "svg"):
-        fig.savefig(save_dir / f"{prefix}fixation_trend.{ext}", bbox_inches="tight")
+        fig.savefig(save_dir / f"{prefix}{fname_stem}.{ext}", bbox_inches="tight")
     if show_plots:
         plt.show()
     plt.close(fig)
@@ -176,12 +178,7 @@ def plot_active_stabilization(
 # Usage: python Python/analysis/fixation_population.py --animal-name Paris
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Run analysis across sessions filtered by experiment type",
-    )
-    parser.add_argument(
-        "--experiment-type",
-        default="fixation",
-        help="Experiment type to process",
+        description="Run fixation and fixation_learning analysis across sessions",
     )
     parser.add_argument(
         "--animal-name",
@@ -196,14 +193,7 @@ if __name__ == "__main__":
         help="Display per-session figures interactively (always saved; hidden by default)",
     )
     args = parser.parse_args()
-    animal_names = args.animal_name or [None]
-    frames = [
-        analyze_all_sessions(
-            args.experiment_type, animal_name=name, show_plots=args.show_session_plots
-        )
-        for name in animal_names
-    ]
-    aggregated = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+
     root_dir = Path(__file__).resolve().parents[2]
     manifest_path = root_dir / "session_manifest.yml"
     try:
@@ -211,17 +201,41 @@ if __name__ == "__main__":
             manifest = yaml.safe_load(f) or {}
     except FileNotFoundError:
         manifest = {}
-    raw_max_interval = manifest.get("max_interval_fixations")
-    try:
-        max_interval_fixations = float(raw_max_interval) if raw_max_interval is not None else None
-    except (TypeError, ValueError):
-        max_interval_fixations = None
     results_root = Path(manifest.get("results_root", root_dir))
     results_root.mkdir(parents=True, exist_ok=True)
+
+    animal_names = args.animal_name or [None]
     title_name = " & ".join(animal_names) if animal_names != [None] else None
-    plot_active_stabilization(
-        aggregated,
-        results_root,
-        animal_name=title_name,
-        show_plots=args.show_session_plots,
-    )
+
+    experiment_configs = [
+        (
+            "fixation",
+            "fixation_trend",
+            "Fixation without visual feedback across sessions",
+        ),
+        (
+            "fixation_learning",
+            "fixation_learning_trend",
+            "Fixation learning across sessions",
+        ),
+    ]
+
+    for exp_type, fname_stem, plot_title in experiment_configs:
+        frames = [
+            analyze_all_sessions(
+                exp_type, animal_name=name, show_plots=args.show_session_plots
+            )
+            for name in animal_names
+        ]
+        aggregated = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+        if aggregated.empty:
+            print(f"No sessions found for experiment_type='{exp_type}', skipping.")
+            continue
+        plot_active_stabilization(
+            aggregated,
+            results_root,
+            animal_name=title_name,
+            show_plots=args.show_session_plots,
+            fname_stem=fname_stem,
+            title=plot_title,
+        )
