@@ -41,7 +41,7 @@ def _animal_prefix(animal_name: str | None) -> str:
 def analyze_all_sessions(
     experiment_type: str = "fixation",
     animal_name: str | None = None,
-    save_plots: bool = False,
+    show_plots: bool = False,
 ) -> pd.DataFrame:
     """Run fixation analysis on all sessions of ``experiment_type``.
 
@@ -52,10 +52,10 @@ def analyze_all_sessions(
     animal_name:
         Optional animal name used to further restrict the manifest lookup and
         annotate aggregated artefacts.
-    save_plots:
-        When ``True`` per-session figures are saved and displayed.
-        Defaults to ``False`` to suppress individual session plots during
-        population runs.
+    show_plots:
+        When ``True`` per-session figures are displayed interactively.
+        Defaults to ``False`` so population runs don't require clicking through
+        windows. Figures are always saved regardless of this flag.
 
     Returns
     -------
@@ -67,7 +67,7 @@ def analyze_all_sessions(
     for session_id in list_sessions_from_manifest(
         experiment_type, match_prefix=True, animal_name=animal_name
     ):
-        session_df = fixation_session.main(session_id, save_plots=save_plots)
+        session_df = fixation_session.main(session_id, show_plots=show_plots)
 
         if "animal_name" not in session_df.columns or session_df["animal_name"].isna().all():
             session_cfg = load_session(session_id)
@@ -367,14 +367,14 @@ if __name__ == "__main__":
         help="Optional animal name to filter sessions",
     )
     parser.add_argument(
-        "--plot-session",
+        "--show-session-plots",
         action="store_true",
         default=False,
-        help="Save and display per-session plots (suppressed by default)",
+        help="Display per-session figures interactively (always saved; hidden by default)",
     )
     args = parser.parse_args()
     aggregated = analyze_all_sessions(
-        args.experiment_type, animal_name=args.animal_name, save_plots=args.plot_session
+        args.experiment_type, animal_name=args.animal_name, show_plots=args.show_session_plots
     )
     root_dir = Path(__file__).resolve().parents[2]
     manifest_path = root_dir / "session_manifest.yml"
