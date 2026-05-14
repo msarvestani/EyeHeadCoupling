@@ -114,22 +114,23 @@ def plot_active_stabilization(
         y = metric[i]
         if not np.isfinite(y):
             continue
-        date_val = data["session_date"].iloc[i]
-        label = date_val.strftime("%Y-%m-%d") if pd.notna(date_val) else ""
-        ax.annotate(
-            label,
-            xy=(x_pos[i], y),
-            xytext=(0, 8),
-            textcoords="offset points",
-            ha="center",
-            va="bottom",
-            fontsize=7,
-            color="dimgray",
-            rotation=45,
-        )
+        # date_val = data["session_date"].iloc[i]
+        # label = date_val.strftime("%Y-%m-%d") if pd.notna(date_val) else ""
+        # ax.annotate(
+        #     label,
+        #     xy=(x_pos[i], y),
+        #     xytext=(0, 8),
+        #     textcoords="offset points",
+        #     ha="center",
+        #     va="bottom",
+        #     fontsize=7,
+        #     color="dimgray",
+        #     rotation=45,
+        #)
 
     ax.axhline(0, color="0.4", linestyle=":", linewidth=0.8)
     ax.set_xticks(x_pos)
+    ax.set_yticks([0, 1])
     ax.set_xticklabels(session_numbers, fontsize=8)
     ax.set_xlabel("Session number")
     ax.set_ylabel("Active stabilization\n(cue_suppression × selection_bias²)")
@@ -142,7 +143,7 @@ def plot_active_stabilization(
     animal_id = data["animal_id"].dropna().iloc[0] if "animal_id" in data.columns and not data["animal_id"].dropna().empty else animal_name
     prefix = _animal_prefix(animal_id)
     for ext in ("png", "svg"):
-        fig.savefig(save_dir / f"{prefix}active_stabilization_trend.{ext}", bbox_inches="tight")
+        fig.savefig(save_dir / f"{prefix}fixation_trend.{ext}", bbox_inches="tight")
     plt.show()
     plt.close(fig)
 
