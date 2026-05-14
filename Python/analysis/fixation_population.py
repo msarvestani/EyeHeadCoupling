@@ -98,7 +98,7 @@ def plot_active_stabilization(
     animal_name: str | None = None,
     show_plots: bool = False,
     fname_stem: str = "fixation_trend",
-    title: str = "Fixation without visual feedback across sessions",
+    title: str = "Fixation across sessions",
 ) -> None:
     """Plot active_stabilization across sessions, one point per session.
 

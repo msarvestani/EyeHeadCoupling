@@ -171,7 +171,7 @@ def plot_population_psychometric(
     ax.set_xlabel("Target Diameter (°)", fontsize=14, fontweight="bold")
     ax.set_ylabel("Success Rate (%)", fontsize=14, fontweight="bold")
 
-    title = "Psychometric Curve: Success Rate vs Target Diameter"
+    title = "Fixation w Visual Feedback: Success Rate vs Target Diameter"
     label_parts = [p for p in animal_names if p]
     if label_parts:
         title += f"\n{' & '.join(label_parts)}"
