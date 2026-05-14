@@ -305,13 +305,16 @@ def plot_pericue_pre_post_summary(
     return fig, metrics
 
 
-def main(session_id: str) -> pd.DataFrame:
+def main(session_id: str, save_plots: bool = True) -> pd.DataFrame:
     """Run fixation analysis for ``session_id``.
 
     Parameters
     ----------
     session_id:
         Identifier of the session to analyse.
+    save_plots:
+        When ``False`` figures are computed but not saved or displayed.
+        Useful when running many sessions in batch from fixation_population.
     """
     config = load_session(session_id)
     config.results_dir.mkdir(parents=True, exist_ok=True)
@@ -336,7 +339,7 @@ def main(session_id: str) -> pd.DataFrame:
         data=data,
         plot=False,
     )
-    if fig_saccades is not None:
+    if fig_saccades is not None and save_plots:
         plt.show()
         plt.close(fig_saccades)
 
@@ -366,9 +369,10 @@ def main(session_id: str) -> pd.DataFrame:
         animal_id=config.animal_id,
         eye_name=config.eye_name,
         animal_name=config.animal_name,
-        plot=True,
+        plot=save_plots,
     )
-    plt.show()
+    if save_plots:
+        plt.show()
     for fig in (fig_pairs, fig_interval):
         if fig is not None:
             plt.close(fig)
@@ -421,10 +425,11 @@ def main(session_id: str) -> pd.DataFrame:
     animal_label = config.animal_name or config.animal_id
     stem_parts = [part for part in (id_part, eye_part, "pericue_path_length") if part]
     stem = "_".join(stem_parts) if stem_parts else "pericue_path_length"
-    for ext in ("png", "svg"):
-        fname = _filename_with_animal(f"{stem}.{ext}", animal_label)
-        fig_pericue.savefig(config.results_dir / fname, bbox_inches="tight")
-    plt.show()
+    if save_plots:
+        for ext in ("png", "svg"):
+            fname = _filename_with_animal(f"{stem}.{ext}", animal_label)
+            fig_pericue.savefig(config.results_dir / fname, bbox_inches="tight")
+        plt.show()
     plt.close(fig_pericue)
 
     # --- pre/post summary (control figure — remove this block to drop it) ---
@@ -436,10 +441,11 @@ def main(session_id: str) -> pd.DataFrame:
     )
     stem_parts = [part for part in (id_part, eye_part, "pericue_pre_post") if part]
     stem = "_".join(stem_parts) if stem_parts else "pericue_pre_post"
-    for ext in ("png", "svg"):
-        fname = _filename_with_animal(f"{stem}.{ext}", animal_label)
-        fig_prepost.savefig(config.results_dir / fname, bbox_inches="tight")
-    plt.show()
+    if save_plots:
+        for ext in ("png", "svg"):
+            fname = _filename_with_animal(f"{stem}.{ext}", animal_label)
+            fig_prepost.savefig(config.results_dir / fname, bbox_inches="tight")
+        plt.show()
     plt.close(fig_prepost)
     # --- end control figure ---
 
