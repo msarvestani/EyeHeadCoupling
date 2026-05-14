@@ -96,6 +96,7 @@ def plot_active_stabilization(
     save_dir: Path,
     *,
     animal_name: str | None = None,
+    show_plots: bool = False,
 ) -> None:
     """Plot active_stabilization across sessions, one point per session.
 
@@ -167,7 +168,8 @@ def plot_active_stabilization(
     prefix = _animal_prefix(animal_id)
     for ext in ("png", "svg"):
         fig.savefig(save_dir / f"{prefix}fixation_trend.{ext}", bbox_inches="tight")
-    plt.show()
+    if show_plots:
+        plt.show()
     plt.close(fig)
 
 
@@ -221,4 +223,5 @@ if __name__ == "__main__":
         aggregated,
         results_root,
         animal_name=title_name,
+        show_plots=args.show_session_plots,
     )
