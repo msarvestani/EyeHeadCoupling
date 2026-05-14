@@ -179,6 +179,70 @@ def plot_active_stabilization(
     plt.close(fig)
 
 
+def plot_valid_percent(
+    df: pd.DataFrame,
+    save_dir: Path,
+    *,
+    animal_name: str | None = None,
+    show_plots: bool = False,
+    fname_stem: str = "valid_percent_trend",
+    title: str = "Valid trial percentage across sessions",
+) -> None:
+    """Plot valid trial percentage across sessions, one point per session."""
+    if df.empty or "valid_trial_fraction" not in df.columns:
+        return
+
+    data = df.copy()
+    data["session_date"] = pd.to_datetime(data["session_date"], errors="coerce")
+    data.sort_values(["animal_id", "session_date"], inplace=True, ignore_index=True)
+
+    id_col = "animal_id" if "animal_id" in data.columns else "animal_name"
+    animals = data[id_col].dropna().unique()
+    multi = len(animals) > 1
+
+    colors = plt.cm.tab10(np.linspace(0, 0.9, max(len(animals), 1)))
+    color_map = {a: colors[i] for i, a in enumerate(animals)}
+
+    max_sessions = max(len(data[data[id_col] == a]) for a in animals)
+    fig, ax = plt.subplots(figsize=(max(6, max_sessions * 1.1), 4))
+
+    for animal in animals:
+        adf = data[data[id_col] == animal].reset_index(drop=True)
+        n = len(adf)
+        x_pos = np.arange(n)
+        metric = pd.to_numeric(adf["valid_trial_fraction"], errors="coerce").to_numpy() * 100
+        color = color_map[animal]
+
+        ax.plot(x_pos, metric, linestyle="--", color=color, linewidth=1, alpha=0.7, zorder=1)
+        ax.scatter(x_pos, metric, color=color, s=60, zorder=2,
+                   label=str(animal) if multi else None)
+
+    ax.set_xticks(np.arange(max_sessions))
+    ax.set_xticklabels(np.arange(1, max_sessions + 1), fontsize=8)
+    ax.set_xlabel("Session number")
+    ax.set_ylabel("Valid trials (%)")
+    ax.set_ylim(-5, 105)
+
+    full_title = title
+    if animal_name:
+        full_title += f" ({animal_name})"
+    ax.set_title(full_title)
+    if multi:
+        ax.legend(loc="best", fontsize=9)
+
+    fig.tight_layout()
+
+    animal_id = "_".join(str(a) for a in animals) if multi else (
+        data[id_col].dropna().iloc[0] if not data[id_col].dropna().empty else animal_name
+    )
+    prefix = _animal_prefix(animal_id)
+    for ext in ("png", "svg"):
+        fig.savefig(save_dir / f"{prefix}{fname_stem}.{ext}", bbox_inches="tight")
+    if show_plots:
+        plt.show()
+    plt.close(fig)
+
+
 # Usage: python Python/analysis/fixation_population.py --animal-name Paris
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -242,4 +306,12 @@ if __name__ == "__main__":
             show_plots=args.show_session_plots,
             fname_stem=fname_stem,
             title=plot_title,
+        )
+        plot_valid_percent(
+            aggregated,
+            results_root,
+            animal_name=title_name,
+            show_plots=args.show_session_plots,
+            fname_stem=f"{fname_stem}_valid_percent",
+            title=plot_title.replace("across sessions", "valid % across sessions"),
         )
