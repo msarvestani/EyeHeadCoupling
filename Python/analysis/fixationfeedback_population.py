@@ -1,9 +1,9 @@
 """Population-level psychometric curve for fixation-with-feedback sessions.
 
 Aggregates per-session psychometric data (success rate vs target diameter)
-across all sessions for one animal, producing:
-  - thin per-session curves
-  - thick mean ± SEM population curve
+across all sessions for one or more animals, producing:
+  - thin per-session curves (per animal, in a matching color family)
+  - thick mean ± SEM population curve per animal
 
 Sessions must be registered in session_manifest.yml with::
 
@@ -12,6 +12,7 @@ Sessions must be registered in session_manifest.yml with::
 Usage
 -----
     python Python/analysis/fixationfeedback_population.py --animal-name Paris
+    python Python/analysis/fixationfeedback_population.py --animal-name Paris Apollo
     python Python/analysis/fixationfeedback_population.py --animal-name Paris --results /path/to/out
 """
 from __future__ import annotations
@@ -42,10 +43,9 @@ def compute_session_psychometric(
     eot_df: pd.DataFrame,
     target_df: pd.DataFrame,
 ) -> dict[float, tuple[float, int]]:
-    """Return {diameter: (success_rate_0_to_1, n_trials)} for one session.
+    """Return {diameter_deg: (success_rate_0_to_1, n_trials)} for one session.
 
-    Merges eot_df and target_df by row position (one row = one trial).
-    Diameters are rounded to 3 decimal places to avoid float key collisions.
+    Diameters are converted to visual degrees and rounded to 3 decimal places.
     """
     if "trial_success" not in eot_df.columns or "diameter" not in target_df.columns:
         return {}
@@ -66,45 +66,47 @@ def compute_session_psychometric(
 
 
 # ---------------------------------------------------------------------------
-# Population plot
+# Population plot (supports multiple animals)
 # ---------------------------------------------------------------------------
 
+_ANIMAL_CMAPS = ["Blues", "Oranges", "Greens", "Purples", "Reds", "YlOrBr"]
+_ANIMAL_MEAN_COLORS = ["navy", "darkorange", "darkgreen", "indigo", "darkred", "saddlebrown"]
+
+
 def plot_population_psychometric(
-    session_records: list[dict],
-    animal_id: str = "",
-    animal_name: str = "",
+    all_session_records: list[dict],
+    animal_ids: list[str],
+    animal_names: list[str],
     results_dir: Optional[Path] = None,
     show_plots: bool = True,
 ) -> plt.Figure:
-    """Plot per-session curves + population mean ± SEM for one animal.
+    """Plot per-session curves + population mean ± SEM, one colour family per animal.
 
     Parameters
     ----------
-    session_records:
-        List of dicts, one per session::
+    all_session_records:
+        List of dicts, one per session. Each dict must include an
+        ``"animal_name"`` key to associate it with the correct animal::
 
             {
                 "session_id": str,
                 "date": str,          # YYYY-MM-DD
-                "psychometric": {diameter: (success_rate, n_trials), ...}
+                "animal_name": str,
+                "animal_id": str,
+                "psychometric": {diameter_deg: (success_rate, n_trials), ...}
             }
 
-    animal_id:
-        Short animal ID used for the filename prefix.
-    animal_name:
-        Human-readable animal name used in the plot title.
+    animal_ids:
+        Short animal IDs (e.g. ["Tsh001"]) — used for filename prefix.
+    animal_names:
+        Human-readable animal names — used in title and legend.
     results_dir:
         Directory to save the figure.  No file is written when ``None``.
     show_plots:
         Whether to call ``plt.show()``.
-
-    Returns
-    -------
-    matplotlib.figure.Figure
     """
-    # Collect all diameters present across sessions
     all_diameters: set[float] = set()
-    for rec in session_records:
+    for rec in all_session_records:
         all_diameters.update(rec["psychometric"].keys())
     diameters = np.array(sorted(all_diameters))
 
@@ -112,53 +114,56 @@ def plot_population_psychometric(
         print("Warning: no diameter data found across sessions — skipping population plot")
         return None
 
-    # Build (n_sessions × n_diameters) rate matrix; NaN where session lacked a diameter
-    n_sessions = len(session_records)
-    rate_matrix = np.full((n_sessions, len(diameters)), np.nan)
-    for s_idx, rec in enumerate(session_records):
-        for d_idx, d in enumerate(diameters):
-            if d in rec["psychometric"]:
-                rate, _ = rec["psychometric"][d]
-                rate_matrix[s_idx, d_idx] = rate * 100  # → percentage
-
-    # Population stats (only over sessions that tested each diameter)
-    with np.errstate(all="ignore"):
-        pop_mean = np.nanmean(rate_matrix, axis=0)
-        pop_n = np.sum(~np.isnan(rate_matrix), axis=0)
-        pop_sem = np.nanstd(rate_matrix, axis=0, ddof=1) / np.sqrt(pop_n)
-
     fig, ax = plt.subplots(figsize=(10, 6))
 
-    # --- individual session curves ---
-    colors = cm.Blues(np.linspace(0.35, 0.75, n_sessions))
-    for s_idx, rec in enumerate(session_records):
-        sess_rates = rate_matrix[s_idx]
-        valid = ~np.isnan(sess_rates)
-        if valid.sum() < 2:
+    for a_idx, animal_name in enumerate(animal_names):
+        cmap_name = _ANIMAL_CMAPS[a_idx % len(_ANIMAL_CMAPS)]
+        mean_color = _ANIMAL_MEAN_COLORS[a_idx % len(_ANIMAL_MEAN_COLORS)]
+
+        session_recs = [r for r in all_session_records if r.get("animal_name") == animal_name]
+        n_sessions = len(session_recs)
+        if n_sessions == 0:
             continue
-        label = rec.get("date", rec["session_id"])
-        ax.plot(diameters[valid], sess_rates[valid],
-                "o--", color=colors[s_idx], markersize=5, linewidth=1,
-                alpha=0.6, label=label)
 
-    # --- population mean ± SEM ---
-    valid_pop = ~np.isnan(pop_mean)
-    ax.errorbar(
-        diameters[valid_pop], pop_mean[valid_pop], yerr=pop_sem[valid_pop],
-        fmt="o-", color="navy", ecolor="navy",
-        markersize=10, linewidth=2.5, capsize=5, capthick=2,
-        label="Population mean ± SEM", zorder=5,
-    )
+        rate_matrix = np.full((n_sessions, len(diameters)), np.nan)
+        for s_idx, rec in enumerate(session_recs):
+            for d_idx, d in enumerate(diameters):
+                if d in rec["psychometric"]:
+                    rate, _ = rec["psychometric"][d]
+                    rate_matrix[s_idx, d_idx] = rate * 100
 
-    # --- n=X sessions annotations ---
-    for d, mean_val, sem_val, n in zip(
-        diameters[valid_pop], pop_mean[valid_pop], pop_sem[valid_pop], pop_n[valid_pop]
-    ):
-        ax.text(d, mean_val + sem_val + 3, f"n={int(n)}",
-                ha="center", va="bottom", fontsize=9,
-                fontweight="bold", color="navy")
+        with np.errstate(all="ignore"):
+            pop_mean = np.nanmean(rate_matrix, axis=0)
+            pop_n = np.sum(~np.isnan(rate_matrix), axis=0)
+            pop_sem = np.nanstd(rate_matrix, axis=0, ddof=1) / np.sqrt(pop_n)
 
-    # Reference lines
+        colors = cm.get_cmap(cmap_name)(np.linspace(0.35, 0.75, n_sessions))
+        for s_idx, rec in enumerate(session_recs):
+            sess_rates = rate_matrix[s_idx]
+            valid = ~np.isnan(sess_rates)
+            if valid.sum() < 2:
+                continue
+            label = rec.get("date", rec["session_id"])
+            ax.plot(diameters[valid], sess_rates[valid],
+                    "o--", color=colors[s_idx], markersize=5, linewidth=1,
+                    alpha=0.6, label=label)
+
+        valid_pop = ~np.isnan(pop_mean)
+        animal_label = animal_name or (animal_ids[a_idx] if a_idx < len(animal_ids) else "")
+        ax.errorbar(
+            diameters[valid_pop], pop_mean[valid_pop], yerr=pop_sem[valid_pop],
+            fmt="o-", color=mean_color, ecolor=mean_color,
+            markersize=10, linewidth=2.5, capsize=5, capthick=2,
+            label=f"{animal_label} mean ± SEM", zorder=5,
+        )
+
+        for d, mean_val, sem_val, n in zip(
+            diameters[valid_pop], pop_mean[valid_pop], pop_sem[valid_pop], pop_n[valid_pop]
+        ):
+            ax.text(d, mean_val + sem_val + 3, f"n={int(n)}",
+                    ha="center", va="bottom", fontsize=9,
+                    fontweight="bold", color=mean_color)
+
     ax.axhline(100, color="green", linestyle="--", alpha=0.3, linewidth=1)
     ax.axhline(0,   color="red",   linestyle="--", alpha=0.3, linewidth=1)
 
@@ -166,9 +171,9 @@ def plot_population_psychometric(
     ax.set_ylabel("Success Rate (%)", fontsize=14, fontweight="bold")
 
     title = "Psychometric Curve: Success Rate vs Target Diameter"
-    label_parts = [p for p in (animal_name, animal_id) if p]
+    label_parts = [p for p in animal_names if p]
     if label_parts:
-        title += f"\n{label_parts[0]} — {n_sessions} session{'s' if n_sessions != 1 else ''}"
+        title += f"\n{' & '.join(label_parts)}"
     ax.set_title(title, fontsize=14, fontweight="bold")
 
     ax.set_ylim(-5, 110)
@@ -181,7 +186,9 @@ def plot_population_psychometric(
 
     if results_dir is not None:
         results_dir.mkdir(parents=True, exist_ok=True)
-        prefix = f"{animal_id}_" if animal_id else ""
+        prefix = "_".join(aid for aid in animal_ids if aid)
+        if prefix:
+            prefix += "_"
         filename = f"{prefix}fixation_wfeedback_population.png"
         fig.savefig(results_dir / filename, dpi=150, bbox_inches="tight")
         print(f"Saved population plot to {results_dir / filename}")
@@ -193,32 +200,16 @@ def plot_population_psychometric(
 
 
 # ---------------------------------------------------------------------------
-# Main aggregation entry point
+# Data loading helper (per animal)
 # ---------------------------------------------------------------------------
 
-def analyze_animal(
+def _load_animal_sessions(
     animal_name: str,
-    results_dir: Optional[Path] = None,
-    show_plots: bool = True,
-) -> pd.DataFrame:
-    """Load all fixation_feedback sessions for one animal and plot population curve.
+) -> tuple[list[dict], list[pd.DataFrame], str]:
+    """Load all fixation_feedback sessions for one animal.
 
-    Sessions must have ``experiment_type: fixation_feedback`` in the manifest.
-
-    Parameters
-    ----------
-    animal_name:
-        Animal name as recorded in the manifest (e.g. ``"Paris"``).
-    results_dir:
-        Directory to save the population figure.  When ``None`` the manifest's
-        ``results_root`` is used if available, otherwise the current directory.
-    show_plots:
-        Whether to display plots interactively.
-
-    Returns
-    -------
-    pd.DataFrame
-        One row per session with session-level summary stats.
+    Returns (session_records, summary_rows, animal_id).
+    Each session_record includes ``animal_name`` and ``animal_id`` keys.
     """
     session_ids = list_sessions_from_manifest(
         "fixation_feedback", animal_name=animal_name
@@ -226,22 +217,11 @@ def analyze_animal(
 
     if not session_ids:
         print(f"No fixation_feedback sessions found for animal '{animal_name}' in manifest.")
-        return pd.DataFrame()
+        return [], [], ""
 
     print(f"Found {len(session_ids)} session(s) for '{animal_name}':")
     for sid in session_ids:
         print(f"  {sid}")
-
-    # Resolve results_dir from manifest if not provided
-    if results_dir is None:
-        manifest_path = Path(__file__).resolve().parents[2] / "session_manifest.yml"
-        try:
-            with manifest_path.open() as f:
-                manifest = yaml.safe_load(f) or {}
-            results_root = manifest.get("results_root")
-            results_dir = Path(results_root) if results_root else Path.cwd()
-        except FileNotFoundError:
-            results_dir = Path.cwd()
 
     session_records: list[dict] = []
     summary_rows: list[pd.DataFrame] = []
@@ -269,7 +249,6 @@ def analyze_animal(
 
         psychometric = compute_session_psychometric(eot_df, target_df)
 
-        # Parse date from folder name
         folder_name = config.folder_path.name
         date_match = re.search(r"\d{4}-\d{2}-\d{2}", folder_name)
         date_str = date_match.group() if date_match else ""
@@ -277,6 +256,8 @@ def analyze_animal(
         session_records.append({
             "session_id": session_id,
             "date": date_str,
+            "animal_name": animal_name,
+            "animal_id": animal_id,
             "psychometric": psychometric,
         })
 
@@ -292,22 +273,66 @@ def analyze_animal(
             "success_rate": [n_success / n_trials if n_trials > 0 else float("nan")],
         }))
 
+    session_records.sort(key=lambda r: r["date"])
+    return session_records, summary_rows, animal_id
+
+
+# ---------------------------------------------------------------------------
+# Main aggregation entry points
+# ---------------------------------------------------------------------------
+
+def analyze_animal(
+    animal_name: str,
+    results_dir: Optional[Path] = None,
+    show_plots: bool = True,
+) -> pd.DataFrame:
+    """Load all fixation_feedback sessions for one animal and plot population curve."""
+    session_records, summary_rows, animal_id = _load_animal_sessions(animal_name)
+
     if not session_records:
         print("No sessions could be loaded — no population plot generated.")
         return pd.DataFrame()
 
-    # Sort by date before plotting so legend is chronological
-    session_records.sort(key=lambda r: r["date"])
-
     plot_population_psychometric(
         session_records,
-        animal_id=animal_id,
-        animal_name=animal_name,
+        animal_ids=[animal_id],
+        animal_names=[animal_name],
         results_dir=results_dir,
         show_plots=show_plots,
     )
 
     return pd.concat(summary_rows, ignore_index=True) if summary_rows else pd.DataFrame()
+
+
+def analyze_animals(
+    animal_names: list[str],
+    results_dir: Optional[Path] = None,
+    show_plots: bool = True,
+) -> pd.DataFrame:
+    """Load sessions for one or more animals and overlay them on one plot."""
+    all_records: list[dict] = []
+    all_summary: list[pd.DataFrame] = []
+    animal_ids: list[str] = []
+
+    for animal_name in animal_names:
+        recs, summary_rows, animal_id = _load_animal_sessions(animal_name)
+        all_records.extend(recs)
+        all_summary.extend(summary_rows)
+        animal_ids.append(animal_id)
+
+    if not all_records:
+        print("No sessions could be loaded — no population plot generated.")
+        return pd.DataFrame()
+
+    plot_population_psychometric(
+        all_records,
+        animal_ids=animal_ids,
+        animal_names=animal_names,
+        results_dir=results_dir,
+        show_plots=show_plots,
+    )
+
+    return pd.concat(all_summary, ignore_index=True) if all_summary else pd.DataFrame()
 
 
 # ---------------------------------------------------------------------------
@@ -319,8 +344,8 @@ if __name__ == "__main__":
         description="Population psychometric curve for fixation-with-feedback sessions"
     )
     parser.add_argument(
-        "--animal-name", required=True,
-        help="Animal name as in session_manifest.yml (e.g. Paris)",
+        "--animal-name", nargs="+", required=True,
+        help="One or more animal names as in session_manifest.yml (e.g. Paris Apollo)",
     )
     parser.add_argument(
         "--results", type=str, default=None,
@@ -332,8 +357,21 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    analyze_animal(
-        animal_name=args.animal_name,
-        results_dir=Path(args.results) if args.results else None,
+    results_dir: Optional[Path] = None
+    if args.results:
+        results_dir = Path(args.results)
+    else:
+        manifest_path = Path(__file__).resolve().parents[2] / "session_manifest.yml"
+        try:
+            with manifest_path.open() as f:
+                manifest = yaml.safe_load(f) or {}
+            results_root = manifest.get("results_root")
+            results_dir = Path(results_root) if results_root else Path.cwd()
+        except FileNotFoundError:
+            results_dir = Path.cwd()
+
+    analyze_animals(
+        animal_names=args.animal_name,
+        results_dir=results_dir,
         show_plots=args.show_plots,
     )
