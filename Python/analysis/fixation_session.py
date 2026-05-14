@@ -446,6 +446,7 @@ def main(session_id: str) -> pd.DataFrame:
     df = pd.DataFrame(
         {
             "session_id": [session_id],
+            "animal_id": [config.animal_id],
             "animal_name": [config.animal_name],
             "session_date": [date_str],
             "valid_trials": [valid_count],

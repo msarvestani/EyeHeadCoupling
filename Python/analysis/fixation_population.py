@@ -351,7 +351,8 @@ def plot_active_stabilization(
     ax.set_title(title)
 
     fig.tight_layout()
-    prefix = _animal_prefix(animal_name)
+    animal_id = data["animal_id"].dropna().iloc[0] if "animal_id" in data.columns and not data["animal_id"].dropna().empty else animal_name
+    prefix = _animal_prefix(animal_id)
     for ext in ("png", "svg"):
         fig.savefig(save_dir / f"{prefix}active_stabilization_trend.{ext}", bbox_inches="tight")
     plt.show()
