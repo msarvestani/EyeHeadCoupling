@@ -340,7 +340,7 @@ def plot_active_stabilization(
     fig.tight_layout()
     prefix = _animal_prefix(animal_name)
     for ext in ("png", "svg"):
-        fig.savefig(save_dir / f"{prefix}active_stabilization_trend.{ext}", bbox_inches="tight")
+        fig.savefig(save_dir / f"{prefix}fixation_trend.{ext}", bbox_inches="tight")
     plt.show()
     plt.close(fig)
 
