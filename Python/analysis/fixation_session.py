@@ -19,10 +19,19 @@ from eyehead import (
     detect_saccades,
     load_session_data,
     plot_eye_fixations_between_cue_and_go_by_trial,
-    quantify_fixation_stability_vs_random,
     get_session_date_from_path,
 )
 from eyehead.analysis import _filename_with_animal
+
+# Bonsai coordinate system: monitor width spans -1.7 to 1.7 units (total 3.4)
+# Viewing distance equals monitor width (both 47 cm), so the 47s cancel:
+#   visual_deg = 2 * arctan(d_bonsai / (2 * 3.4))
+_BONSAI_WIDTH_RANGE = 3.4
+
+
+def bonsai_to_deg(d: float | np.ndarray) -> float | np.ndarray:
+    """Convert a diameter in Bonsai units to visual degrees."""
+    return np.degrees(2 * np.arctan(np.asarray(d) / (2 * _BONSAI_WIDTH_RANGE)))
 
 
 def _compute_path_bins(
@@ -278,7 +287,10 @@ def plot_pericue_pre_post_summary(
             transform=ax.get_xaxis_transform(), fontsize=11, fontweight="bold",
             color="#c0392b")
 
-    y_max = max(m + s for m, s in zip(means, sems) if not np.isnan(m + s))
+    finite_vals = [m + s for m, s in zip(means, sems) if not np.isnan(m + s)]
+    if not finite_vals:
+        return fig, {}
+    y_max = max(finite_vals)
     gap = y_max * 0.08
 
     def _bracket(x1, x2, y, label):
@@ -299,8 +311,7 @@ def plot_pericue_pre_post_summary(
     ax.set_title(
         "Pre- vs post-cue path length by trial outcome\n"
         f"valid n={mask.sum()}, invalid n={(~mask).sum()}  |  "
-        f"active stabilization={active_stabilization:.3f}"
-    )
+        f"active stabilization={active_stabilization:.3f}"    )
     fig.tight_layout()
     return fig, metrics
 
@@ -385,36 +396,6 @@ def main(session_id: str, show_plots: bool = True) -> pd.DataFrame:
     )
     total_trials_value = total_trials if total_trials > 0 else np.nan
 
-    stats = quantify_fixation_stability_vs_random(
-        eye_timestamp=data.eye_timestamp,
-        eye_pos=saccades["eye_pos"],
-        pairs_ct=pairs_ct,
-        pairs_gt=pairs_gt,
-        valid_trials=valid_trials,
-        plot=True,
-        rng_seed=0,
-    )
-
-
-    if stats and stats.get("figure") is not None:
-        fig = stats["figure"]
-        eye_part = (config.eye_name or "Eye").replace(" ", "")
-        id_part = str(config.animal_id).strip() if config.animal_id is not None else ""
-        stem_parts = [part for part in (id_part, eye_part, "fixation_vs_random") if part]
-        stem = "_".join(stem_parts) if stem_parts else "fixation_vs_random"
-
-        base_png = f"{stem}.png"
-        base_svg = f"{stem}.svg"
-        animal_label = config.animal_name or config.animal_id
-        fname_png = _filename_with_animal(base_png, animal_label)
-        fname_svg = _filename_with_animal(base_svg, animal_label)
-
-        fig.savefig(config.results_dir / fname_png, bbox_inches="tight")
-        fig.savefig(config.results_dir / fname_svg, bbox_inches="tight")
-
-        plt.show()
-        plt.close(fig)
-
     fig_pericue = plot_pericue_path_length(
         eye_timestamp=data.eye_timestamp,
         eye_pos=saccades["eye_pos"],
@@ -453,6 +434,7 @@ def main(session_id: str, show_plots: bool = True) -> pd.DataFrame:
     df = pd.DataFrame(
         {
             "session_id": [session_id],
+            "animal_id": [config.animal_id],
             "animal_name": [config.animal_name],
             "session_date": [date_str],
             "valid_trials": [valid_count],
@@ -524,6 +506,8 @@ def plot_psychometric_central_fixation(eot_df: pd.DataFrame, target_df: pd.DataF
             'diameter': target_df['diameter'].values
         })
 
+    combined_df['diameter'] = bonsai_to_deg(combined_df['diameter'].values)
+
     diameter_groups = combined_df.groupby('diameter')
 
     diameters = []
@@ -559,8 +543,13 @@ def plot_psychometric_central_fixation(eot_df: pd.DataFrame, target_df: pd.DataF
                 color='steelblue', ecolor='darkblue', label='Success Rate')
 
     if random_walk_chance is not None and 'by_diameter' in random_walk_chance:
-        chance_by_diameter = random_walk_chance['by_diameter']
-        chance_se_by_diameter = random_walk_chance.get('by_diameter_se', {})
+        chance_by_diameter = {
+            bonsai_to_deg(k): v for k, v in random_walk_chance['by_diameter'].items()
+        }
+        chance_se_by_diameter = {
+            bonsai_to_deg(k): v
+            for k, v in random_walk_chance.get('by_diameter_se', {}).items()
+        }
 
         chance_rates = []
         chance_errors = []
@@ -587,7 +576,7 @@ def plot_psychometric_central_fixation(eot_df: pd.DataFrame, target_df: pd.DataF
     ax.axhline(100, color='green', linestyle='--', alpha=0.3, linewidth=1)
     ax.axhline(0, color='red', linestyle='--', alpha=0.3, linewidth=1)
 
-    ax.set_xlabel('Target Diameter', fontsize=14, fontweight='bold')
+    ax.set_xlabel('Target Diameter (°)', fontsize=14, fontweight='bold')
     ax.set_ylabel('Success Rate (%)', fontsize=14, fontweight='bold')
 
     title = 'Psychometric Curve: Success Rate vs Target Diameter'
@@ -602,7 +591,8 @@ def plot_psychometric_central_fixation(eot_df: pd.DataFrame, target_df: pd.DataF
 
     ax.set_title(title, fontsize=14, fontweight='bold')
     ax.set_ylim(-5, 105)
-    ax.set_xlim(diameters.min() - 0.05, diameters.max() + 0.05)
+    margin = (diameters.max() - diameters.min()) * 0.1 + 0.5
+    ax.set_xlim(diameters.min() - margin, diameters.max() + margin)
     ax.grid(True, alpha=0.3)
     ax.legend(loc='best', fontsize=11)
 
