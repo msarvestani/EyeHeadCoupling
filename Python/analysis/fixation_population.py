@@ -290,12 +290,7 @@ def plot_active_stabilization(
     *,
     animal_name: str | None = None,
 ) -> None:
-    """Plot active_stabilization across sessions grouped by recording date.
-
-    Sessions recorded on the same date share an x-axis position and appear
-    vertically stacked at their respective metric values.  Each point is
-    labelled with its session date.
-    """
+    """Plot active_stabilization across sessions, one point per session."""
     if df.empty or "active_stabilization" not in df.columns:
         return
 
@@ -303,21 +298,18 @@ def plot_active_stabilization(
     data["session_date"] = pd.to_datetime(data["session_date"], errors="coerce")
     data.sort_values("session_date", inplace=True, ignore_index=True)
 
-    # Assign each session an x position equal to the index of its unique date
-    unique_dates = data["session_date"].drop_duplicates().sort_values().reset_index(drop=True)
-    date_to_x = {d: i for i, d in enumerate(unique_dates)}
-    x_pos = data["session_date"].map(date_to_x).to_numpy(dtype=float)
+    n_sessions = len(data)
+    x_pos = np.arange(n_sessions)
+    session_numbers = x_pos + 1  # 1-based labels
 
     metric = pd.to_numeric(data["active_stabilization"], errors="coerce").to_numpy()
 
-    n_dates = len(unique_dates)
-    fig, ax = plt.subplots(figsize=(max(6, n_dates * 1.1), 4))
+    fig, ax = plt.subplots(figsize=(max(6, n_sessions * 1.1), 4))
 
-    # Connect points in chronological order with a dashed line
     ax.plot(x_pos, metric, linestyle="--", color="0.75", linewidth=1, zorder=1)
     ax.scatter(x_pos, metric, color="steelblue", s=60, zorder=2)
 
-    for i in range(len(data)):
+    for i in range(n_sessions):
         y = metric[i]
         if not np.isfinite(y):
             continue
@@ -336,14 +328,9 @@ def plot_active_stabilization(
         )
 
     ax.axhline(0, color="0.4", linestyle=":", linewidth=0.8)
-    ax.set_xticks(np.arange(n_dates))
-    ax.set_xticklabels(
-        [d.strftime("%Y-%m-%d") if pd.notna(d) else "" for d in unique_dates],
-        rotation=45,
-        ha="right",
-        fontsize=8,
-    )
-    ax.set_xlabel("Session date")
+    ax.set_xticks(x_pos)
+    ax.set_xticklabels(session_numbers, fontsize=8)
+    ax.set_xlabel("Session number")
     ax.set_ylabel("Active stabilization\n(cue_suppression × selection_bias²)")
     title = "Active stabilization across sessions"
     if animal_name:
