@@ -153,6 +153,7 @@ def plot_active_stabilization(
         #     )
 
     ax.axhline(0, color="0.4", linestyle=":", linewidth=0.8)
+    ax.set_ylim(0, 1)
     ax.set_xticks(np.arange(max_sessions))
     ax.set_xticklabels(np.arange(1, max_sessions + 1), fontsize=8)
     ax.set_xlabel("Session number")
