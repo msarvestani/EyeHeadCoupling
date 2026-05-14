@@ -133,23 +133,24 @@ def plot_active_stabilization(
         ax.scatter(x_pos, metric, color=color, s=60, zorder=2,
                    label=str(animal) if multi else None)
 
-        for i in range(n):
-            y = metric[i]
-            if not np.isfinite(y):
-                continue
-            date_val = adf["session_date"].iloc[i]
-            label = date_val.strftime("%Y-%m-%d") if pd.notna(date_val) else ""
-            ax.annotate(
-                label,
-                xy=(x_pos[i], y),
-                xytext=(0, 8),
-                textcoords="offset points",
-                ha="center",
-                va="bottom",
-                fontsize=7,
-                color=color,
-                rotation=45,
-            )
+        # Annotate points with session dates, rotated to avoid overlap. This is a bit hacky but it works reasonably well for a small number of sessions.
+        # for i in range(n):
+        #     y = metric[i]
+        #     if not np.isfinite(y):
+        #         continue
+        #     date_val = adf["session_date"].iloc[i]
+        #     label = date_val.strftime("%Y-%m-%d") if pd.notna(date_val) else ""
+        #     ax.annotate(
+        #         label,
+        #         xy=(x_pos[i], y),
+        #         xytext=(0, 8),
+        #         textcoords="offset points",
+        #         ha="center",
+        #         va="bottom",
+        #         fontsize=7,
+        #         color=color,
+        #         rotation=45,
+        #     )
 
     ax.axhline(0, color="0.4", linestyle=":", linewidth=0.8)
     ax.set_xticks(np.arange(max_sessions))

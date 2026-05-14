@@ -137,16 +137,17 @@ def plot_population_psychometric(
             pop_n = np.sum(~np.isnan(rate_matrix), axis=0)
             pop_sem = np.nanstd(rate_matrix, axis=0, ddof=1) / np.sqrt(pop_n)
 
-        colors = cm.get_cmap(cmap_name)(np.linspace(0.35, 0.75, n_sessions))
-        for s_idx, rec in enumerate(session_recs):
-            sess_rates = rate_matrix[s_idx]
-            valid = ~np.isnan(sess_rates)
-            if valid.sum() < 2:
-                continue
-            label = rec.get("date", rec["session_id"])
-            ax.plot(diameters[valid], sess_rates[valid],
-                    "o--", color=colors[s_idx], markersize=5, linewidth=1,
-                    alpha=0.6, label=label)
+#      # Optional: plot thin per-session curves in the same color family
+        # colors = cm.get_cmap(cmap_name)(np.linspace(0.35, 0.75, n_sessions))
+        # for s_idx, rec in enumerate(session_recs):
+        #     sess_rates = rate_matrix[s_idx]
+        #     valid = ~np.isnan(sess_rates)
+        #     if valid.sum() < 2:
+        #         continue
+        #     label = rec.get("date", rec["session_id"])
+        #     ax.plot(diameters[valid], sess_rates[valid],
+        #             "o--", color=colors[s_idx], markersize=5, linewidth=1,
+        #             alpha=0.6, label=label)
 
         valid_pop = ~np.isnan(pop_mean)
         animal_label = animal_name or (animal_ids[a_idx] if a_idx < len(animal_ids) else "")
