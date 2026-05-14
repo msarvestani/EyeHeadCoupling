@@ -100,6 +100,73 @@ def load_fixation_feedback_data(folder_path: Path) -> Tuple[pd.DataFrame, pd.Dat
     return eot_df, target_df
 
 
+def compute_success_trial_times(
+    eot_df: pd.DataFrame,
+    target_df: pd.DataFrame,
+) -> np.ndarray:
+    """Return trial durations (s) for successful trials (trial_success == 2).
+
+    Uses eot_df.timestamp - target_df.timestamp when target_df has timestamps
+    (cue onset → trial end).  Returns an empty array when timestamps are
+    unavailable or no successful trials exist.
+    """
+    if "trial_success" not in eot_df.columns:
+        return np.array([])
+
+    success_mask = eot_df["trial_success"].values == 2
+    n = min(len(eot_df), len(target_df))
+
+    eot_ts = pd.to_numeric(eot_df["timestamp"], errors="coerce").to_numpy()
+
+    if "timestamp" in target_df.columns:
+        tgt_ts = pd.to_numeric(target_df["timestamp"], errors="coerce").to_numpy()
+        durations = (eot_ts[:n] - tgt_ts[:n])
+    else:
+        return np.array([])
+
+    return durations[success_mask[:n]]
+
+
+def plot_trial_time_session(
+    eot_df: pd.DataFrame,
+    target_df: pd.DataFrame,
+    results_dir: Path,
+    animal_id: str = "",
+    date_str: str = "",
+    show_plots: bool = True,
+) -> Optional[plt.Figure]:
+    """Histogram of successful-trial durations for one session."""
+    times = compute_success_trial_times(eot_df, target_df)
+    if len(times) == 0:
+        return None
+
+    fig, ax = plt.subplots(figsize=(6, 4))
+    ax.hist(times, bins=20, color="steelblue", edgecolor="white", alpha=0.8)
+    mean_t = float(np.nanmean(times))
+    ax.axvline(mean_t, color="red", linestyle="--", linewidth=1.5,
+               label=f"Mean = {mean_t:.2f} s")
+    ax.set_xlabel("Trial time (s)")
+    ax.set_ylabel("Count")
+    title = "Successful trial durations"
+    if animal_id:
+        title += f" – {animal_id}"
+    if date_str:
+        title += f" ({date_str})"
+    ax.set_title(title)
+    ax.legend()
+    fig.tight_layout()
+
+    prefix = f"{animal_id}_" if animal_id else ""
+    date_tag = f"_{date_str}" if date_str else ""
+    for ext in ("png", "svg"):
+        fig.savefig(results_dir / f"{prefix}trial_time{date_tag}.{ext}", bbox_inches="tight")
+
+    if show_plots:
+        plt.show()
+    plt.close(fig)
+    return fig
+
+
 def analyze_session(
     folder_path: str | Path,
     results_dir: Optional[str | Path] = None,
@@ -151,8 +218,15 @@ def analyze_session(
             plt.show()
         plt.close(fig)
 
+    print("\nGenerating trial time plot...")
+    plot_trial_time_session(eot_df, target_df, results_dir, animal_id, date_str,
+                            show_plots=show_plots)
+
     n_trials = len(eot_df)
     n_success = int((eot_df["trial_success"] == 2).sum()) if "trial_success" in eot_df.columns else 0
+
+    success_times = compute_success_trial_times(eot_df, target_df)
+    avg_success_trial_time = float(np.nanmean(success_times)) if len(success_times) > 0 else float("nan")
 
     return pd.DataFrame({
         "session_id": [folder_name],
@@ -162,6 +236,7 @@ def analyze_session(
         "n_trials": [n_trials],
         "n_success": [n_success],
         "success_rate": [n_success / n_trials if n_trials > 0 else float("nan")],
+        "avg_success_trial_time": [avg_success_trial_time],
     })
 
 
