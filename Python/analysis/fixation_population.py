@@ -130,11 +130,11 @@ def plot_active_stabilization(
 
     ax.axhline(0, color="0.4", linestyle=":", linewidth=0.8)
     ax.set_xticks(x_pos)
-    ax.set_yticks([0, 1])
+    ax.set_yticks([0, 0.5, 1])
     ax.set_xticklabels(session_numbers, fontsize=8)
     ax.set_xlabel("Session number")
     ax.set_ylabel("Active stabilization\n(cue_suppression × selection_bias²)")
-    title = "Active stabilization across sessions"
+    title = "Fixation without visual feedback across sessions"
     if animal_name:
         title += f" ({animal_name})"
     ax.set_title(title)

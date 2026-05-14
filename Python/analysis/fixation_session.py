@@ -348,7 +348,7 @@ def main(session_id: str) -> pd.DataFrame:
         plot=False,
     )
     if fig_saccades is not None:
-        plt.show()
+        #plt.show()
         plt.close(fig_saccades)
 
 
@@ -379,7 +379,7 @@ def main(session_id: str) -> pd.DataFrame:
         animal_name=config.animal_name,
         plot=True,
     )
-    plt.show()
+    #plt.show()
     for fig in (fig_pairs, fig_interval):
         if fig is not None:
             plt.close(fig)
@@ -405,7 +405,7 @@ def main(session_id: str) -> pd.DataFrame:
     for ext in ("png", "svg"):
         fname = _filename_with_animal(f"{stem}.{ext}", animal_label)
         fig_pericue.savefig(config.results_dir / fname, bbox_inches="tight")
-    plt.show()
+    #plt.show()
     plt.close(fig_pericue)
 
     # --- pre/post summary (control figure — remove this block to drop it) ---
@@ -420,7 +420,7 @@ def main(session_id: str) -> pd.DataFrame:
     for ext in ("png", "svg"):
         fname = _filename_with_animal(f"{stem}.{ext}", animal_label)
         fig_prepost.savefig(config.results_dir / fname, bbox_inches="tight")
-    plt.show()
+    #plt.show()
     plt.close(fig_prepost)
     # --- end control figure ---
 

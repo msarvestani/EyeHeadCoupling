@@ -10,283 +10,7 @@ saccade_config:
 
 sessions:
 
- Tsh001_2025-07-08T15_04_12:
-    experiment_type: prosaccade
-    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-07-08T15_04_12
-    calibration_factor : 3.76
-    ttl_freq: 60
-    camera_side: L
-    reward_contingency:
-      reward_angle: 35
-      reward_window: 0.7
-    params:
-      saccade_config:
-        saccade_threshold: 3.0
-
- Tsh001_2025-07-02T15_14_29:
-    experiment_type: prosaccade
-    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-07-02T15_14_29
-    calibration_factor : 3.76
-    ttl_freq: 60
-    camera_side: L
-    reward_contingency:
-      reward_angle: 35
-      reward_window: 0.7
-    params:
-      saccade_config:
-        saccade_threshold: 3.0
-
-#  Tsh001_2025-07-09T15_29_43:
-#     experiment_type: prosaccade
-#     session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-07-09T15_29_43
-#     calibration_factor : 3.76
-#     ttl_freq: 60
-#     camera_side: L
-#     reward_contingency:
-#       reward_angle: 35
-#       reward_window: 0.7
-#     params:
-#       saccade_config:
-#         saccade_threshold: 3.0
-
-#  Tsh001_2025-07-09T15_49_30:
-#     experiment_type: prosaccade
-#     session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-07-09T15_49_30
-#     calibration_factor : 3.76
-#     ttl_freq: 60
-#     camera_side: L
-#     reward_contingency:
-#       reward_angle: 35
-#       reward_window: 0.7
-#     params:
-#       saccade_config:
-#         saccade_threshold: 3.0
-
- Tsh001_2025-07-10T15_47_04:
-    experiment_type: prosaccade
-    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-07-10T15_47_04
-    calibration_factor : 3.76
-    ttl_freq: 60
-    camera_side: L
-    reward_contingency:
-      reward_angle: 35
-      reward_window: 0.7
-    params:
-      saccade_config:
-        saccade_threshold: 3.0
-
-
- Tsh001_2025-08-12T15_04_14:
-    experiment_type: antisaccade
-    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-08-12T15_04_14
-    calibration_factor : 3.76
-    ttl_freq: 60
-    camera_side: L
-    reward_contingency:
-      reward_angle: 35
-      reward_window: 1
-    params:
-      saccade_config:
-        saccade_threshold: 1.0
-
- Tsh001_2025-08-13T14_48_16:
-    experiment_type: antisaccade
-    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-08-13T14_48_16
-    calibration_factor : 3.76
-    ttl_freq: 60
-    camera_side: L
-    reward_contingency:
-      reward_angle: 35
-      reward_window: 1
-    params:
-      saccade_config:
-        saccade_threshold: 1.0
-
- Tsh001_2025-08-28T16_28_47:
-    experiment_type: antisaccade
-    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-08-28T16_28_47
-    calibration_factor : 3.76
-    ttl_freq: 60
-    camera_side: L
-    reward_contingency:
-      reward_angle: 35
-      reward_window: 1
-    params:
-      saccade_config:
-        saccade_threshold: 1.0
-
- Tsh001_2025-08-28T16_12_42:
-    experiment_type: antisaccade
-    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-08-28T16_12_42
-    calibration_factor : 3.76
-    ttl_freq: 60
-    camera_side: L
-    reward_contingency:
-      reward_angle: 35
-      reward_window: 1
-    params:
-      saccade_config:
-        saccade_threshold: 1.0
-
- Tsh001_2025-08-29T15_11_38:
-    experiment_type: antisaccade
-    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-08-29T15_11_38
-    calibration_factor : 3.76
-    ttl_freq: 60
-    camera_side: L
-    reward_contingency:
-      reward_angle: 35
-      reward_window: 1
-    params:
-      saccade_config:
-        saccade_threshold: 1.0
-
-#  Tsh001_2025-08-29T15_33_45:
-#     experiment_type: antisaccade
-#     session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-08-29T15_33_45
-#     calibration_factor : 3.76
-#     ttl_freq: 60
-#     camera_side: L
-#     reward_contingency:
-#       reward_angle: 35
-#       reward_window: 1
-#     params:
-#       saccade_config:
-#         saccade_threshold: 1.0
-
- Tsh001_2025-09-04T15_30_33:
-    experiment_type: antisaccade
-    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-09-04T15_30_33
-    calibration_factor : 3.76
-    ttl_freq: 60
-    camera_side: L
-    reward_contingency:
-      reward_angle: 35
-      reward_window: 1
-    params:
-      saccade_config:
-        saccade_threshold: 1.0
-
- Tsh001_2025-09-02T13_19_32:
-    experiment_type: antisaccade
-    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-09-02T13_19_32
-    calibration_factor : 3.76
-    ttl_freq: 60
-    camera_side: L
-    reward_contingency:
-      reward_angle: 35
-      reward_window: 1
-    params:
-      saccade_config:
-        saccade_threshold: 1.0
-
- Tsh001_2025-09-05T13_55_57:
-    experiment_type: antisaccade
-    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-09-05T13_55_57
-    calibration_factor : 3.76
-    ttl_freq: 60
-    camera_side: L
-    reward_contingency:
-      reward_angle: 35
-      reward_window: 1
-    params:
-      saccade_config:
-        saccade_threshold: 1.0
-
- Tsh001_2025-08-11T16_40_24:
-    experiment_type: antisaccade
-    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-08-11T16_40_24
-    calibration_factor : 3.76
-    ttl_freq: 60
-    camera_side: L
-    reward_contingency:
-      reward_angle: 35
-      reward_window: 1
-    params:
-      saccade_config:
-        saccade_threshold: 1.0
-
- Tsh001_2025-09-08T15_10_35:
-    experiment_type: antisaccade
-    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-09-08T15_10_35
-    calibration_factor : 3.76
-    ttl_freq: 60
-    camera_side: L
-    reward_contingency:
-      reward_angle: 35
-      reward_window: 1
-    params:
-      saccade_config:
-        saccade_threshold: 1.0
-
- Tsh001_2025-09-09T15_43_12:
-    experiment_type: antisaccade
-    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-09-09T15_43_12
-    calibration_factor : 3.76
-    ttl_freq: 60
-    camera_side: L
-    reward_contingency:
-      reward_angle: 35
-      reward_window: 1
-    params:
-      saccade_config:
-        saccade_threshold: 1.0
-
- Tsh001_2025-09-17T15_26_24:
-    experiment_type: antisaccade
-    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-09-17T15_26_24
-    calibration_factor : 3.76
-    ttl_freq: 60
-    camera_side: L
-    reward_contingency:
-      reward_angle: 35
-      reward_window: 1
-    params:
-      saccade_config:
-        saccade_threshold: 1.0
-
-
-
- Tsh002_2025-10-17T11_28_31:
-    experiment_type: prosaccade
-    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh02_Apollo_server\Tsh002_2025-10-17T11_28_31
-    calibration_factor : 3.76
-    ttl_freq: 60
-    camera_side: L
-    reward_contingency:
-      reward_angle: 35
-      reward_window: 1
-    params:
-      saccade_config:
-        saccade_threshold: 1.0
-
- Tsh002_2025-10-17T11_45_51:
-    experiment_type: prosaccade
-    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh02_Apollo_server\Tsh002_2025-10-17T11_45_51
-    calibration_factor : 3.76
-    ttl_freq: 60
-    camera_side: L
-    reward_contingency:
-      reward_angle: 35
-      reward_window: 1
-    params:
-      saccade_config:
-        saccade_threshold: 1.0
-
- Tsh002_2025-10-15T12_37_33:
-    experiment_type: prosaccade
-    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh02_Apollo_server\Tsh002_2025-10-15T12_37_33
-    calibration_factor : 3.76
-    ttl_freq: 60
-    camera_side: L
-    reward_contingency:
-      reward_angle: 35
-      reward_window: 1
-    params:
-      saccade_config:
-        saccade_threshold: 1.0
-
-################################### Clean Paris Fixation Sessions ###################################
+################################### Paris Fixation Sessions ###################################
  ########### these are the first fixation sessions, where they were interleaved with saccades      
 
 #  Tsh001_2025-07-22T15_25_56:
@@ -300,32 +24,34 @@ sessions:
 
  Tsh001_2025-07-30T15_29_31:
  #starting here we made it so she had to fixate on the blue fixation dot before the trial could go on
-    experiment_type: fixation
+    experiment_type: fixation_learning
     session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-07-30T15_29_31
     calibration_factor : 3.76
     ttl_freq: 60
     camera_side: L
 
  Tsh001_2025-07-30T15_47_15:
-    experiment_type: fixation
+    experiment_type: fixation_learning
     session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-07-30T15_47_15
     calibration_factor : 3.76
     ttl_freq: 60
     camera_side: L
 
  Tsh001_2025-07-31T15_23_59:
-    experiment_type: fixation
+    experiment_type: fixation_learning
     session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-07-31T15_23_59
     calibration_factor : 3.76
     ttl_freq: 60
     camera_side: L
 
  Tsh001_2025-07-31T15_56_37:
-    experiment_type: fixation
+    experiment_type: fixation_learning
     session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-07-31T15_56_37
     calibration_factor : 3.76
     ttl_freq: 60
     camera_side: L
+
+########### Below are clean fixation-only sessions        
 
  Tsh001_2025-08-01T15_15_48:
     experiment_type: fixation
@@ -343,8 +69,6 @@ sessions:
     params:
       saccade_config:
         saccade_threshold: 1.0
-
-########### below are clean fixation-only sessions        
 
  Tsh001_2025-09-25T15_10_02:
     experiment_type: fixation
