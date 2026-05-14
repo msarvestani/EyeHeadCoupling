@@ -311,7 +311,7 @@ def plot_pericue_pre_post_summary(
     ax.set_title(
         "Pre- vs post-cue path length by trial outcome\n"
         f"valid n={mask.sum()}, invalid n={(~mask).sum()}  |  "
-        f"active stabilization={active_stabilization:.3f}"
+        f"fixation={fixation:.3f}"
     )
     fig.tight_layout()
     return fig, metrics

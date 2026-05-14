@@ -182,7 +182,7 @@ def plot_population_psychometric(
     if results_dir is not None:
         results_dir.mkdir(parents=True, exist_ok=True)
         prefix = f"{animal_id}_" if animal_id else ""
-        filename = f"{prefix}psychometric_central_fixation_population.png"
+        filename = f"{prefix}fixation_wfeedback_population.png"
         fig.savefig(results_dir / filename, dpi=150, bbox_inches="tight")
         print(f"Saved population plot to {results_dir / filename}")
 
