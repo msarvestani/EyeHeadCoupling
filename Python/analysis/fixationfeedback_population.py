@@ -31,7 +31,7 @@ import yaml
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 from utils.session_loader import list_sessions_from_manifest, load_session
-from fixationfeedback_session import load_fixation_feedback_data
+from fixationfeedback_session import load_fixation_feedback_data, compute_success_trial_times
 from fixation_session import bonsai_to_deg
 
 
@@ -201,6 +201,64 @@ def plot_population_psychometric(
 
 
 # ---------------------------------------------------------------------------
+# Trial time trend plot (population)
+# ---------------------------------------------------------------------------
+
+_ANIMAL_COLORS = ["navy", "darkorange", "darkgreen", "indigo", "darkred", "saddlebrown"]
+
+
+def plot_trial_time_trend(
+    all_session_records: list[dict],
+    animal_ids: list[str],
+    animal_names: list[str],
+    results_dir: Optional[Path] = None,
+    show_plots: bool = True,
+) -> None:
+    """Scatter/line plot of mean successful trial time across sessions, one per animal."""
+    fig, ax = plt.subplots(figsize=(max(6, len(all_session_records) * 1.1), 4))
+
+    for a_idx, animal_name in enumerate(animal_names):
+        recs = [r for r in all_session_records if r.get("animal_name") == animal_name]
+        if not recs:
+            continue
+
+        color = _ANIMAL_COLORS[a_idx % len(_ANIMAL_COLORS)]
+        times = np.array([r["avg_success_trial_time"] for r in recs], dtype=float)
+        x_pos = np.arange(len(recs))
+        label = animal_name if len(animal_names) > 1 else None
+
+        ax.plot(x_pos, times, linestyle="--", color=color, linewidth=1, alpha=0.7, zorder=1)
+        ax.scatter(x_pos, times, color=color, s=60, zorder=2, label=label)
+
+        ax.set_xticks(x_pos)
+        ax.set_xticklabels(np.arange(1, len(recs) + 1), fontsize=8)
+
+    ax.set_xlabel("Session number")
+    ax.set_ylabel("Avg successful trial time (s)")
+    title = "Fixation w Visual Feedback: successful trial time across sessions"
+    label_parts = [p for p in animal_names if p]
+    if label_parts:
+        title += f"\n{' & '.join(label_parts)}"
+    ax.set_title(title)
+    if len(animal_names) > 1:
+        ax.legend(loc="best", fontsize=9)
+
+    fig.tight_layout()
+
+    if results_dir is not None:
+        results_dir.mkdir(parents=True, exist_ok=True)
+        prefix = "_".join(aid for aid in animal_ids if aid)
+        if prefix:
+            prefix += "_"
+        for ext in ("png", "svg"):
+            fig.savefig(results_dir / f"{prefix}trial_time_trend.{ext}", bbox_inches="tight")
+
+    if show_plots:
+        plt.show()
+    plt.close(fig)
+
+
+# ---------------------------------------------------------------------------
 # Data loading helper (per animal)
 # ---------------------------------------------------------------------------
 
@@ -250,6 +308,9 @@ def _load_animal_sessions(
 
         psychometric = compute_session_psychometric(eot_df, target_df)
 
+        success_times = compute_success_trial_times(eot_df, target_df)
+        avg_trial_time = float(np.nanmean(success_times)) if len(success_times) > 0 else float("nan")
+
         folder_name = config.folder_path.name
         date_match = re.search(r"\d{4}-\d{2}-\d{2}", folder_name)
         date_str = date_match.group() if date_match else ""
@@ -260,6 +321,7 @@ def _load_animal_sessions(
             "animal_name": animal_name,
             "animal_id": animal_id,
             "psychometric": psychometric,
+            "avg_success_trial_time": avg_trial_time,
         })
 
         n_trials = len(eot_df)
@@ -272,6 +334,7 @@ def _load_animal_sessions(
             "n_trials": [n_trials],
             "n_success": [n_success],
             "success_rate": [n_success / n_trials if n_trials > 0 else float("nan")],
+            "avg_success_trial_time": [avg_trial_time],
         }))
 
     session_records.sort(key=lambda r: r["date"])
@@ -295,6 +358,13 @@ def analyze_animal(
         return pd.DataFrame()
 
     plot_population_psychometric(
+        session_records,
+        animal_ids=[animal_id],
+        animal_names=[animal_name],
+        results_dir=results_dir,
+        show_plots=show_plots,
+    )
+    plot_trial_time_trend(
         session_records,
         animal_ids=[animal_id],
         animal_names=[animal_name],
@@ -326,6 +396,13 @@ def analyze_animals(
         return pd.DataFrame()
 
     plot_population_psychometric(
+        all_records,
+        animal_ids=animal_ids,
+        animal_names=animal_names,
+        results_dir=results_dir,
+        show_plots=show_plots,
+    )
+    plot_trial_time_trend(
         all_records,
         animal_ids=animal_ids,
         animal_names=animal_names,
