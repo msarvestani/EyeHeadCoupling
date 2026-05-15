@@ -25,7 +25,7 @@ import matplotlib.pyplot as plt
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 from utils.session_loader import load_session
 from eyehead.io import clean_csv
-from fixation_session import plot_psychometric_central_fixation
+from fixation_session import plot_psychometric_central_fixation, bonsai_to_deg
 
 
 def load_fixation_feedback_data(folder_path: Path) -> Tuple[pd.DataFrame, pd.DataFrame]:
@@ -127,6 +127,47 @@ def compute_success_trial_times(
     return durations[success_mask[:n]]
 
 
+def compute_trial_times_by_diameter(
+    eot_df: pd.DataFrame,
+    target_df: pd.DataFrame,
+) -> dict[float, tuple[float, float, int]]:
+    """Return {diameter_deg: (mean_s, sd_s, n)} for successful trials grouped by diameter.
+
+    Returns empty dict when timestamps or diameter data are unavailable.
+    """
+    if (
+        "trial_success" not in eot_df.columns
+        or "timestamp" not in target_df.columns
+        or "diameter" not in target_df.columns
+    ):
+        return {}
+
+    n = min(len(eot_df), len(target_df))
+    eot_ts = pd.to_numeric(eot_df["timestamp"], errors="coerce").to_numpy()
+    tgt_ts = pd.to_numeric(target_df["timestamp"], errors="coerce").to_numpy()
+    durations = eot_ts[:n] - tgt_ts[:n]
+
+    combined = pd.DataFrame({
+        "trial_success": eot_df["trial_success"].iloc[:n].values,
+        "diameter": target_df["diameter"].iloc[:n].values,
+        "duration": durations,
+    })
+    success = combined[combined["trial_success"] == 2]
+
+    result: dict[float, tuple[float, float, int]] = {}
+    for diam, group in success.groupby("diameter"):
+        diam_key = round(float(bonsai_to_deg(diam)), 3)
+        times = group["duration"].dropna().values
+        if len(times) == 0:
+            continue
+        result[diam_key] = (
+            float(np.mean(times)),
+            float(np.std(times, ddof=1)) if len(times) > 1 else 0.0,
+            len(times),
+        )
+    return result
+
+
 def plot_trial_time_session(
     eot_df: pd.DataFrame,
     target_df: pd.DataFrame,
@@ -135,31 +176,35 @@ def plot_trial_time_session(
     date_str: str = "",
     show_plots: bool = True,
 ) -> Optional[plt.Figure]:
-    """Histogram of successful-trial durations for one session."""
-    times = compute_success_trial_times(eot_df, target_df)
-    if len(times) == 0:
+    """Bar chart of mean successful trial time per target diameter for one session."""
+    times_by_diam = compute_trial_times_by_diameter(eot_df, target_df)
+    if not times_by_diam:
         return None
 
-    fig, ax = plt.subplots(figsize=(6, 4))
-    ax.hist(times, bins=20, color="steelblue", edgecolor="white", alpha=0.8)
-    mean_t = float(np.nanmean(times))
-    ax.axvline(mean_t, color="red", linestyle="--", linewidth=1.5,
-               label=f"Mean = {mean_t:.2f} s")
-    ax.set_xlabel("Trial time (s)")
-    ax.set_ylabel("Count")
-    title = "Successful trial durations"
+    diameters = sorted(times_by_diam.keys())
+    means = [times_by_diam[d][0] for d in diameters]
+    sds = [times_by_diam[d][1] for d in diameters]
+    ns = [times_by_diam[d][2] for d in diameters]
+
+    fig, ax = plt.subplots(figsize=(max(5, len(diameters) * 1.2), 4))
+    ax.bar(range(len(diameters)), means, yerr=sds, color="steelblue",
+           edgecolor="white", alpha=0.8, capsize=4)
+    ax.set_xticks(range(len(diameters)))
+    ax.set_xticklabels([f"{d:.1f}°\n(n={n})" for d, n in zip(diameters, ns)], fontsize=9)
+    ax.set_xlabel("Target diameter (°)")
+    ax.set_ylabel("Mean trial time (s)")
+    title = "Successful trial time by target diameter"
     if animal_id:
         title += f" – {animal_id}"
     if date_str:
         title += f" ({date_str})"
     ax.set_title(title)
-    ax.legend()
     fig.tight_layout()
 
     prefix = f"{animal_id}_" if animal_id else ""
     date_tag = f"_{date_str}" if date_str else ""
     for ext in ("png", "svg"):
-        fig.savefig(results_dir / f"{prefix}trial_time{date_tag}.{ext}", bbox_inches="tight")
+        fig.savefig(results_dir / f"{prefix}trial_time_by_diameter{date_tag}.{ext}", bbox_inches="tight")
 
     if show_plots:
         plt.show()
