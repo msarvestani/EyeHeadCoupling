@@ -528,6 +528,80 @@ def plot_trajectories_by_diameter(
     return fig
 
 
+def calculate_shuffle_chance_by_diameter(
+    trials: list[dict],
+    n_shuffles: int = 1000,
+    min_fixation_duration: float = FIXATION_MIN_DURATION,
+    max_fixation_movement: float = FIXATION_MAX_MOVEMENT,
+) -> dict:
+    """Diameter-shuffle null model for psychometric chance level.
+
+    Holds actual fixation centerpoints fixed and permutes target diameters
+    across trials. A trial counts as successful when the fixation centerpoint
+    falls within the shuffled contact threshold
+    (shuffled_target_radius + cursor_radius).
+
+    Returns
+    -------
+    dict
+        'by_diameter': {raw_diameter: mean_rate}
+        'by_diameter_se': {raw_diameter: SE}
+    """
+    print(f"\n  Computing shuffle chance ({n_shuffles} shuffles)...")
+
+    # Detect last fixation centerpoint for every trial that has eye data
+    valid = []
+    for trial in trials:
+        if not trial.get('has_eye_data', False):
+            continue
+        eye_x = np.array(trial['eye_x'])
+        eye_y = np.array(trial['eye_y'])
+        eye_times = np.array(trial.get('eye_times', np.arange(len(eye_x))))
+        fixations = detect_fixations(eye_x, eye_y, eye_times,
+                                     min_fixation_duration, max_fixation_movement)
+        if not fixations:
+            continue
+        start, end, *_ = fixations[-1]
+        valid.append({
+            'cx': float(np.mean(eye_x[start:end])),
+            'cy': float(np.mean(eye_y[start:end])),
+            'target_x': trial['target_x'],
+            'target_y': trial['target_y'],
+            'diameter': trial['target_diameter'],
+            'cursor_radius': trial.get('cursor_diameter', 0.2) / 2.0,
+        })
+
+    if not valid:
+        print("  Warning: no valid fixations found — skipping shuffle chance")
+        return {'by_diameter': {}, 'by_diameter_se': {}}
+
+    diameters = np.array([v['diameter'] for v in valid])
+    unique_diams = sorted(set(diameters))
+    by_diameter: dict[float, list[float]] = {d: [] for d in unique_diams}
+
+    for _ in range(n_shuffles):
+        shuffled_diams = np.random.permutation(diameters)
+        for trial_data, shuf_diam in zip(valid, shuffled_diams):
+            contact_threshold = (shuf_diam / 2.0) + trial_data['cursor_radius']
+            dist = np.sqrt(
+                (trial_data['cx'] - trial_data['target_x']) ** 2 +
+                (trial_data['cy'] - trial_data['target_y']) ** 2
+            )
+            by_diameter[shuf_diam].append(1 if dist <= contact_threshold else 0)
+
+    by_diameter_rates: dict[float, float] = {}
+    by_diameter_se: dict[float, float] = {}
+    for diam in unique_diams:
+        outcomes = by_diameter[diam]
+        mean_rate = float(np.mean(outcomes))
+        se = float(np.std(outcomes, ddof=1) / np.sqrt(len(outcomes))) if len(outcomes) > 1 else 0.0
+        by_diameter_rates[diam] = mean_rate
+        by_diameter_se[diam] = se
+        print(f"    Diameter {diam:.3f}: {100*mean_rate:.1f}% ± {100*se:.1f}%")
+
+    return {'by_diameter': by_diameter_rates, 'by_diameter_se': by_diameter_se}
+
+
 def analyze_session(
     folder_path: str | Path,
     results_dir: Optional[str | Path] = None,
@@ -572,11 +646,14 @@ def analyze_session(
 
     trials = None
     rw_chance = None
+    shuffle_chance = None
     if eye_df is not None:
         _, _failed, successful_indices = identify_and_filter_failed_trials(target_df, eot_df, exclude_failed=False)
         trials = extract_trial_trajectories(eot_df, eye_df, target_df, successful_indices)
         print("\nCalculating random walk chance performance...")
         rw_chance = calculate_random_walk_chance_performance(trials, results_dir=results_dir)
+        print("\nCalculating shuffle chance performance...")
+        shuffle_chance = calculate_shuffle_chance_by_diameter(trials)
 
     print("\nGenerating psychometric curve...")
     fig = plot_psychometric_central_fixation(
@@ -584,6 +661,18 @@ def analyze_session(
         random_walk_chance=rw_chance,
     )
     if fig is not None:
+        # Overlay shuffle chance on the same axes
+        if shuffle_chance and shuffle_chance.get('by_diameter'):
+            ax = fig.axes[0]
+            chance_diams = sorted(shuffle_chance['by_diameter'].keys())
+            chance_rates = [shuffle_chance['by_diameter'][d] * 100 for d in chance_diams]
+            chance_errs  = [shuffle_chance['by_diameter_se'].get(d, 0.0) * 100 for d in chance_diams]
+            chance_diams_deg = [float(bonsai_to_deg(d)) for d in chance_diams]
+            ax.errorbar(chance_diams_deg, chance_rates, yerr=chance_errs,
+                        fmt='s--', markersize=7, linewidth=2, capsize=4, capthick=1.5,
+                        color='darkorange', ecolor='darkorange',
+                        label='Shuffle chance', alpha=0.85)
+            ax.legend(fontsize=10)
         if show_plots:
             plt.show()
         plt.close(fig)
