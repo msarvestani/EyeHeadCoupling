@@ -412,7 +412,7 @@ def plot_trajectories_by_diameter(
         # Store data for variance plot
         variance_data['diameters'].append(diameter)
         variance_data['variances'].append(centerpoint_var)
-        variance_data['iti_variances'].append(iti_var)
+        variance_data['iti_variances'].append(np.nan)
         pct_correct = (n_success / (n_success + n_failed)) * 100 if (n_success + n_failed) > 0 else 0
         variance_data['percent_correct'].append(pct_correct)
 
@@ -573,11 +573,17 @@ def plot_pericue_velocity_by_outcome(
             dy = np.diff(eye_y[mask])
             row[b] = float(np.sum(np.sqrt(dx**2 + dy**2)))
 
-        # Baseline-correct by subtracting the cue-onset bin
+        # Baseline-correct: subtract the t=0 bin; if that bin has no data
+        # (eye data starts just after t=0), fall back to the nearest non-NaN bin.
         if not np.isnan(row[baseline_idx]):
             row -= row[baseline_idx]
         else:
-            row[:] = np.nan
+            nonnans = np.where(~np.isnan(row))[0]
+            if len(nonnans) > 0:
+                fallback = nonnans[np.argmin(np.abs(bin_centers[nonnans]))]
+                row -= row[fallback]
+            else:
+                row[:] = np.nan
 
         if trial.get('trial_failed', False):
             failed_paths.append(row)
@@ -589,9 +595,10 @@ def plot_pericue_velocity_by_outcome(
             return None, None
         mat = np.vstack(rows)
         n = np.sum(~np.isnan(mat), axis=0)
-        mean = np.nanmean(mat, axis=0)
-        with np.errstate(invalid='ignore'):
+        with np.errstate(all='ignore'):
+            mean = np.nanmean(mat, axis=0)
             sem = np.nanstd(mat, axis=0, ddof=1) / np.sqrt(np.maximum(n, 1))
+        mean[n == 0] = np.nan
         sem[n < 2] = np.nan
         return mean, sem
 
