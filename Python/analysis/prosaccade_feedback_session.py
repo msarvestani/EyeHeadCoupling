@@ -4737,6 +4737,21 @@ def interactive_fixation_viewer(trials: list[dict], animal_id: Optional[str] = N
         final_y = trial.get('final_eye_y', eye_y[-1])
         ax.plot(final_x, final_y, 'ks', markersize=10, label='Final position', zorder=3)
 
+        # Mark the shuffle point: last point of the last fixation (eye_x[end-1])
+        # This is exactly the point used by calculate_shuffle_chance_by_diameter
+        shuffle_str = 'no fixation detected'
+        if fixations:
+            last_end = fixations[-1][1]
+            shuffle_x = eye_x[last_end - 1]
+            shuffle_y = eye_y[last_end - 1]
+            shuffle_dist = np.sqrt((shuffle_x - target_x)**2 + (shuffle_y - target_y)**2)
+            shuffle_hit = shuffle_dist <= contact_threshold
+            shuffle_color = 'limegreen' if shuffle_hit else 'red'
+            shuffle_str = f'HIT (dist={shuffle_dist:.4f})' if shuffle_hit else f'MISS (dist={shuffle_dist:.4f})'
+            ax.plot(shuffle_x, shuffle_y, '*', color=shuffle_color, markersize=20,
+                    markeredgecolor='black', markeredgewidth=1,
+                    label=f'Shuffle point: {shuffle_str}', zorder=7)
+
         ax.set_xlabel('Horizontal Position', fontsize=12)
         ax.set_ylabel('Vertical Position', fontsize=12)
 
@@ -4748,6 +4763,7 @@ def interactive_fixation_viewer(trials: list[dict], animal_id: Optional[str] = N
         if n_missed > 0:
             title += f' ({n_missed} potentially missed)'
         title += f'\nContact threshold: {contact_threshold:.4f} = target_r({target_radius:.4f}) + cursor_r({cursor_radius:.4f})'
+        title += f'  |  Shuffle: {shuffle_str}'
 
         if animal_id or session_date:
             title = f'{animal_id} {session_date}\n{title}'
