@@ -101,6 +101,30 @@ def load_fixation_feedback_data(folder_path: Path) -> Tuple[pd.DataFrame, pd.Dat
 
 
 
+def compute_success_trial_times(
+    eot_df: pd.DataFrame,
+    target_df: pd.DataFrame,
+) -> np.ndarray:
+    """Return array of trial durations (s) for successful trials only.
+
+    Returns empty array when required columns are unavailable.
+    """
+    if (
+        "trial_success" not in eot_df.columns
+        or "timestamp" not in eot_df.columns
+        or "timestamp" not in target_df.columns
+    ):
+        return np.array([], dtype=float)
+
+    n = min(len(eot_df), len(target_df))
+    eot_ts = pd.to_numeric(eot_df["timestamp"], errors="coerce").to_numpy()
+    tgt_ts = pd.to_numeric(target_df["timestamp"], errors="coerce").to_numpy()
+    durations = eot_ts[:n] - tgt_ts[:n]
+
+    success_mask = eot_df["trial_success"].iloc[:n].values == 2
+    return durations[success_mask & ~np.isnan(durations)]
+
+
 def compute_trial_times_by_diameter(
     eot_df: pd.DataFrame,
     target_df: pd.DataFrame,
@@ -111,6 +135,7 @@ def compute_trial_times_by_diameter(
     """
     if (
         "trial_success" not in eot_df.columns
+        or "timestamp" not in eot_df.columns
         or "timestamp" not in target_df.columns
         or "diameter" not in target_df.columns
     ):
@@ -237,7 +262,10 @@ def analyze_session(
             plt.show()
         plt.close(fig)
 
-
+    print("\nGenerating trial time by diameter plot...")
+    plot_trial_time_session(
+        eot_df, target_df, results_dir, animal_id, date_str, show_plots=show_plots
+    )
 
     return pd.DataFrame({
         "session_id": [folder_name],

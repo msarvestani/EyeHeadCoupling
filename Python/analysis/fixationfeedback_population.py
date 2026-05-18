@@ -406,13 +406,6 @@ def analyze_animal(
         results_dir=results_dir,
         show_plots=show_plots,
     )
-    plot_trial_time_trend(
-        session_records,
-        animal_ids=[animal_id],
-        animal_names=[animal_name],
-        results_dir=results_dir,
-        show_plots=show_plots,
-    )
     plot_trial_time_by_diameter_population(
         session_records,
         animal_ids=[animal_id],
