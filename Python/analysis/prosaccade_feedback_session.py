@@ -4610,6 +4610,28 @@ def interactive_fixation_viewer(trials: list[dict], animal_id: Optional[str] = N
         print(f"  Fixation samples: {len(state_stats['fixation_velocities'])}")
         print(f"  Saccade samples: {len(state_stats['saccade_velocities'])}")
 
+    # Pre-compute last-fixation endpoints for all trials so we can show the
+    # expected shuffle hit rate: for each trial, what fraction of ALL diameters
+    # in the pool would score this fixation endpoint as a HIT?
+    print("Pre-computing fixation endpoints for shuffle verification...")
+    _shuffle_pool = []  # list of (end_x, end_y, target_x, target_y, cursor_radius, diameter)
+    for t in trials_with_data:
+        _ex = np.array(t['eye_x'])
+        _ey = np.array(t['eye_y'])
+        _et = np.array(t.get('eye_times', np.arange(len(_ex))))
+        _fixes = detect_fixations(_ex, _ey, _et, min_duration, max_movement)
+        if _fixes:
+            _end = _fixes[-1][1]
+            _shuffle_pool.append({
+                'end_x': float(_ex[_end - 1]),
+                'end_y': float(_ey[_end - 1]),
+                'target_x': float(t['target_x']),
+                'target_y': float(t['target_y']),
+                'cursor_radius': t.get('cursor_diameter', 0.2) / 2.0,
+                'diameter': t['target_diameter'],
+            })
+    _all_diameters = np.array([e['diameter'] for e in _shuffle_pool])
+
     fig, ax = plt.subplots(figsize=(12, 10))
     current_trial_idx = [0]  # Use list to allow modification in nested function
 
@@ -4738,16 +4760,27 @@ def interactive_fixation_viewer(trials: list[dict], animal_id: Optional[str] = N
         ax.plot(final_x, final_y, 'ks', markersize=10, label='Final position', zorder=3)
 
         # Mark the shuffle point: last point of the last fixation (eye_x[end-1])
-        # This is exactly the point used by calculate_shuffle_chance_by_diameter
+        # This is exactly the point used by calculate_shuffle_chance_by_diameter.
+        # Colour reflects expected shuffle hit rate across ALL diameters in the pool
+        # (not the actual diameter), since the shuffle randomly assigns a different
+        # trial's diameter to this fixation endpoint.
         shuffle_str = 'no fixation detected'
         if fixations:
             last_end = fixations[-1][1]
             shuffle_x = eye_x[last_end - 1]
             shuffle_y = eye_y[last_end - 1]
             shuffle_dist = np.sqrt((shuffle_x - target_x)**2 + (shuffle_y - target_y)**2)
-            shuffle_hit = shuffle_dist <= contact_threshold
-            shuffle_color = 'limegreen' if shuffle_hit else 'red'
-            shuffle_str = f'HIT (dist={shuffle_dist:.4f})' if shuffle_hit else f'MISS (dist={shuffle_dist:.4f})'
+            if len(_all_diameters) > 0:
+                rand_diam = float(np.random.choice(_all_diameters))
+                rand_threshold = rand_diam / 2.0 + cursor_radius
+                shuffle_hit = shuffle_dist <= rand_threshold
+                shuffle_color = 'limegreen' if shuffle_hit else 'red'
+                shuffle_str = (f'dist={shuffle_dist:.4f}  |  '
+                               f'rand diam={rand_diam:.3f}  threshold={rand_threshold:.4f}  '
+                               f'{"HIT" if shuffle_hit else "MISS"}')
+            else:
+                shuffle_color = 'gray'
+                shuffle_str = f'dist={shuffle_dist:.4f}  |  no diameter pool'
             ax.plot(shuffle_x, shuffle_y, '*', color=shuffle_color, markersize=20,
                     markeredgecolor='black', markeredgewidth=1,
                     label=f'Shuffle point: {shuffle_str}', zorder=7)
