@@ -573,11 +573,17 @@ def plot_pericue_velocity_by_outcome(
             dy = np.diff(eye_y[mask])
             row[b] = float(np.sum(np.sqrt(dx**2 + dy**2)))
 
-        # Baseline-correct by subtracting the cue-onset bin
+        # Baseline-correct: subtract the t=0 bin; if that bin has no data
+        # (eye data starts just after t=0), fall back to the nearest non-NaN bin.
         if not np.isnan(row[baseline_idx]):
             row -= row[baseline_idx]
         else:
-            row[:] = np.nan
+            nonnans = np.where(~np.isnan(row))[0]
+            if len(nonnans) > 0:
+                fallback = nonnans[np.argmin(np.abs(bin_centers[nonnans]))]
+                row -= row[fallback]
+            else:
+                row[:] = np.nan
 
         if trial.get('trial_failed', False):
             failed_paths.append(row)
