@@ -32,6 +32,8 @@ from prosaccade_feedback_session import (
     extract_trial_trajectories,
     identify_and_filter_failed_trials,
     detect_fixations,
+    calculate_random_walk_chance_performance,
+    calculate_trial_success_from_fixations,
     FIXATION_MIN_DURATION,
     FIXATION_MAX_MOVEMENT,
 )
@@ -585,9 +587,18 @@ def analyze_session(
 
     eot_df, eye_df, target_df = load_fixation_feedback_data(folder_path)
 
+    trials = None
+    rw_chance = None
+    if eye_df is not None:
+        _, _failed, successful_indices = identify_and_filter_failed_trials(target_df, eot_df, exclude_failed=False)
+        trials = extract_trial_trajectories(eot_df, eye_df, target_df, successful_indices)
+        print("\nCalculating random walk chance performance...")
+        rw_chance = calculate_random_walk_chance_performance(trials, results_dir=results_dir)
+
     print("\nGenerating psychometric curve...")
     fig = plot_psychometric_central_fixation(
-        eot_df, target_df, results_dir, animal_id, date_str, session_time
+        eot_df, target_df, results_dir, animal_id, date_str, session_time,
+        random_walk_chance=rw_chance,
     )
     if fig is not None:
         if show_plots:
@@ -599,10 +610,8 @@ def analyze_session(
         eot_df, target_df, results_dir, animal_id, date_str, show_plots=show_plots
     )
 
-    if eye_df is not None:
+    if trials is not None:
         print("\nGenerating trajectory plots by diameter...")
-        _, _failed, successful_indices = identify_and_filter_failed_trials(target_df, eot_df, exclude_failed=False)
-        trials = extract_trial_trajectories(eot_df, eye_df, target_df, successful_indices)
         plot_trajectories_by_diameter(
             trials, results_dir, animal_id, date_str, session_time, show_plots=show_plots
         )

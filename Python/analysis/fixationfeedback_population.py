@@ -41,6 +41,7 @@ from fixation_session import bonsai_to_deg
 from prosaccade_feedback_session import (
     extract_trial_trajectories,
     identify_and_filter_failed_trials,
+    calculate_random_walk_chance_performance,
 )
 
 
@@ -173,6 +174,29 @@ def plot_population_psychometric(
             ax.text(d, mean_val + sd_val + 3, f"n={int(n)}",
                     ha="center", va="bottom", fontsize=9,
                     fontweight="bold", color=mean_color)
+
+        # Random walk chance overlay (dashed, same colour family, per animal)
+        rw_matrix = np.full((n_sessions, len(diameters)), np.nan)
+        for s_idx, rec in enumerate(session_recs):
+            rw_by_diam = rec.get("random_walk_chance", {}).get("by_diameter", {})
+            for raw_diam, rate in rw_by_diam.items():
+                deg = round(float(bonsai_to_deg(raw_diam)), 3)
+                d_idx_arr = np.where(np.isclose(diameters, deg))[0]
+                if len(d_idx_arr):
+                    rw_matrix[s_idx, d_idx_arr[0]] = rate * 100
+
+        with np.errstate(all="ignore"):
+            rw_mean = np.nanmean(rw_matrix, axis=0)
+            rw_sd = np.nanstd(rw_matrix, axis=0, ddof=1)
+
+        valid_rw = ~np.isnan(rw_mean)
+        if valid_rw.sum() >= 2:
+            ax.errorbar(
+                diameters[valid_rw], rw_mean[valid_rw], yerr=rw_sd[valid_rw],
+                fmt="o--", color=mean_color, ecolor=mean_color,
+                markersize=7, linewidth=1.5, capsize=4, capthick=1.5,
+                alpha=0.5, label=f"{animal_label} random walk chance",
+            )
 
     ax.axhline(100, color="green", linestyle="--", alpha=0.3, linewidth=1)
     ax.axhline(0,   color="red",   linestyle="--", alpha=0.3, linewidth=1)
@@ -452,12 +476,13 @@ def _load_animal_sessions(
         avg_trial_time = float(np.nanmean(success_times)) if len(success_times) > 0 else float("nan")
         trial_times_by_diam = compute_trial_times_by_diameter(eot_df, target_df)
 
+        rw_chance: dict = {}
+        variance_by_diam: dict = {}
         if eye_df is not None:
             _, _failed, successful_indices = identify_and_filter_failed_trials(target_df, eot_df, exclude_failed=False)
             trials = extract_trial_trajectories(eot_df, eye_df, target_df, successful_indices)
             variance_by_diam = compute_fixation_variance_by_diameter(trials)
-        else:
-            variance_by_diam = {}
+            rw_chance = calculate_random_walk_chance_performance(trials)
 
         folder_name = config.folder_path.name
         date_match = re.search(r"\d{4}-\d{2}-\d{2}", folder_name)
@@ -472,6 +497,7 @@ def _load_animal_sessions(
             "avg_success_trial_time": avg_trial_time,
             "trial_times_by_diameter": trial_times_by_diam,
             "variance_by_diameter": variance_by_diam,
+            "random_walk_chance": rw_chance,
         })
 
         n_trials = len(eot_df)
