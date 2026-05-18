@@ -601,7 +601,7 @@ def analyze_session(
 
     if eye_df is not None:
         print("\nGenerating trajectory plots by diameter...")
-        successful_indices = identify_and_filter_failed_trials(target_df, eot_df, exclude_failed=False)
+        _, _failed, successful_indices = identify_and_filter_failed_trials(target_df, eot_df, exclude_failed=False)
         trials = extract_trial_trajectories(eot_df, eye_df, target_df, successful_indices)
         plot_trajectories_by_diameter(
             trials, results_dir, animal_id, date_str, session_time, show_plots=show_plots

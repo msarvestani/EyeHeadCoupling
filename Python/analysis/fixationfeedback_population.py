@@ -453,7 +453,7 @@ def _load_animal_sessions(
         trial_times_by_diam = compute_trial_times_by_diameter(eot_df, target_df)
 
         if eye_df is not None:
-            successful_indices = identify_and_filter_failed_trials(target_df, eot_df, exclude_failed=False)
+            _, _failed, successful_indices = identify_and_filter_failed_trials(target_df, eot_df, exclude_failed=False)
             trials = extract_trial_trajectories(eot_df, eye_df, target_df, successful_indices)
             variance_by_diam = compute_fixation_variance_by_diameter(trials)
         else:
