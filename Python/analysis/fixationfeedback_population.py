@@ -194,10 +194,9 @@ def plot_population_psychometric(
         prefix = "_".join(aid for aid in animal_ids if aid)
         if prefix:
             prefix += "_"
-        filename = f"{prefix}fixation_wfeedback_population.png"
-        fig.savefig(results_dir / filename, dpi=150, bbox_inches="tight")
-        print(f"Saved population plot to {results_dir / filename}")
-
+        for ext in ("png", "svg"):
+            fig.savefig(results_dir / f"{prefix}fixation_wfeedback.{ext}", bbox_inches="tight")
+            
     if show_plots:
         plt.show()
     plt.close(fig)
@@ -209,58 +208,6 @@ def plot_population_psychometric(
 # ---------------------------------------------------------------------------
 
 _ANIMAL_COLORS = ["navy", "darkorange", "darkgreen", "indigo", "darkred", "saddlebrown"]
-
-
-def plot_trial_time_trend(
-    all_session_records: list[dict],
-    animal_ids: list[str],
-    animal_names: list[str],
-    results_dir: Optional[Path] = None,
-    show_plots: bool = True,
-) -> None:
-    """Scatter/line plot of mean successful trial time across sessions, one per animal."""
-    fig, ax = plt.subplots(figsize=(max(6, len(all_session_records) * 1.1), 4))
-
-    for a_idx, animal_name in enumerate(animal_names):
-        recs = [r for r in all_session_records if r.get("animal_name") == animal_name]
-        if not recs:
-            continue
-
-        color = _ANIMAL_COLORS[a_idx % len(_ANIMAL_COLORS)]
-        times = np.array([r["avg_success_trial_time"] for r in recs], dtype=float)
-        x_pos = np.arange(len(recs))
-        label = animal_name if len(animal_names) > 1 else None
-
-        ax.plot(x_pos, times, linestyle="--", color=color, linewidth=1, alpha=0.7, zorder=1)
-        ax.scatter(x_pos, times, color=color, s=60, zorder=2, label=label)
-
-        ax.set_xticks(x_pos)
-        ax.set_xticklabels(np.arange(1, len(recs) + 1), fontsize=8)
-
-    ax.set_xlabel("Session number")
-    ax.set_ylabel("Avg successful trial time (s)")
-    title = "Fixation w Visual Feedback: successful trial time across sessions"
-    label_parts = [p for p in animal_names if p]
-    if label_parts:
-        title += f"\n{' & '.join(label_parts)}"
-    ax.set_title(title)
-    if len(animal_names) > 1:
-        ax.legend(loc="best", fontsize=9)
-
-    fig.tight_layout()
-
-    if results_dir is not None:
-        results_dir.mkdir(parents=True, exist_ok=True)
-        prefix = "_".join(aid for aid in animal_ids if aid)
-        if prefix:
-            prefix += "_"
-        for ext in ("png", "svg"):
-            fig.savefig(results_dir / f"{prefix}trial_time_trend.{ext}", bbox_inches="tight")
-
-    if show_plots:
-        plt.show()
-    plt.close(fig)
-
 
 def plot_trial_time_by_diameter_population(
     all_session_records: list[dict],
@@ -343,7 +290,7 @@ def plot_trial_time_by_diameter_population(
         if prefix:
             prefix += "_"
         for ext in ("png", "svg"):
-            fig.savefig(results_dir / f"{prefix}trial_time_by_diameter_population.{ext}",
+            fig.savefig(results_dir / f"{prefix}fixation_wfeedback_trialtime.{ext}",
                         bbox_inches="tight")
 
     if show_plots:
@@ -498,13 +445,6 @@ def analyze_animals(
         return pd.DataFrame()
 
     plot_population_psychometric(
-        all_records,
-        animal_ids=animal_ids,
-        animal_names=animal_names,
-        results_dir=results_dir,
-        show_plots=show_plots,
-    )
-    plot_trial_time_trend(
         all_records,
         animal_ids=animal_ids,
         animal_names=animal_names,
