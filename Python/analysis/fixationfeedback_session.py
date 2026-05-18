@@ -32,6 +32,8 @@ from prosaccade_feedback_session import (
     extract_trial_trajectories,
     identify_and_filter_failed_trials,
     detect_fixations,
+    calculate_random_walk_chance_performance,
+    calculate_trial_success_from_fixations,
     FIXATION_MIN_DURATION,
     FIXATION_MAX_MOVEMENT,
 )
@@ -661,11 +663,14 @@ def analyze_session(
 
     trials = None
     rw_chance = None
+    shuffle_chance = None
     if eye_df is not None:
         _, _failed, successful_indices = identify_and_filter_failed_trials(target_df, eot_df, exclude_failed=False)
         trials = extract_trial_trajectories(eot_df, eye_df, target_df, successful_indices)
+        print("\nCalculating random walk chance performance...")
+        rw_chance = calculate_random_walk_chance_performance(trials, results_dir=results_dir)
         print("\nCalculating shuffle chance performance...")
-        rw_chance = calculate_shuffle_chance_by_diameter(trials)
+        shuffle_chance = calculate_shuffle_chance_by_diameter(trials)
 
     print("\nGenerating psychometric curve...")
     fig = plot_psychometric_central_fixation(
@@ -673,6 +678,18 @@ def analyze_session(
         random_walk_chance=rw_chance,
     )
     if fig is not None:
+        # Overlay shuffle chance on the same axes
+        if shuffle_chance and shuffle_chance.get('by_diameter'):
+            ax = fig.axes[0]
+            chance_diams = sorted(shuffle_chance['by_diameter'].keys())
+            chance_rates = [shuffle_chance['by_diameter'][d] * 100 for d in chance_diams]
+            chance_errs  = [shuffle_chance['by_diameter_se'].get(d, 0.0) * 100 for d in chance_diams]
+            chance_diams_deg = [float(bonsai_to_deg(d)) for d in chance_diams]
+            ax.errorbar(chance_diams_deg, chance_rates, yerr=chance_errs,
+                        fmt='s--', markersize=7, linewidth=2, capsize=4, capthick=1.5,
+                        color='darkorange', ecolor='darkorange',
+                        label='Shuffle chance', alpha=0.85)
+            ax.legend(fontsize=10)
         if show_plots:
             plt.show()
         plt.close(fig)
