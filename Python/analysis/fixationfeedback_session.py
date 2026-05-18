@@ -536,10 +536,11 @@ def calculate_shuffle_chance_by_diameter(
 ) -> dict:
     """Diameter-shuffle null model for psychometric chance level.
 
-    Holds actual fixation centerpoints fixed and permutes target diameters
-    across trials. A trial counts as successful when the fixation centerpoint
-    falls within the shuffled contact threshold
-    (shuffled_target_radius + cursor_radius).
+    Holds actual fixation endpoints fixed and permutes target diameters
+    across trials. A trial counts as successful when the last point of the
+    last fixation falls within the shuffled contact threshold
+    (shuffled_target_radius + cursor_radius), matching the criterion used
+    by calculate_trial_success_from_fixations().
 
     Returns
     -------
@@ -563,8 +564,8 @@ def calculate_shuffle_chance_by_diameter(
             continue
         start, end, *_ = fixations[-1]
         valid.append({
-            'cx': float(np.mean(eye_x[start:end])),
-            'cy': float(np.mean(eye_y[start:end])),
+            'cx': float(eye_x[end - 1]),
+            'cy': float(eye_y[end - 1]),
             'target_x': trial['target_x'],
             'target_y': trial['target_y'],
             'diameter': trial['target_diameter'],
