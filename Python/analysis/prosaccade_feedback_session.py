@@ -4771,16 +4771,19 @@ def interactive_fixation_viewer(trials: list[dict], animal_id: Optional[str] = N
             shuffle_y = eye_y[last_end - 1]
             shuffle_dist = np.sqrt((shuffle_x - target_x)**2 + (shuffle_y - target_y)**2)
             if len(_all_diameters) > 0:
-                n_hits = int(np.sum(_all_diameters / 2.0 + cursor_radius >= shuffle_dist))
-                expected_rate = n_hits / len(_all_diameters)
+                rand_diam = float(np.random.choice(_all_diameters))
+                rand_threshold = rand_diam / 2.0 + cursor_radius
+                shuffle_hit = shuffle_dist <= rand_threshold
+                shuffle_color = 'limegreen' if shuffle_hit else 'red'
+                shuffle_str = (f'dist={shuffle_dist:.4f}  |  '
+                               f'rand diam={rand_diam:.3f}  threshold={rand_threshold:.4f}  '
+                               f'{"HIT" if shuffle_hit else "MISS"}')
             else:
-                expected_rate = float('nan')
-            # Green if most shuffled diameters give a hit, red if most miss
-            shuffle_color = 'limegreen' if (not np.isnan(expected_rate) and expected_rate >= 0.5) else 'red'
-            shuffle_str = f'dist={shuffle_dist:.4f}  |  Expected shuffle hit rate: {100*expected_rate:.1f}% ({n_hits}/{len(_all_diameters)} diameters)'
+                shuffle_color = 'gray'
+                shuffle_str = f'dist={shuffle_dist:.4f}  |  no diameter pool'
             ax.plot(shuffle_x, shuffle_y, '*', color=shuffle_color, markersize=20,
                     markeredgecolor='black', markeredgewidth=1,
-                    label=f'Shuffle point ({shuffle_color}): {shuffle_dist:.4f}', zorder=7)
+                    label=f'Shuffle point: {shuffle_str}', zorder=7)
 
         ax.set_xlabel('Horizontal Position', fontsize=12)
         ax.set_ylabel('Vertical Position', fontsize=12)
