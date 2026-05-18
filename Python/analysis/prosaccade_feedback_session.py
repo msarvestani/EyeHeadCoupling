@@ -2632,7 +2632,7 @@ def plot_trajectories_by_diameter(trials: list[dict], results_dir: Optional[Path
             all_centerpoints_arr = np.array(all_centerpoints)
             var_x = np.var(all_centerpoints_arr[:, 0])
             var_y = np.var(all_centerpoints_arr[:, 1])
-            centerpoint_var = var_x + var_y
+            centerpoint_var = var_x
         else:
             centerpoint_var = np.nan
         
@@ -2641,7 +2641,7 @@ def plot_trajectories_by_diameter(trials: list[dict], results_dir: Optional[Path
             iti_centerpoints_arr = np.array(iti_centerpoints)
             iti_var_x = np.var(iti_centerpoints_arr[:, 0])
             iti_var_y = np.var(iti_centerpoints_arr[:, 1])
-            iti_var = iti_var_x + iti_var_y
+            iti_var = iti_var_x
         else:
             iti_var = np.nan
 
@@ -2748,7 +2748,7 @@ def plot_trajectories_by_diameter(trials: list[dict], results_dir: Optional[Path
                             bbox=dict(boxstyle='round,pad=0.3', facecolor='yellow', alpha=0.7))
     
     ax_var.set_xlabel('Target Diameter', fontsize=12, fontweight='bold')
-    ax_var.set_ylabel('Fixation Centerpoint Variance (Var(X) + Var(Y))', fontsize=12, fontweight='bold')
+    ax_var.set_ylabel('Fixation Centerpoint X Variance (Var(X))', fontsize=12, fontweight='bold')
     var_title = 'Fixation Centerpoint Variance vs Target Diameter'
     if animal_id:
         var_title += f'\n{animal_id}'

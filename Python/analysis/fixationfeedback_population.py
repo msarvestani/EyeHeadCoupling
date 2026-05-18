@@ -35,8 +35,13 @@ from fixationfeedback_session import (
     load_fixation_feedback_data,
     compute_success_trial_times,
     compute_trial_times_by_diameter,
+    compute_fixation_variance_by_diameter,
 )
 from fixation_session import bonsai_to_deg
+from prosaccade_feedback_session import (
+    extract_trial_trajectories,
+    identify_and_filter_failed_trials,
+)
 
 
 # ---------------------------------------------------------------------------
