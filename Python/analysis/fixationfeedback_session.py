@@ -399,7 +399,6 @@ def plot_trajectories_by_diameter(
                 # Store centerpoint
                 all_centerpoints.append([centerpoint_x, centerpoint_y])
 
-            # # Plot inter-trial fixations in purple (keep comment, no block)
 
         # Calculate variance of all centerpoints using var_x only
         if len(all_centerpoints) > 0:
@@ -409,13 +408,6 @@ def plot_trajectories_by_diameter(
         else:
             centerpoint_var = np.nan
 
-        # Calculate variance of inter-trial centerpoints
-        if len(iti_centerpoints) > 0:
-            iti_centerpoints_arr = np.array(iti_centerpoints)
-            iti_var_x = np.var(iti_centerpoints_arr[:, 0])
-            iti_var = iti_var_x
-        else:
-            iti_var = np.nan
 
         # Store data for variance plot
         variance_data['diameters'].append(diameter)
@@ -454,8 +446,6 @@ def plot_trajectories_by_diameter(
                        markersize=8, label='Success fixations'),
                 Line2D([0], [0], marker='x', color='red', markersize=8,
                        linewidth=2, label='Failed fixations'),
-                Line2D([0], [0], marker='o', color='w', markerfacecolor='purple',
-                       markersize=8, label='Inter-trial fixations'),
                 Line2D([0], [0], color='blue', linewidth=2, linestyle='--', label='Target'),
             ]
             ax.legend(handles=legend_elements, loc='upper right', fontsize=9)
@@ -500,14 +490,7 @@ def plot_trajectories_by_diameter(
                 markerfacecolor='lightblue', markeredgecolor='steelblue',
                 markeredgewidth=2, label='Trial fixations')
 
-    # Plot inter-trial fixation variance (dashed purple line)
-    valid_iti = [(d, v) for d, v in zip(variance_data['diameters'], variance_data['iti_variances']) if not np.isnan(v)]
-    if valid_iti:
-        iti_diameters, iti_variances = zip(*valid_iti)
-        ax_var.plot(iti_diameters, iti_variances, 'o--',
-                    linewidth=2, markersize=10, color='purple',
-                    markerfacecolor='lavender', markeredgecolor='purple',
-                    markeredgewidth=2, label='Inter-trial fixations')
+
 
     # Add % correct labels
     for d, v, pct in zip(variance_data['diameters'], variance_data['variances'], variance_data['percent_correct']):
