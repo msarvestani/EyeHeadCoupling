@@ -35,8 +35,13 @@ from fixationfeedback_session import (
     load_fixation_feedback_data,
     compute_success_trial_times,
     compute_trial_times_by_diameter,
+    compute_fixation_variance_by_diameter,
 )
 from fixation_session import bonsai_to_deg
+from prosaccade_feedback_session import (
+    extract_trial_trajectories,
+    identify_and_filter_failed_trials,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -299,6 +304,101 @@ def plot_trial_time_by_diameter_population(
 
 
 # ---------------------------------------------------------------------------
+# Fixation variance population plot
+# ---------------------------------------------------------------------------
+
+def plot_fixation_variance_population(
+    all_session_records: list[dict],
+    animal_ids: list[str],
+    animal_names: list[str],
+    results_dir: Optional[Path] = None,
+    show_plots: bool = True,
+) -> None:
+    """Population mean ± SEM of fixation X variance vs target diameter, per animal.
+
+    Mirrors the layout of plot_population_psychometric.
+    """
+    all_diameters: set[float] = set()
+    for rec in all_session_records:
+        for raw_diam in rec.get("variance_by_diameter", {}).keys():
+            diam_deg = round(float(bonsai_to_deg(raw_diam)), 3)
+            all_diameters.add(diam_deg)
+    diameters = np.array(sorted(all_diameters))
+
+    if len(diameters) == 0:
+        print("Warning: no variance-by-diameter data found — skipping variance population plot")
+        return
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    for a_idx, animal_name in enumerate(animal_names):
+        mean_color = _ANIMAL_MEAN_COLORS[a_idx % len(_ANIMAL_MEAN_COLORS)]
+
+        session_recs = [r for r in all_session_records if r.get("animal_name") == animal_name]
+        n_sessions = len(session_recs)
+        if n_sessions == 0:
+            continue
+
+        var_matrix = np.full((n_sessions, len(diameters)), np.nan)
+        for s_idx, rec in enumerate(session_recs):
+            for raw_diam, var_x in rec.get("variance_by_diameter", {}).items():
+                diam_deg = round(float(bonsai_to_deg(raw_diam)), 3)
+                d_idx_arr = np.where(diameters == diam_deg)[0]
+                if len(d_idx_arr) > 0:
+                    var_matrix[s_idx, d_idx_arr[0]] = var_x
+
+        with np.errstate(all="ignore"):
+            pop_mean = np.nanmean(var_matrix, axis=0)
+            pop_n = np.sum(~np.isnan(var_matrix), axis=0)
+            pop_sem = np.nanstd(var_matrix, axis=0, ddof=1) / np.sqrt(pop_n)
+
+        valid_pop = ~np.isnan(pop_mean)
+        animal_label = animal_name or (animal_ids[a_idx] if a_idx < len(animal_ids) else "")
+        ax.errorbar(
+            diameters[valid_pop], pop_mean[valid_pop], yerr=pop_sem[valid_pop],
+            fmt="o-", color=mean_color, ecolor=mean_color,
+            markersize=10, linewidth=2.5, capsize=5, capthick=2,
+            label=f"{animal_label} mean ± SEM", zorder=5,
+        )
+
+        for d, mean_val, sem_val, n in zip(
+            diameters[valid_pop], pop_mean[valid_pop], pop_sem[valid_pop], pop_n[valid_pop]
+        ):
+            ax.text(d, mean_val + sem_val, f"n={int(n)}",
+                    ha="center", va="bottom", fontsize=9,
+                    fontweight="bold", color=mean_color)
+
+    ax.set_xlabel("Target Diameter (°)", fontsize=14, fontweight="bold")
+    ax.set_ylabel("Fixation Centerpoint X Variance (Var(X))", fontsize=14, fontweight="bold")
+
+    title = "Fixation w Visual Feedback: X Variance vs Target Diameter"
+    label_parts = [p for p in animal_names if p]
+    if label_parts:
+        title += f"\n{' & '.join(label_parts)}"
+    ax.set_title(title, fontsize=14, fontweight="bold")
+
+    x_pad = (diameters.max() - diameters.min()) * 0.08 if len(diameters) > 1 else 0.1
+    ax.set_xlim(diameters.min() - x_pad, diameters.max() + x_pad)
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc="best", fontsize=9, framealpha=0.7)
+
+    plt.tight_layout()
+
+    if results_dir is not None:
+        results_dir.mkdir(parents=True, exist_ok=True)
+        prefix = "_".join(aid for aid in animal_ids if aid)
+        if prefix:
+            prefix += "_"
+        for ext in ("png", "svg"):
+            fig.savefig(results_dir / f"{prefix}fixation_wfeedback_variance.{ext}",
+                        bbox_inches="tight")
+
+    if show_plots:
+        plt.show()
+    plt.close(fig)
+
+
+# ---------------------------------------------------------------------------
 # Data loading helper (per animal)
 # ---------------------------------------------------------------------------
 
@@ -338,7 +438,7 @@ def _load_animal_sessions(
 
         print(f"\nLoading {session_id}...")
         try:
-            eot_df, target_df = load_fixation_feedback_data(config.folder_path)
+            eot_df, eye_df, target_df = load_fixation_feedback_data(config.folder_path)
         except Exception as exc:
             print(f"  Error loading {session_id}: {exc}")
             continue
@@ -352,6 +452,13 @@ def _load_animal_sessions(
         avg_trial_time = float(np.nanmean(success_times)) if len(success_times) > 0 else float("nan")
         trial_times_by_diam = compute_trial_times_by_diameter(eot_df, target_df)
 
+        if eye_df is not None:
+            successful_indices = identify_and_filter_failed_trials(target_df, eot_df, exclude_failed=False)
+            trials = extract_trial_trajectories(eot_df, eye_df, target_df, successful_indices)
+            variance_by_diam = compute_fixation_variance_by_diameter(trials)
+        else:
+            variance_by_diam = {}
+
         folder_name = config.folder_path.name
         date_match = re.search(r"\d{4}-\d{2}-\d{2}", folder_name)
         date_str = date_match.group() if date_match else ""
@@ -364,6 +471,7 @@ def _load_animal_sessions(
             "psychometric": psychometric,
             "avg_success_trial_time": avg_trial_time,
             "trial_times_by_diameter": trial_times_by_diam,
+            "variance_by_diameter": variance_by_diam,
         })
 
         n_trials = len(eot_df)
@@ -413,6 +521,13 @@ def analyze_animal(
         results_dir=results_dir,
         show_plots=show_plots,
     )
+    plot_fixation_variance_population(
+        session_records,
+        animal_ids=[animal_id],
+        animal_names=[animal_name],
+        results_dir=results_dir,
+        show_plots=show_plots,
+    )
 
     return pd.concat(summary_rows, ignore_index=True) if summary_rows else pd.DataFrame()
 
@@ -445,6 +560,13 @@ def analyze_animals(
         show_plots=show_plots,
     )
     plot_trial_time_by_diameter_population(
+        all_records,
+        animal_ids=animal_ids,
+        animal_names=animal_names,
+        results_dir=results_dir,
+        show_plots=show_plots,
+    )
+    plot_fixation_variance_population(
         all_records,
         animal_ids=animal_ids,
         animal_names=animal_names,
