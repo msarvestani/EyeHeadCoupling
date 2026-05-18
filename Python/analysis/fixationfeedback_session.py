@@ -100,32 +100,6 @@ def load_fixation_feedback_data(folder_path: Path) -> Tuple[pd.DataFrame, pd.Dat
     return eot_df, target_df
 
 
-def compute_success_trial_times(
-    eot_df: pd.DataFrame,
-    target_df: pd.DataFrame,
-) -> np.ndarray:
-    """Return trial durations (s) for successful trials (trial_success == 2).
-
-    Uses eot_df.timestamp - target_df.timestamp when target_df has timestamps
-    (cue onset → trial end).  Returns an empty array when timestamps are
-    unavailable or no successful trials exist.
-    """
-    if "trial_success" not in eot_df.columns:
-        return np.array([])
-
-    success_mask = eot_df["trial_success"].values == 2
-    n = min(len(eot_df), len(target_df))
-
-    eot_ts = pd.to_numeric(eot_df["timestamp"], errors="coerce").to_numpy()
-
-    if "timestamp" in target_df.columns:
-        tgt_ts = pd.to_numeric(target_df["timestamp"], errors="coerce").to_numpy()
-        durations = (eot_ts[:n] - tgt_ts[:n])
-    else:
-        return np.array([])
-
-    return durations[success_mask[:n]]
-
 
 def compute_trial_times_by_diameter(
     eot_df: pd.DataFrame,
@@ -263,25 +237,13 @@ def analyze_session(
             plt.show()
         plt.close(fig)
 
-    print("\nGenerating trial time plot...")
-    plot_trial_time_session(eot_df, target_df, results_dir, animal_id, date_str,
-                            show_plots=show_plots)
 
-    n_trials = len(eot_df)
-    n_success = int((eot_df["trial_success"] == 2).sum()) if "trial_success" in eot_df.columns else 0
-
-    success_times = compute_success_trial_times(eot_df, target_df)
-    avg_success_trial_time = float(np.nanmean(success_times)) if len(success_times) > 0 else float("nan")
 
     return pd.DataFrame({
         "session_id": [folder_name],
         "animal_id": [animal_id],
         "session_date": [date_str],
         "session_time": [session_time],
-        "n_trials": [n_trials],
-        "n_success": [n_success],
-        "success_rate": [n_success / n_trials if n_trials > 0 else float("nan")],
-        "avg_success_trial_time": [avg_success_trial_time],
     })
 
 
