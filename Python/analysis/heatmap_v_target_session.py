@@ -5,10 +5,22 @@ to allow easy comparison of eye position density across different sessions.
 
 This script specifically applies to 3 sessions run on Paris on 2026-01-13
 
-Usage:   python heatmap_v_target_session.py
-X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2026-01-13T13_26_58
-X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2026-01-13T13_13_35
-X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2026-01-13T13_00_15       
+Usage:   python heatmap_v_target_session.py 
+X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2026-01-14T13_59_12 
+X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2026-01-14T14_12_28  
+X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2026-01-14T13_46_10 --include-failed-trials
+
+
+python heatmap_v_target_session.py 
+X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2026-01-13T13_13_35 
+X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2026-01-13T13_26_58 
+X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2026-01-13T13_00_15 --include-failed-trials
+
+
+python heatmap_v_target_session.py 
+X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2026-01-26T13_53_16
+X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2026-01-26T14_01_05 
+X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2026-01-26T14_09_14 --include-failed-trials
 """
 
 from __future__ import annotations
@@ -59,12 +71,12 @@ def plot_session_heatmap(ax, trials: list[dict], title: str, show_xlabel: bool =
     all_y = np.array(all_y)
 
     # Create 2D histogram
-    bins = 50  # Number of bins in each dimension
+    bins = 10  # Number of bins in each dimension
     h, xedges, yedges = np.histogram2d(all_x, all_y, bins=bins, range=[[-1.7, 1.7], [-1, 1]])
 
     # Plot heatmap
     extent = [xedges[0], xedges[-1], yedges[0], yedges[-1]]
-    im = ax.imshow(h.T, extent=extent, origin='lower', cmap='hot', aspect='auto', interpolation='bilinear')
+    im = ax.imshow(h.T, extent=extent, origin='lower', cmap='hot', aspect='auto', interpolation='bilinear', vmin=0, vmax=200)
 
     # Add colorbar
     cbar = plt.colorbar(im, ax=ax, label='Number of Samples')
@@ -75,7 +87,7 @@ def plot_session_heatmap(ax, trials: list[dict], title: str, show_xlabel: bool =
         target_y = trial['target_y']
         target_radius = trial['target_diameter'] / 2.0
         target_circle = Circle((target_x, target_y), radius=target_radius, fill=False,
-                              edgecolor='cyan', linewidth=2, linestyle='-', alpha=0.7)
+                              edgecolor='cyan', linewidth=0.5, linestyle='-', alpha=0.1)
         ax.add_patch(target_circle)
 
     if show_xlabel:
@@ -89,7 +101,7 @@ def plot_session_heatmap(ax, trials: list[dict], title: str, show_xlabel: bool =
 
 def plot_multi_session_heatmaps(session_folders: list[Path], animal_ids: list[str],
                                 session_labels: Optional[list[str]] = None,
-                                include_failed_trials: bool = False,
+                                include_failed_trials: bool = True,
                                 results_dir: Optional[Path] = None) -> plt.Figure:
     """Plot heatmaps for multiple sessions in vertical subplots.
 
@@ -117,7 +129,7 @@ def plot_multi_session_heatmaps(session_folders: list[Path], animal_ids: list[st
         session_labels = [f.name for f in session_folders]
 
     # Create figure with vertical subplots
-    fig, axes = plt.subplots(n_sessions, 1, figsize=(10, 6 * n_sessions))
+    fig, axes = plt.subplots(n_sessions, 1, figsize=(6, 3 * n_sessions))
 
     # Handle case where there's only one subplot (axes won't be a list)
     if n_sessions == 1:
@@ -132,7 +144,7 @@ def plot_multi_session_heatmaps(session_folders: list[Path], animal_ids: list[st
 
         # Filter failed trials
         target_df_successful, failed_indices, successful_indices = identify_and_filter_failed_trials(
-            target_df_all, eot_df, exclude_failed=True
+            target_df_all, eot_df, exclude_failed=False
         )
 
         # Extract trial trajectories
@@ -143,12 +155,15 @@ def plot_multi_session_heatmaps(session_folders: list[Path], animal_ids: list[st
         if include_failed_trials:
             trials_for_plot = trials_all
             print(f"  Using ALL {len(trials_all)} trials (including {len(failed_indices)} failed)")
+            title = "All Trials"
         else:
             trials_for_plot = [t for t in trials_all if not t.get('trial_failed', False) and t.get('has_eye_data', True)]
             print(f"  Using {len(trials_for_plot)} successful trials")
+            title = "Successful Trials"
 
         if len(trials_for_plot) == 0:
             print(f"  Warning: No valid trials found for session {idx + 1}")
+            title = "No Valid Trials"
             continue
 
         # Plot on the corresponding axis
@@ -156,10 +171,10 @@ def plot_multi_session_heatmaps(session_folders: list[Path], animal_ids: list[st
         plot_session_heatmap(axes[idx], trials_for_plot, label, show_xlabel=show_xlabel)
 
     # Overall title
-    fig.suptitle('Eye Position Density Heatmaps - Multi-Session Comparison',
-                 fontsize=16, fontweight='bold', y=0.995)
+    fig.suptitle('Eye Position Heatmaps'+', '+title,
+                 fontsize=12, fontweight='bold', y=0.97)
 
-    plt.tight_layout()
+    #plt.tight_layout()
 
     # Save figure if results directory provided
     if results_dir:
@@ -182,7 +197,7 @@ def main():
     parser.add_argument("--labels", nargs='+', default=None,
                        help="Custom labels for each session (default: folder names)")
     parser.add_argument("--include-failed-trials", action='store_true', default=False,
-                       help="Include failed trials in the heatmap (default: False)")
+                       help="Include failed trials in the heatmap (default: True)")
     parser.add_argument("--results", type=str, help="Results directory to save the figure")
     parser.add_argument("--no-show", action='store_true', default=False,
                        help="Don't display the plot (only save)")

@@ -249,29 +249,6 @@ def plot_trial_time_session(
     return fig
 
 
-def compute_fixation_variance_by_diameter(trials: list[dict]) -> dict[float, float]:
-    """Return {diameter: var_x} of fixation centerpoints, keyed by target diameter."""
-    from collections import defaultdict
-    centerpoints_by_diam: dict[float, list[float]] = defaultdict(list)
-    for trial in trials:
-        if not trial.get('has_eye_data', False):
-            continue
-        diameter = trial.get('target_diameter')
-        if diameter is None:
-            continue
-        eye_x = np.array(trial['eye_x'])
-        eye_y = np.array(trial['eye_y'])
-        eye_times = np.array(trial.get('eye_times', np.arange(len(eye_x))))
-        fixations = detect_fixations(eye_x, eye_y, eye_times, FIXATION_MIN_DURATION, FIXATION_MAX_MOVEMENT)
-        if fixations:
-            start, end, *_ = fixations[-1]
-            centerpoints_by_diam[diameter].append(float(np.mean(eye_x[start:end])))
-    return {
-        diam: float(np.var(xs)) if len(xs) > 1 else float('nan')
-        for diam, xs in centerpoints_by_diam.items()
-    }
-
-
 def plot_trajectories_by_diameter(
     trials: list[dict],
     results_dir: Optional[Path] = None,
@@ -343,9 +320,7 @@ def plot_trajectories_by_diameter(
         axes = np.array([axes])
     axes = axes.flatten()
 
-    # Collect variance data for separate plot
-    variance_data = {'diameters': [], 'variances': [], 'percent_correct': [], 'iti_variances': []}
-
+  
     # Plot fixations for each diameter
     for idx, diameter in enumerate(sorted_diameters):
         ax = axes[idx]
@@ -356,9 +331,8 @@ def plot_trajectories_by_diameter(
         target_x = None
         target_y = None
 
-        # Store all centerpoints for variance calculation
+        # Store all centerpoints 
         all_centerpoints = []
-        iti_centerpoints = []
 
         # Collect fixation points from all trials
         for trial in trial_list:
@@ -400,22 +374,6 @@ def plot_trajectories_by_diameter(
                 all_centerpoints.append([centerpoint_x, centerpoint_y])
 
 
-        # Calculate variance of all centerpoints using var_x only
-        if len(all_centerpoints) > 0:
-            all_centerpoints_arr = np.array(all_centerpoints)
-            var_x = np.var(all_centerpoints_arr[:, 0])
-            centerpoint_var = var_x
-        else:
-            centerpoint_var = np.nan
-
-
-        # Store data for variance plot
-        variance_data['diameters'].append(diameter)
-        variance_data['variances'].append(centerpoint_var)
-        variance_data['iti_variances'].append(np.nan)
-        pct_correct = (n_success / (n_success + n_failed)) * 100 if (n_success + n_failed) > 0 else 0
-        variance_data['percent_correct'].append(pct_correct)
-
         # Draw target circle
         circle = Circle((target_x, target_y), diameter / 2,
                          fill=False, edgecolor='blue', linewidth=2.5, linestyle='--')
@@ -433,7 +391,7 @@ def plot_trajectories_by_diameter(
         ax.set_xlabel('X Position', fontsize=10)
         ax.set_ylabel('Y Position', fontsize=10)
 
-        # Build title WITHOUT variance information
+        # Build title
         title_text = f'Diameter: {diameter:.3f}\n(n={n_success + n_failed}: {n_success} success, {n_failed} failed)'
 
         ax.set_title(title_text, fontsize=11, fontweight='bold')
@@ -480,52 +438,9 @@ def plot_trajectories_by_diameter(
     if show_plots:
         plt.show()
     plt.close(fig)
-
-    # Create variance vs diameter plot
-    fig_var, ax_var = plt.subplots(figsize=(10, 7))
-
-    # Plot trial fixation variance (solid blue line)
-    ax_var.plot(variance_data['diameters'], variance_data['variances'], 'o-',
-                linewidth=2, markersize=10, color='steelblue',
-                markerfacecolor='lightblue', markeredgecolor='steelblue',
-                markeredgewidth=2, label='Trial fixations')
-
-
-
-    # Add % correct labels
-    for d, v, pct in zip(variance_data['diameters'], variance_data['variances'], variance_data['percent_correct']):
-        if not np.isnan(v):
-            ax_var.annotate(f'{pct:.1f}%', xy=(d, v), xytext=(0, 10), textcoords='offset points',
-                            ha='center', fontsize=10, fontweight='bold',
-                            bbox=dict(boxstyle='round,pad=0.3', facecolor='yellow', alpha=0.7))
-
-    ax_var.set_xlabel('Target Diameter', fontsize=12, fontweight='bold')
-    ax_var.set_ylabel('Fixation Centerpoint X Variance (Var(X))', fontsize=12, fontweight='bold')
-    var_title = 'Fixation Centerpoint Variance vs Target Diameter'
-    if animal_id:
-        var_title += f'\n{animal_id}'
-    if session_date:
-        var_title += f' - {session_date}'
-        if session_time:
-            var_title += f' @ {session_time}'
-    elif session_time:
-        var_title += f' - {session_time}'
-    ax_var.set_title(var_title, fontsize=14, fontweight='bold')
-    ax_var.grid(True, alpha=0.3)
-    ax_var.legend(loc='best', fontsize=11)
-
-    if results_dir:
-        prefix = f"{animal_id}_" if animal_id else ""
-        date_suffix = f"_{session_date}" if session_date else ""
-        filename_var = f"{prefix}fixation_variance_by_diameter{date_suffix}.png"
-        fig_var.savefig(results_dir / filename_var, dpi=150, bbox_inches='tight')
-        print(f"Saved fixation variance by diameter to {results_dir / filename_var}")
-
-    if show_plots:
-        plt.show()
-    plt.close(fig_var)
-
     return fig
+
+
 
 
 
@@ -673,7 +588,7 @@ def analyze_session(
             ax.errorbar(chance_diams_deg, chance_rates, yerr=chance_errs,
                         fmt='s--', markersize=7, linewidth=2, capsize=4, capthick=1.5,
                         color='darkorange', ecolor='darkorange',
-                        label='Shuffle chance', alpha=0.85)
+                        label='Shuffle chance', alpha=0)
             ax.legend(fontsize=10)
         if show_plots:
             plt.show()
