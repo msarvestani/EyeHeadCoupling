@@ -35,7 +35,6 @@ from fixationfeedback_session import (
     load_fixation_feedback_data,
     compute_success_trial_times,
     compute_trial_times_by_diameter,
-    compute_fixation_variance_by_diameter,
 )
 from fixation_session import bonsai_to_deg
 from prosaccade_feedback_session import (
@@ -383,11 +382,9 @@ def _load_animal_sessions(
         trial_times_by_diam = compute_trial_times_by_diameter(eot_df, target_df)
 
         rw_chance: dict = {}
-        variance_by_diam: dict = {}
         if eye_df is not None:
             _, _failed, successful_indices = identify_and_filter_failed_trials(target_df, eot_df, exclude_failed=False)
             trials = extract_trial_trajectories(eot_df, eye_df, target_df, successful_indices)
-            variance_by_diam = compute_fixation_variance_by_diameter(trials)
             rw_chance = calculate_random_walk_chance_performance(trials)
 
         folder_name = config.folder_path.name
@@ -402,7 +399,6 @@ def _load_animal_sessions(
             "psychometric": psychometric,
             "avg_success_trial_time": avg_trial_time,
             "trial_times_by_diameter": trial_times_by_diam,
-            "variance_by_diameter": variance_by_diam,
             "random_walk_chance": rw_chance,
         })
 
@@ -453,13 +449,6 @@ def analyze_animal(
         results_dir=results_dir,
         show_plots=show_plots,
     )
-    plot_fixation_variance_population(
-        session_records,
-        animal_ids=[animal_id],
-        animal_names=[animal_name],
-        results_dir=results_dir,
-        show_plots=show_plots,
-    )
 
     return pd.concat(summary_rows, ignore_index=True) if summary_rows else pd.DataFrame()
 
@@ -498,13 +487,7 @@ def analyze_animals(
         results_dir=results_dir,
         show_plots=show_plots,
     )
-    plot_fixation_variance_population(
-        all_records,
-        animal_ids=animal_ids,
-        animal_names=animal_names,
-        results_dir=results_dir,
-        show_plots=show_plots,
-    )
+
 
     return pd.concat(all_summary, ignore_index=True) if all_summary else pd.DataFrame()
 
