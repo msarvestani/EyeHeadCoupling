@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 
 # Put the repo's “Python” folder on sys.path so `import eyehead` works
 sys.path.append(str(Path(__file__).resolve().parents[1]))
-from utils.session_loader import load_session
+from utils.session_loader import load_session_or_path
 
 from eyehead import (
     SaccadeConfig,
@@ -26,9 +26,11 @@ def main(session_id: str) -> pd.DataFrame:
     Parameters
     ----------
     session_id:
-        Identifier of the session to analyse.
+        Identifier of the session to analyse, either a manifest session ID
+        or a direct path to a session folder.
     """
-    config = load_session(session_id)
+    config = load_session_or_path(session_id)
+    session_id = config.session_id
     config.results_dir.mkdir(parents=True, exist_ok=True)
 
     folder_path = config.folder_path
@@ -97,10 +99,10 @@ def main(session_id: str) -> pd.DataFrame:
     return df,left_angle,right_angle
 
 
-# Usage: python Python/analysis/prosaccade_session.py SESSION_ID
+# Usage: python Python/analysis/prosaccade_session.py SESSION_ID_OR_PATH
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Analyse a recorded session")
-    parser.add_argument("session_id", help="Session identifier from session_manifest.yml")
+    parser.add_argument("session_id", help="Session identifier from session_manifest.yml, or a direct path to a session folder")
     args = parser.parse_args()
     main(args.session_id)
 

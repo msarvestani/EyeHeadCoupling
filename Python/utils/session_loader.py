@@ -183,6 +183,86 @@ def load_session(session_id: str) -> SessionConfig:
     )
 
 
+def load_session_or_path(identifier: str) -> SessionConfig:
+    """Load a session by manifest ID, or fall back to a direct folder path.
+
+    Parameters
+    ----------
+    identifier:
+        Either a session ID present in ``session_manifest.yml``, or a direct
+        filesystem path to a session folder.
+
+    Returns
+    -------
+    SessionConfig
+        The configuration for the requested session.
+    """
+    try:
+        return load_session(identifier)
+    except KeyError:
+        folder = Path(identifier)
+        if not folder.exists():
+            raise
+        return _build_config_from_folder(folder)
+
+
+def _build_config_from_folder(folder: Path) -> SessionConfig:
+    """Build a :class:`SessionConfig` directly from a folder path.
+
+    Global defaults (``saccade_config``, ``max_interval_fixations``,
+    ``results_root``) are still pulled from ``session_manifest.yml`` when
+    available, but session-specific fields are derived from ``folder``
+    instead of a manifest entry.
+    """
+    manifest_path = (
+        Path(__file__).resolve().parent.parent.parent / "session_manifest.yml"
+    )
+    manifest: Dict[str, Any] = {}
+    if manifest_path.exists():
+        with manifest_path.open("r", encoding="utf-8") as fh:
+            manifest = yaml.safe_load(fh) or {}
+
+    global_saccade_cfg: Dict[str, Any] = manifest.get("saccade_config", {}) or {}
+    default_max_interval: Optional[float] = manifest.get("max_interval_fixations")
+    results_root = manifest.get("results_root")
+
+    folder_name = folder.name
+    animal_id = _parse_animal_id_from_folder(folder_name)
+    animal_name = _parse_animal_name_from_path(str(folder))
+    date_str = _parse_date_from_path(str(folder))
+    results_dir = Path(results_root) / folder_name if results_root else folder / "results"
+
+    params: Dict[str, Any] = {}
+    if date_str:
+        params["date"] = date_str
+    if default_max_interval is not None:
+        params["max_interval_fixations"] = default_max_interval
+
+    merged_saccade_cfg = dict(global_saccade_cfg)
+    try:  # Import locally to avoid circular dependency during module import.
+        from eyehead.analysis import SaccadeConfig
+
+        for f in fields(SaccadeConfig):
+            if f.name not in merged_saccade_cfg:
+                if f.default is not MISSING:
+                    merged_saccade_cfg[f.name] = f.default
+                elif f.default_factory is not MISSING:  # pragma: no cover - defensive
+                    merged_saccade_cfg[f.name] = f.default_factory()
+    except Exception:  # pragma: no cover - fallback if import fails
+        pass
+    params["saccade_config"] = merged_saccade_cfg
+
+    return SessionConfig(
+        session_id=folder_name,
+        session_name=folder_name,
+        results_dir=results_dir,
+        animal_name=animal_name,
+        animal_id=animal_id,
+        folder_path=folder,
+        params=params,
+    )
+
+
 _DATA_DIR = Path(
     os.environ.get(
         "EHC_DATA_DIR", Path(__file__).resolve().parent.parent.parent / "data"
@@ -312,6 +392,7 @@ def list_sessions_from_manifest(
 __all__ = [
     "SessionConfig",
     "load_session",
+    "load_session_or_path",
     "list_sessions",
     "list_sessions_by_type",
     "list_sessions_from_manifest",
