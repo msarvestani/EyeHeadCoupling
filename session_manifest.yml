@@ -8,6 +8,11 @@ saccade_config:
   blink_detection: 1
   saccade_win: 0.7
 
+reward_contingency:
+  reward_angle: 35 #half-width, in degrees, of the rewarded zone around the target direction
+
+experiment_type: prosaccade #default session type when not overridden per-session below
+
 sessions:
 
 ################################### Paris Fixation Sessions ###################################

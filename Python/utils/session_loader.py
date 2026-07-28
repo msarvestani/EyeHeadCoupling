@@ -98,6 +98,8 @@ def load_session(session_id: str) -> SessionConfig:
     # Extract global defaults for saccade configuration, if provided.
     global_saccade_cfg: Dict[str, Any] = manifest.get("saccade_config", {}) or {}
     default_max_interval: Optional[float] = manifest.get("max_interval_fixations")
+    default_reward_contingency: Optional[Dict[str, Any]] = manifest.get("reward_contingency")
+    default_experiment_type: Optional[str] = manifest.get("experiment_type")
     results_root = manifest.get("results_root")
 
     # The manifest may either contain a top-level ``sessions`` key or map
@@ -147,6 +149,12 @@ def load_session(session_id: str) -> SessionConfig:
 
     if "max_interval_fixations" not in params and default_max_interval is not None:
         params["max_interval_fixations"] = default_max_interval
+
+    if "reward_contingency" not in params and default_reward_contingency is not None:
+        params["reward_contingency"] = default_reward_contingency
+
+    if "experiment_type" not in params and default_experiment_type is not None:
+        params["experiment_type"] = default_experiment_type
 
     # Merge global saccade defaults with any session-specific overrides and
     # fill in missing keys from :class:`SaccadeConfig` defaults.
@@ -224,6 +232,8 @@ def _build_config_from_folder(folder: Path) -> SessionConfig:
 
     global_saccade_cfg: Dict[str, Any] = manifest.get("saccade_config", {}) or {}
     default_max_interval: Optional[float] = manifest.get("max_interval_fixations")
+    default_reward_contingency: Optional[Dict[str, Any]] = manifest.get("reward_contingency")
+    default_experiment_type: Optional[str] = manifest.get("experiment_type")
     results_root = manifest.get("results_root")
     sessions: Dict[str, Any] = manifest.get("sessions", {}) or {}
 
@@ -264,6 +274,10 @@ def _build_config_from_folder(folder: Path) -> SessionConfig:
         params["date"] = date_str
     if default_max_interval is not None:
         params["max_interval_fixations"] = default_max_interval
+    if default_reward_contingency is not None:
+        params["reward_contingency"] = default_reward_contingency
+    if default_experiment_type is not None:
+        params["experiment_type"] = default_experiment_type
 
     merged_saccade_cfg = dict(global_saccade_cfg)
     try:  # Import locally to avoid circular dependency during module import.
