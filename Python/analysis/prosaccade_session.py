@@ -26,8 +26,8 @@ def compute_saccade_psth(
     data: SessionData,
     saccades: Dict[str, np.ndarray],
     config,
-    window: Tuple[float, float] = (-0.5, 1.0),
-    bin_width: float = 0.02,
+    window: Tuple[float, float] = (-1.5, 1.5),
+    bin_width: float = 0.1,
     mask: Optional[np.ndarray] = None,
     n_boot: int = 200,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, int]:
@@ -98,7 +98,7 @@ def find_first_saccade_per_trial(
     data: SessionData,
     saccades: Dict[str, np.ndarray],
     config,
-    max_latency: float = 1.0,
+    max_latency: float = 1.5,
     mask: Optional[np.ndarray] = None,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Latency and target-congruency of the first saccade after each target onset.
@@ -122,9 +122,12 @@ def find_first_saccade_per_trial(
         go_frame = go_frame[mask]
         go_dir_x = go_dir_x[mask]
 
+    go_dir_x = -np.array(go_dir_x, dtype=np.float64) #fixing target direction mapping
+
     saccade_frames = saccades["saccade_frames_xy"]
     saccade_indices = saccades["saccade_indices_xy"]
     dx = saccades["eye_vel"][:, 0]
+
 
     latencies, congruent = [], []
     for f, gdx in zip(go_frame, go_dir_x):
@@ -146,9 +149,9 @@ def find_first_saccade_per_trial(
 def fraction_toward_target_by_latency(
     latencies: np.ndarray,
     congruent: np.ndarray,
-    window_span: Tuple[float, float] = (0.0, 0.8),
-    win_width: float = 0.15,
-    step: float = 0.02,
+    window_span: Tuple[float, float] = (0.2, 1.0),
+    win_width: float = 0.3,
+    step: float = 0.05,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Fraction of first saccades toward the target, in sliding latency windows."""
     centers = np.arange(window_span[0], window_span[1] + step, step)
