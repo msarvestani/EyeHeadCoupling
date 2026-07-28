@@ -9,10 +9,13 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
+import cv2
 from matplotlib import cm, gridspec
 from matplotlib.patches import FancyArrowPatch
 from scipy.signal import medfilt
 from scipy.stats import circmean, circstd
+from scipy.ndimage import binary_dilation, binary_fill_holes, label
 from scipy.stats import gaussian_kde,vonmises
 from itertools import cycle
 
@@ -1156,6 +1159,584 @@ def plot_eye_fixations_between_cue_and_go_by_trial(
     )
 
 
+def quantify_fixation_stability_vs_random(
+    eye_timestamp: np.ndarray,
+    eye_pos: np.ndarray,
+    pairs_ct: np.ndarray,
+    pairs_gt: np.ndarray,
+    valid_trials: np.ndarray,
+    *,
+    plot: bool = False,
+    rng_seed: int = 0,
+) -> Optional[Dict[str, object]]:
+    """Compare eye stability during fixation windows to random times.
+
+    Parameters
+    ----------
+    eye_timestamp : array-like
+        Sample timestamps in seconds.
+    eye_pos : array-like, shape (N, 2)
+        Eye centre coordinates.
+    pairs_ct, pairs_gt : array-like
+        Cue and go timestamps for each paired trial.
+    valid_trials : array-like of bool
+        Mask indicating which trials to use for the analysis.
+    plot : bool, default ``False``
+        If ``True`` a figure summarising the comparison is included in the
+        returned dictionary.
+    rng_seed : int, default ``0``
+        Seed used when sampling random time windows.
+
+    Returns
+    -------
+    dict or None
+        ``None`` is returned when no valid fixation windows are available.
+        Otherwise a dictionary containing per-window metrics and a summary of
+        fixation vs random statistics is returned.  When ``plot`` is ``True``
+        a ``figure`` entry with a :class:`matplotlib.figure.Figure` is added.
+    """
+
+    ts = np.asarray(eye_timestamp, dtype=float).ravel()
+    x = np.asarray(eye_pos[:, 0]).ravel()
+    y = np.asarray(eye_pos[:, 1]).ravel()
+    if not np.all(np.diff(ts) >= 0):
+        order = np.argsort(ts)
+        ts, x, y = ts[order], x[order], y[order]
+
+    ct = np.asarray(pairs_ct, dtype=float).ravel()
+    gt = np.asarray(pairs_gt, dtype=float).ravel()
+    ok = np.asarray(valid_trials, dtype=bool).ravel()
+
+    fix_windows = [(c, g) for c, g, v in zip(ct, gt, ok) if v and (g > c)]
+    if len(fix_windows) == 0:
+        return None
+
+    fix_windows = sorted(fix_windows, key=lambda w: w[0])
+    merged: list[list[float]] = []
+    for s, e in fix_windows:
+        if not merged or s > merged[-1][1]:
+            merged.append([s, e])
+        else:
+            merged[-1][1] = max(merged[-1][1], e)
+    fix_windows = [(s, e) for s, e in merged]
+
+    def window_metrics(t0: float, t1: float) -> Tuple[float, float, float]:
+        a = np.searchsorted(ts, t0, side="left")
+        b = np.searchsorted(ts, t1, side="right")
+        if b - a < 2:
+            return np.nan, np.nan, np.nan
+        dx = np.diff(x[a:b])
+        dy = np.diff(y[a:b])
+        dt = np.diff(ts[a:b])
+        m = np.isfinite(dx) & np.isfinite(dy) & np.isfinite(dt) & (dt > 0)
+        if not np.any(m):
+            return np.nan, np.nan, np.nan
+        
+        ############################################### calculate step, speed, and drift
+        step_disp = np.hypot(dx[m], dy[m]) # mean euclidean distance between consecutive points, for all frames in window
+        speed = step_disp / dt[m] #divided by window size to get mean speed
+        drift = np.hypot(x[b - 1] - x[a], y[b - 1] - y[a]) #net displacement between start and end of window
+        return float(step_disp.mean()), float(speed.mean()), float(drift)
+
+    orig_fix_windows = [(c, g) for c, g, v in zip(ct, gt, ok) if v and (g > c)]
+    fix_len = np.array([g - c for c, g in orig_fix_windows], dtype=float)
+
+    fix_mean_step = np.empty(len(orig_fix_windows))
+    fix_mean_speed = np.empty(len(orig_fix_windows))
+    fix_drift = np.empty(len(orig_fix_windows))
+    for i, (c, g) in enumerate(orig_fix_windows):
+        fix_mean_step[i], fix_mean_speed[i], fix_drift[i] = window_metrics(c, g)
+
+    session_start, session_end = float(ts[0]), float(ts[-1])
+    allowed = []
+    cursor = session_start
+    for s, e in fix_windows:
+        if s > cursor:
+            allowed.append((cursor, s))
+        cursor = max(cursor, e)
+    if cursor < session_end:
+        allowed.append((cursor, session_end))
+
+    rng = np.random.default_rng(rng_seed)
+
+    def sample_random_window(duration: float) -> Optional[Tuple[float, float]]:
+        candidates = [(a, b) for (a, b) in allowed if (b - a) >= duration]
+        if not candidates:
+            return None
+        a, b = candidates[rng.integers(0, len(candidates))]
+        start = float(a) + rng.random() * float((b - a) - duration)
+        return start, start + duration
+
+    rnd_mean_step = np.empty(len(orig_fix_windows))
+    rnd_mean_speed = np.empty(len(orig_fix_windows))
+    rnd_drift = np.empty(len(orig_fix_windows))
+
+    for i, L in enumerate(fix_len):
+        rw = sample_random_window(L)
+        if rw is None:
+            rnd_mean_step[i] = rnd_mean_speed[i] = rnd_drift[i] = np.nan
+        else:
+            rnd_mean_step[i], rnd_mean_speed[i], rnd_drift[i] = window_metrics(*rw)
+
+    def nice_stats(arr: np.ndarray) -> Tuple[float, float, int]:
+        arr = np.asarray(arr, dtype=float)
+        m = np.isfinite(arr)
+        if not m.any():
+            return np.nan, np.nan, 0
+        vals = arr[m]
+        return float(vals.mean()), float(vals.std(ddof=1) / np.sqrt(vals.size)), int(vals.size)
+
+    ms_fix, se_fix, n_fix = nice_stats(fix_mean_step)
+    ms_rnd, se_rnd, n_rnd = nice_stats(rnd_mean_step)
+    sp_fix, se_spf, _ = nice_stats(fix_mean_speed)
+    sp_rnd, se_spr, _ = nice_stats(rnd_mean_speed)
+    dr_fix, se_drf, _ = nice_stats(fix_drift)
+    dr_rnd, se_drr, _ = nice_stats(rnd_drift)
+
+    if plot:
+        fig, axes = plt.subplots(1, 3, figsize=(12, 4), constrained_layout=True)
+        pairs = [
+            ("Mean step (deg)", fix_mean_step, rnd_mean_step),
+            ("Mean speed (deg/s)", fix_mean_speed, rnd_mean_speed),
+            ("Net drift (deg)", fix_drift, rnd_drift),
+        ]
+        for ax, (title, a, b) in zip(axes, pairs):
+            m = np.isfinite(a) & np.isfinite(b)
+            ax.scatter(a[m], b[m], s=10, alpha=0.6)
+            lo = np.nanmin(np.concatenate([a[m], b[m]]))
+            hi = np.nanmax(np.concatenate([a[m], b[m]]))
+            if np.isfinite(lo) and np.isfinite(hi) and hi > lo:
+                ax.plot([lo, hi], [lo, hi], linestyle="--", linewidth=1, alpha=0.5)
+                ax.set_xlim(lo, hi)
+                ax.set_ylim(lo, hi)
+            ax.set_xlabel("Fixation")
+            ax.set_ylabel("Random")
+            ax.set_title(title)
+            ax.set_aspect("equal", adjustable="box")
+        fig.suptitle("Fixation vs. random windows (paired, equal duration)")
+    else:
+        fig = None
+
+    return {
+        "fix_mean_step_px": fix_mean_step,
+        "rnd_mean_step_px": rnd_mean_step,
+        "fix_mean_speed_px_s": fix_mean_speed,
+        "rnd_mean_speed_px_s": rnd_mean_speed,
+        "fix_net_drift_px": fix_drift,
+        "rnd_net_drift_px": rnd_drift,
+        "summary": {
+            "mean_step_fix_mean±sem": (ms_fix, se_fix, n_fix),
+            "mean_step_rand_mean±sem": (ms_rnd, se_rnd, n_rnd),
+            "mean_speed_fix_mean±sem": (sp_fix, se_spf),
+            "mean_speed_rand_mean±sem": (sp_rnd, se_spr),
+            "net_drift_fix_mean±sem": (dr_fix, se_drf),
+            "net_drift_rand_mean±sem": (dr_rnd, se_drr),
+        },
+        "figure": fig,
+    }
+
+def extract_eye_position_from_dlc(
+    dlc_data: pd.DataFrame,
+    cal: float,
+    fps: float,
+    pupil_likelihood_thresh: float = 0.95,
+    eye_likelihood_thresh: float = 0.80,
+    medfilt_kernel: int = 5,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Extract eye position time series from a DLC CSV dataframe.
+
+    Parameters
+    ----------
+    dlc_data                 : pd.DataFrame
+        Loaded DLC CSV (skiprows=2).
+    cal                      : float
+        Pixels per degree calibration factor.
+    fps                      : float
+        Camera frame rate in Hz.
+    pupil_likelihood_thresh  : float, optional
+        Minimum likelihood for pupil points (default 0.95).
+    eye_likelihood_thresh    : float, optional
+        Minimum likelihood for eye corner points (default 0.80).
+    medfilt_kernel           : int, optional
+        Median filter kernel size in samples (default 5).
+
+    Returns
+    -------
+    eye_position     : (N, 3) ndarray
+        Columns are ``[x_deg, y_deg, torsion_deg]``.
+    time             : (N,) ndarray
+        Time vector in seconds.
+    eye_axes_lengths : (N, 2) ndarray
+        Columns are ``[NT_distance_px, VD_distance_px]``.
+    pupil_area       : (N,) ndarray
+        Pupil area in pixels squared (interpolated across blinks).
+    """
+
+    # --- Extract keypoints ---
+    pupil_points = dlc_data[
+        ['x.4',  'y.4',  'x.5',  'y.5',  'x.6',  'y.6',  'x.7',  'y.7',
+         'x.8',  'y.8',  'x.9',  'y.9',  'x.10', 'y.10', 'x.11', 'y.11']
+    ].values
+
+    pupil_points_likelihood = dlc_data[
+        ['likelihood.4',  'likelihood.5',  'likelihood.6',  'likelihood.7',
+         'likelihood.8',  'likelihood.9',  'likelihood.10', 'likelihood.11']
+    ].values
+
+    eye_points               = dlc_data[['x',    'y',    'x.2',  'y.2' ]].values
+    eye_points_likelihood    = dlc_data[['likelihood', 'likelihood.2']].values
+    eye_points_VD            = dlc_data[['x.1',  'y.1',  'x.3',  'y.3' ]].values
+    eye_points_VD_likelihood = dlc_data[['likelihood.1', 'likelihood.3']].values
+
+    n_frames = pupil_points.shape[0]
+
+    # --- Pupil centres via ellipse fit ---
+    pupil_centers = []
+    pupil_area    = []
+    for i in range(n_frames):
+        likelihoods = pupil_points_likelihood[i]
+        pts         = pupil_points[i].reshape(-1, 2).astype(np.float32)
+        good_mask   = likelihoods >= pupil_likelihood_thresh
+        good_pts    = pts[good_mask]
+
+        if len(good_pts) < 6:
+            pupil_centers.append([np.nan, np.nan, np.nan])
+            pupil_area.append(np.nan)
+            continue
+        try:
+            ellipse = cv2.fitEllipseDirect(good_pts)
+            pupil_centers.append([ellipse[0][0], ellipse[0][1], ellipse[2]])
+            pupil_area.append(np.pi * (ellipse[1][0] / 2) * (ellipse[1][1] / 2))
+        except cv2.error:
+            pupil_centers.append([np.nan, np.nan, np.nan])
+            pupil_area.append(np.nan)
+
+    pupil_centers = np.array(pupil_centers, dtype=float)
+    pupil_area    = np.array(pupil_area,    dtype=float)
+
+    # --- Eye centres ---
+    eye_centers     = []
+    eye_NT_distance = []
+    for i in range(n_frames):
+        pts         = eye_points[i].reshape(-1, 2).astype(np.float32)
+        likelihoods = eye_points_likelihood[i]
+        if np.any(pts == 0) or np.any(likelihoods < eye_likelihood_thresh):
+            eye_centers.append([np.nan, np.nan])
+            eye_NT_distance.append(np.nan)
+            continue
+        eye_centers.append(pts.mean(axis=0))
+        eye_NT_distance.append(np.linalg.norm(pts[0] - pts[1]))
+
+    eye_centers     = np.array(eye_centers,     dtype=float)
+    eye_NT_distance = (pd.Series(eye_NT_distance, dtype=float)
+                         .interpolate().bfill().ffill().values)
+
+    # --- VD distance for blink detection ---
+    eye_VD_distance = []
+    for i in range(n_frames):
+        pts         = eye_points_VD[i].reshape(-1, 2).astype(np.float32)
+        likelihoods = eye_points_VD_likelihood[i]
+        if np.any(pts == 0) or np.any(likelihoods < eye_likelihood_thresh):
+            eye_VD_distance.append(np.nan)
+            continue
+        eye_VD_distance.append(np.linalg.norm(pts[0] - pts[1]))
+
+    eye_VD_distance = (pd.Series(eye_VD_distance, dtype=float)
+                         .interpolate().bfill().ffill().values)
+
+    eye_axes_lengths = np.vstack((eye_NT_distance, eye_VD_distance)).T
+
+    # --- Blink detection and interpolation ---
+    eye_VD_velocity    = np.abs(np.gradient(eye_VD_distance))
+    blink_thresh       = np.percentile(eye_VD_velocity, 99.99)
+    blink_mask         = eye_VD_velocity > blink_thresh
+    blink_window       = int(0.2 * fps)                     # 200 ms window
+    blink_mask_dilated = binary_dilation(blink_mask, iterations=blink_window)
+
+    # Remove components that are too long to be genuine blinks
+    labeled, n_components = label(blink_mask_dilated)
+    max_blink_frames      = int(0.4 * fps)                  # 400 ms maximum
+    for i in range(1, n_components + 1):
+        if np.sum(labeled == i) > max_blink_frames:
+            blink_mask_dilated[labeled == i] = False
+
+    for idx in np.where(blink_mask_dilated)[0]:
+        s = max(0,            idx - 10)
+        e = min(n_frames - 1, idx + 10)
+        pupil_centers[s:e+1] = np.nan
+        eye_centers[s:e+1]   = np.nan
+
+    for j in range(2):
+        pupil_centers[:, j] = (pd.Series(pupil_centers[:, j])
+                                 .interpolate().bfill().ffill())
+        eye_centers[:, j]   = (pd.Series(eye_centers[:, j])
+                                 .interpolate().bfill().ffill())
+    pupil_centers[:, 2] = (pd.Series(pupil_centers[:, 2])
+                              .interpolate().bfill().ffill())
+    pupil_area = (pd.Series(pupil_area)
+                    .interpolate().bfill().ffill().values)
+
+    # --- Eye position in degrees ---
+    eye_positions           = pupil_centers[:, :2] - eye_centers
+    eye_position_in_degrees = eye_positions / cal
+    eye_position_in_degrees = np.hstack(
+        (eye_position_in_degrees, pupil_centers[:, 2:3])
+    )
+
+    # --- Median filter ---
+    for j in range(3):
+        eye_position_in_degrees[:, j] = medfilt(
+            eye_position_in_degrees[:, j], kernel_size=medfilt_kernel
+        )
+
+    # --- Time vector ---
+    time = np.arange(n_frames) / fps
+
+    return (eye_position_in_degrees,
+            time,
+            eye_axes_lengths,
+            pupil_area)
+
+def identify_saccades_1d(
+    position: np.ndarray,
+    time: np.ndarray,
+    min_duration_ms: float = 20,
+    max_duration_ms: float = 50,
+    mad_multiplier: float = 6.0,
+    mad_max_iter: int = 20,
+    mad_tolerance: float = 1e-3,
+    min_amplitude: float = 1.0,
+    min_peak_ratio: float = 2.0,
+    dominant_direction_ratio: float = 0.9,
+    *,
+    plot: bool = False,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, float, Optional[plt.Figure]]:
+    """
+    1D saccade detection using MAD-based velocity thresholding.
+
+    Detects saccades as continuous periods where speed exceeds a
+    data-driven threshold estimated iteratively from the MAD of the
+    baseline speed distribution.
+
+    Parameters
+    ----------
+    position        : (N,) position in deg
+    time            : (N,) time in seconds
+    min_duration_ms : float, minimum saccade duration in ms (default 20)
+    max_duration_ms : float, maximum saccade duration in ms (default 50)
+    mad_multiplier  : float, threshold = median + k * MAD (default 6)
+    mad_max_iter    : int,   maximum MAD iterations (default 20)
+    mad_tolerance   : float, convergence tolerance (default 1e-3)
+    min_amplitude   : float, minimum saccade amplitude in deg (default 1.0)
+    min_peak_ratio  : float, minimum ratio of peak speed to threshold (default 2.0)
+    dominant_direction_ratio : float, minimum ratio of dominant direction
+                               samples (default 0.9)
+    plot            : bool, if True a figure with two vertically stacked
+                      subplots (position and speed) on a shared time axis is
+                      returned in the output tuple; saccade epochs are shaded
+                      in both panels and annotated with per-saccade metrics
+                      (default False)
+
+    Returns
+    -------
+    saccades            : (K,)   index of peak speed per saccade
+    saccade_windows     : (K, 2) [start, end] indices of threshold crossing
+    saccade_durations   : (K,)   duration in samples
+    saccade_amplitudes  : (K,)   amplitude (abs position change start→end)
+    saccade_peak_speeds : (K,)   peak speed on raw velocity
+    velocity_threshold  : float  converged MAD threshold
+    figure              : matplotlib.figure.Figure or None
+                          Present only when ``plot=True``.
+    """
+
+    def _interp_threshold_crossing(speed, pos, time, idx, threshold, side):
+        """
+        Linearly interpolate position and time at the exact threshold crossing.
+
+        Parameters
+        ----------
+        side : 'rising'  → crossing between idx-1 and idx  (bout start)
+            'falling' → crossing between idx and idx+1   (bout end)
+        """
+        if side == 'rising':
+            i0, i1 = idx - 1, idx
+        else:
+            i0, i1 = idx, idx + 1
+
+        # Clamp to valid range
+        i0 = max(i0, 0)
+        i1 = min(i1, len(speed) - 1)
+
+        s0, s1 = speed[i0], speed[i1]
+        denom = s1 - s0
+        if abs(denom) < 1e-12:          # flat → no interpolation possible
+            return pos[idx], time[idx]
+
+        alpha = (threshold - s0) / denom   # fractional position in [0, 1]
+        t_cross = time[i0] + alpha * (time[i1] - time[i0])
+        p_cross = pos[i0]  + alpha * (pos[i1]  - pos[i0])
+        return p_cross, t_cross
+
+
+
+
+
+
+    pos   = np.asarray(position).ravel()
+    time  = np.asarray(time).ravel()
+    vel   = np.gradient(pos, time)
+
+    fs    = 1.0 / np.median(np.diff(time))
+    n     = len(time)
+    speed = np.abs(vel)
+
+    min_dur_samples = min_duration_ms / 1000.0 * fs
+    max_dur_samples = max_duration_ms / 1000.0 * fs
+
+    # ----------------------------------------------------------------
+    # MAD-based iterative threshold estimation
+    # ----------------------------------------------------------------
+    baseline_mask      = np.ones(n, dtype=bool)
+    velocity_threshold = np.inf
+    med, mad           = 0.0, 0.0
+
+    for iteration in range(mad_max_iter):
+        baseline_speed = speed[baseline_mask]
+
+        med = np.median(baseline_speed)
+        mad = np.median(np.abs(baseline_speed - med))
+
+        new_threshold = med + mad_multiplier * mad
+
+        if abs(new_threshold - velocity_threshold) < mad_tolerance:
+            velocity_threshold = new_threshold
+            break
+
+        velocity_threshold = new_threshold
+        baseline_mask      = speed <= velocity_threshold
+
+        if baseline_mask.sum() < 0.1 * n:
+            break
+
+    # ----------------------------------------------------------------
+    # Threshold crossing detection
+    # ----------------------------------------------------------------
+    above_threshold = speed > velocity_threshold
+    padded          = np.diff(np.concatenate([[0], above_threshold.astype(int), [0]]))
+    bout_starts     = np.where(padded ==  1)[0]
+    bout_ends       = np.where(padded == -1)[0]-1
+
+    saccades            = []
+    saccade_windows     = []
+    saccade_durations   = []
+    saccade_amplitudes  = []
+    saccade_peak_speeds = []
+    saccade_interp_times = []  
+
+    for s, e in zip(bout_starts, bout_ends):
+        p_start, t_start = _interp_threshold_crossing(
+            speed, pos, time, s, velocity_threshold, side='rising')
+        p_end,   t_end   = _interp_threshold_crossing(
+            speed, pos, time, e, velocity_threshold, side='falling')
+
+        amp = abs(p_end - p_start)
+        dur_interp_s = t_end - t_start          # seconds
+        dur = dur_interp_s * fs                 # fractional samples, for thresholding
+        #dur = e - s + 1
+
+        if not (min_dur_samples <= dur <= max_dur_samples):
+            continue
+
+        peak_local  = np.argmax(speed[s:e+1])
+        peak_idx    = s + peak_local
+        peak_speed  = speed[peak_idx]
+        #amp         = abs(pos[e] - pos[s])
+        vel_in_bout = vel[s:e+1]
+
+        if amp < min_amplitude:
+            continue
+        if peak_speed < min_peak_ratio * velocity_threshold:
+            continue
+
+        pos_samples = np.sum(vel_in_bout > 0)
+        neg_samples = np.sum(vel_in_bout < 0)
+        total       = len(vel_in_bout)
+
+        if max(pos_samples, neg_samples) / total < dominant_direction_ratio:
+            continue
+
+        saccades.append(peak_idx)
+        saccade_windows.append((s, e))
+        saccade_interp_times.append((t_start, t_end)) 
+        saccade_durations.append(dur)
+        saccade_amplitudes.append(amp)
+        saccade_peak_speeds.append(peak_speed)
+
+    saccades            = np.array(saccades,            dtype=int)
+    saccade_windows     = np.array(saccade_windows,     dtype=int)
+    saccade_durations   = np.array(saccade_durations,   dtype=float)
+    saccade_amplitudes  = np.array(saccade_amplitudes,  dtype=float)
+    saccade_peak_speeds = np.array(saccade_peak_speeds, dtype=float)
+    saccade_interp_times = np.array(saccade_interp_times, dtype=float)
+    # ----------------------------------------------------------------
+    # Optional figure: position + speed with shared time axis
+    # ----------------------------------------------------------------
+    if plot:
+        fig, (ax_pos, ax_spd) = plt.subplots(
+            2, 1, figsize=(14, 6),
+            sharex=True, constrained_layout=True,
+        )
+
+        # --- position panel ---
+        ax_pos.plot(time, pos, color="steelblue", linewidth=0.8, label="Position")
+        ax_pos.set_ylabel("Position (deg)")
+
+        # --- speed panel ---
+        ax_spd.plot(time, vel, 'k.', linewidth=0.8, label="Speed",)
+        ax_spd.axhline(
+            velocity_threshold,
+            color="tomato", linewidth=1.2, linestyle="--",
+            label=f"Threshold ({velocity_threshold:.1f} deg/s)",
+        )
+        ax_spd.axhline(
+            -velocity_threshold,
+            color="tomato", linewidth=1.2, linestyle="--",
+            #label=f"Threshold ({-velocity_threshold:.1f} deg/s)",
+        )
+        ax_spd.set_ylabel("Velocity (deg/s)")
+        ax_spd.set_xlabel("Time (s)")
+
+        # --- per-saccade shading ---- 
+        dur_ms = saccade_durations / fs * 1000.0   # samples → ms
+
+        for i, (t_s, t_e) in enumerate(saccade_interp_times):  # ← interpolated times
+            sacc_lbl = "Saccade" if i == 0 else None
+
+            for ax in (ax_pos, ax_spd):
+                ax.axvspan(t_s, t_e, color="gold", alpha=0.35,
+                        linewidth=0, label=sacc_lbl)
+                sacc_lbl = None
+
+            
+
+        ax_pos.legend(loc="upper right", fontsize=8, framealpha=0.7)
+        ax_spd.legend(loc="upper right", fontsize=8, framealpha=0.7)
+        fig.suptitle(
+            f"Saccade detection  —  {len(saccades)} saccade(s) found  |  "
+            f"threshold = {velocity_threshold:.1f} deg/s",
+            fontsize=10,
+        )
+    else:
+        fig = None
+
+    return (saccades,
+            saccade_windows,
+            saccade_durations,
+            saccade_amplitudes,
+            saccade_peak_speeds,
+            float(velocity_threshold),
+            fig)
 
 __all__ = [
     "SaccadeConfig",
