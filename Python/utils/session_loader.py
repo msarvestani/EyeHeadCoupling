@@ -98,6 +98,8 @@ def load_session(session_id: str) -> SessionConfig:
     # Extract global defaults for saccade configuration, if provided.
     global_saccade_cfg: Dict[str, Any] = manifest.get("saccade_config", {}) or {}
     default_max_interval: Optional[float] = manifest.get("max_interval_fixations")
+    default_reward_contingency: Optional[Dict[str, Any]] = manifest.get("reward_contingency")
+    default_experiment_type: Optional[str] = manifest.get("experiment_type")
     results_root = manifest.get("results_root")
 
     # The manifest may either contain a top-level ``sessions`` key or map
@@ -148,6 +150,12 @@ def load_session(session_id: str) -> SessionConfig:
     if "max_interval_fixations" not in params and default_max_interval is not None:
         params["max_interval_fixations"] = default_max_interval
 
+    if "reward_contingency" not in params and default_reward_contingency is not None:
+        params["reward_contingency"] = default_reward_contingency
+
+    if "experiment_type" not in params and default_experiment_type is not None:
+        params["experiment_type"] = default_experiment_type
+
     # Merge global saccade defaults with any session-specific overrides and
     # fill in missing keys from :class:`SaccadeConfig` defaults.
     session_saccade_cfg: Dict[str, Any] = session_params.get("saccade_config", {})
@@ -182,6 +190,129 @@ def load_session(session_id: str) -> SessionConfig:
         params=params,
     )
 
+def load_session_or_path(identifier: str) -> SessionConfig:
+    """Load a session by manifest ID, or fall back to a direct folder path.
+
+    Parameters
+    ----------
+    identifier:
+        Either a session ID present in ``session_manifest.yml``, or a direct
+        filesystem path to a session folder.
+
+    Returns
+    -------
+    SessionConfig
+        The configuration for the requested session.
+    """
+    try:
+        return load_session(identifier)
+    except KeyError:
+        folder = Path(identifier)
+        if not folder.exists():
+            raise
+        return _build_config_from_folder(folder)
+
+
+def _build_config_from_folder(folder: Path) -> SessionConfig:
+    """Build a :class:`SessionConfig` directly from a folder path.
+
+    Global defaults (``saccade_config``, ``max_interval_fixations``,
+    ``results_root``) are still pulled from ``session_manifest.yml`` when
+    available, but session-specific fields are derived from ``folder``
+    instead of a manifest entry.
+    """
+    manifest_path = (
+        Path(__file__).resolve().parent.parent.parent / "session_manifest.yml"
+    )
+    manifest: Dict[str, Any] = {}
+    if manifest_path.exists():
+        with manifest_path.open("r", encoding="utf-8") as fh:
+            manifest = yaml.safe_load(fh) or {}
+
+    global_saccade_cfg: Dict[str, Any] = manifest.get("saccade_config", {}) or {}
+    default_max_interval: Optional[float] = manifest.get("max_interval_fixations")
+    default_reward_contingency: Optional[Dict[str, Any]] = manifest.get("reward_contingency")
+    default_experiment_type: Optional[str] = manifest.get("experiment_type")
+    results_root = manifest.get("results_root")
+    if results_root and not Path(results_root).is_absolute():
+        results_root = manifest_path.parent / results_root
+    results_with_data: bool = bool(manifest.get("results_with_data", False))
+    sessions: Dict[str, Any] = manifest.get("sessions", {}) or {}
+
+    folder_name = folder.name
+    animal_id = _parse_animal_id_from_folder(folder_name)
+    animal_name = _parse_animal_name_from_path(str(folder))
+    date_str = _parse_date_from_path(str(folder))
+    if results_with_data or not results_root:
+        results_dir = folder / "results"
+    else:
+        results_dir = Path(results_root) / folder_name
+
+    # ttl_freq/calibration_factor/camera_side describe the rig's fixed
+    # hardware setup rather than anything derivable from the folder itself,
+    # so inherit them from another manifest entry for the same animal.
+    ttl_freq = calibration_factor = camera_side = eye_name = None
+    if animal_id:
+        for other_data in sessions.values():
+            if not isinstance(other_data, dict):
+                continue
+            other_folder = other_data.get("folder_path") or other_data.get("session_path") or ""
+            other_animal_id = other_data.get("animal_id") or _parse_animal_id_from_folder(
+                _path_parts(other_folder)[-1] if other_folder else ""
+            )
+            if other_animal_id == animal_id:
+                ttl_freq = other_data.get("ttl_freq", ttl_freq)
+                calibration_factor = other_data.get("calibration_factor", calibration_factor)
+                camera_side = other_data.get("camera_side", camera_side)
+                eye_name = other_data.get("eye_name", eye_name)
+
+    if ttl_freq is None or calibration_factor is None:
+        raise ValueError(
+            f"Could not determine ttl_freq/calibration_factor for '{folder_name}': "
+            f"no existing manifest entry for animal_id={animal_id!r} to inherit rig "
+            f"calibration from. Add this session (or another session for the same "
+            f"animal) to session_manifest.yml first."
+        )
+
+    params: Dict[str, Any] = {}
+    if date_str:
+        params["date"] = date_str
+    if default_max_interval is not None:
+        params["max_interval_fixations"] = default_max_interval
+    if default_reward_contingency is not None:
+        params["reward_contingency"] = default_reward_contingency
+    if default_experiment_type is not None:
+        params["experiment_type"] = default_experiment_type
+
+    merged_saccade_cfg = dict(global_saccade_cfg)
+
+
+    try:  # Import locally to avoid circular dependency during module import.
+        from eyehead.analysis import SaccadeConfig
+
+        for f in fields(SaccadeConfig):
+            if f.name not in merged_saccade_cfg:
+                if f.default is not MISSING:
+                    merged_saccade_cfg[f.name] = f.default
+                elif f.default_factory is not MISSING:  # pragma: no cover - defensive
+                    merged_saccade_cfg[f.name] = f.default_factory()
+    except Exception:  # pragma: no cover - fallback if import fails
+        pass
+    params["saccade_config"] = merged_saccade_cfg
+
+    return SessionConfig(
+        session_id=folder_name,
+        session_name=folder_name,
+        results_dir=results_dir,
+        camera_side=camera_side,
+        eye_name=eye_name or camera_side,
+        animal_name=animal_name,
+        animal_id=animal_id,
+        ttl_freq=ttl_freq,
+        calibration_factor=calibration_factor,
+        folder_path=folder,
+        params=params,
+    )
 
 _DATA_DIR = Path(
     os.environ.get(
@@ -312,6 +443,8 @@ def list_sessions_from_manifest(
 __all__ = [
     "SessionConfig",
     "load_session",
+    "load_session_or_path",
+    "_build_config_from_folder",
     "list_sessions",
     "list_sessions_by_type",
     "list_sessions_from_manifest",

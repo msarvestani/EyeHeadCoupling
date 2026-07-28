@@ -797,25 +797,29 @@ def sort_saccades(
             plt.show()
             plt.close(fig)
 
-
-
-    if plot: # Little dirty hack to produce figure for the talk
-        left_angle = np.arctan2(dy[sorted_data["Left"]], dx[sorted_data["Left"]])
-        right_angle = np.arctan2(dy[sorted_data["Right"]], dx[sorted_data["Right"]])
-        reward_angle = config.reward_contingency["reward_angle"]
-        plot_left_right_angle(
-            left_angle,
-            right_angle,
-            reward_angle=reward_angle,
-            sessionname=session_name_with_animal,
-            resultdir=config.results_dir,
-            experiment_type=config.experiment_type,
-
-        )
-
-
     if plot:
-        return sorted_data,left_angle,right_angle, fig_all, (ax_quiver, ax_polar, ax_linear)
+        has_left_right = "Left" in sorted_data and "Right" in sorted_data
+        left_angle = (
+            np.arctan2(dy[sorted_data["Left"]], dx[sorted_data["Left"]])
+            if "Left" in sorted_data else np.array([])
+        )
+        right_angle = (
+            np.arctan2(dy[sorted_data["Right"]], dx[sorted_data["Right"]])
+            if "Right" in sorted_data else np.array([])
+        )
+        if has_left_right:
+            reward_contingency = getattr(config, "reward_contingency", None) or {}
+            reward_angle = reward_contingency.get("reward_angle", 35)
+            plot_left_right_angle(
+                left_angle,
+                right_angle,
+                reward_angle=reward_angle,
+                sessionname=session_name_with_animal,
+                resultdir=config.results_dir,
+                experiment_type=getattr(config, "experiment_type", None) or "prosaccade",
+            )
+
+        return sorted_data, left_angle, right_angle, fig_all, (ax_quiver, ax_polar, ax_linear)
     return sorted_data
 
 

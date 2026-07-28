@@ -1,4 +1,7 @@
 results_root: X:\Analysis\EyeHeadCoupling
+results_with_data: true #true => save each session's results inside <data_folder>/results; false => save under results_root
+
+
 max_interval_fixations: 1.0 #this is how long we count a fixation of 0.7 sec valid after cue is presented.......
 
 saccade_config:
@@ -7,6 +10,11 @@ saccade_config:
   blink_threshold: 10.0
   blink_detection: 1
   saccade_win: 0.7
+
+reward_contingency:
+  reward_angle: 35 #half-width, in degrees, of the rewarded zone around the target direction
+
+experiment_type: prosaccade #default session type when not overridden per-session below  
 
 sessions:
 
@@ -178,6 +186,8 @@ sessions:
     params:
       saccade_config:
         saccade_threshold: 1.0
+
+
 ################################### Clean Apollo Fixation Sessions ###################################
  Tsh002_2025-09-05T10_59_22:
     experiment_type: fixation_learning
@@ -191,7 +201,7 @@ sessions:
 
  Tsh002_2025-09-05T11_06_07:
     experiment_type: fixation_learning
-    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh02_Apollo_server\Tsh002_2025-09-10T11_28_52
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh02_Apollo_server\Tsh002_2025-09-05T11_06_07
     calibration_factor : 3.76
     ttl_freq: 60
     camera_side: L
@@ -201,7 +211,7 @@ sessions:
 
  Tsh002_2025-09-08T10_34_20:
     experiment_type: fixation_learning
-    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh02_Apollo_server\Tsh002_2025-09-10T11_28_52
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh02_Apollo_server\Tsh002_2025-09-08T10_34_20
     calibration_factor : 3.76
     ttl_freq: 60
     camera_side: L
