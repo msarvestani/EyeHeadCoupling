@@ -802,14 +802,15 @@ def sort_saccades(
     if plot: # Little dirty hack to produce figure for the talk
         left_angle = np.arctan2(dy[sorted_data["Left"]], dx[sorted_data["Left"]])
         right_angle = np.arctan2(dy[sorted_data["Right"]], dx[sorted_data["Right"]])
-        reward_angle = config.reward_contingency["reward_angle"]
+        reward_contingency = getattr(config, "reward_contingency", None) or {}
+        reward_angle = reward_contingency.get("reward_angle", 35)
         plot_left_right_angle(
             left_angle,
             right_angle,
             reward_angle=reward_angle,
             sessionname=session_name_with_animal,
             resultdir=config.results_dir,
-            experiment_type=config.experiment_type,
+            experiment_type=getattr(config, "experiment_type", None) or "prosaccade",
 
         )
 
