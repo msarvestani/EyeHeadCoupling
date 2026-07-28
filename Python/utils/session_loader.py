@@ -225,12 +225,39 @@ def _build_config_from_folder(folder: Path) -> SessionConfig:
     global_saccade_cfg: Dict[str, Any] = manifest.get("saccade_config", {}) or {}
     default_max_interval: Optional[float] = manifest.get("max_interval_fixations")
     results_root = manifest.get("results_root")
+    sessions: Dict[str, Any] = manifest.get("sessions", {}) or {}
 
     folder_name = folder.name
     animal_id = _parse_animal_id_from_folder(folder_name)
     animal_name = _parse_animal_name_from_path(str(folder))
     date_str = _parse_date_from_path(str(folder))
     results_dir = Path(results_root) / folder_name if results_root else folder / "results"
+
+    # ttl_freq/calibration_factor/camera_side describe the rig's fixed
+    # hardware setup rather than anything derivable from the folder itself,
+    # so inherit them from another manifest entry for the same animal.
+    ttl_freq = calibration_factor = camera_side = eye_name = None
+    if animal_id:
+        for other_data in sessions.values():
+            if not isinstance(other_data, dict):
+                continue
+            other_folder = other_data.get("folder_path") or other_data.get("session_path") or ""
+            other_animal_id = other_data.get("animal_id") or _parse_animal_id_from_folder(
+                _path_parts(other_folder)[-1] if other_folder else ""
+            )
+            if other_animal_id == animal_id:
+                ttl_freq = other_data.get("ttl_freq", ttl_freq)
+                calibration_factor = other_data.get("calibration_factor", calibration_factor)
+                camera_side = other_data.get("camera_side", camera_side)
+                eye_name = other_data.get("eye_name", eye_name)
+
+    if ttl_freq is None or calibration_factor is None:
+        raise ValueError(
+            f"Could not determine ttl_freq/calibration_factor for '{folder_name}': "
+            f"no existing manifest entry for animal_id={animal_id!r} to inherit rig "
+            f"calibration from. Add this session (or another session for the same "
+            f"animal) to session_manifest.yml first."
+        )
 
     params: Dict[str, Any] = {}
     if date_str:
@@ -256,8 +283,12 @@ def _build_config_from_folder(folder: Path) -> SessionConfig:
         session_id=folder_name,
         session_name=folder_name,
         results_dir=results_dir,
+        camera_side=camera_side,
+        eye_name=eye_name or camera_side,
         animal_name=animal_name,
         animal_id=animal_id,
+        ttl_freq=ttl_freq,
+        calibration_factor=calibration_factor,
         folder_path=folder,
         params=params,
     )
