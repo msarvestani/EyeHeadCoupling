@@ -561,6 +561,8 @@ def sort_saccades(
     saccade_config: SaccadeConfig,
     saccades: Dict[str, np.ndarray],
     stim_type: str = "None",
+    first_saccade_indices: Optional[Dict[str, np.ndarray]] = None,
+    first_saccade_indices_theta: Optional[Dict[str, np.ndarray]] = None,
     plot: bool = False,
 ) -> Dict[str, np.ndarray] | Tuple[Dict[str, np.ndarray], plt.Figure, Tuple[plt.Axes, plt.Axes, plt.Axes]]:
     """Sort saccades by stimulus and optionally plot summaries.
@@ -569,6 +571,20 @@ def sort_saccades(
     ----------
     config, saccade_config, saccades, stim_type :
         Same as in the original :func:`sort_plot_saccades`.
+    first_saccade_indices : dict, optional
+        Mapping of stimulus-direction label (``"Left"``, ``"Right"``, ...) to
+        the eye-position indices of each trial's first saccade in the online
+        reward window (see
+        :func:`prosaccade_session.first_saccade_indices_by_direction`). When
+        provided, the per-condition translational figures plot exactly these
+        first saccades instead of searching a fixed ``saccade_win`` window, so
+        they match the latency/congruency analysis. The session-wide "All"
+        figure is unaffected and still shows every detected saccade.
+    first_saccade_indices_theta : dict, optional
+        Same as ``first_saccade_indices`` but for the torsional stream
+        (indices into ``saccade_indices_theta``); used for the per-condition
+        torsion overlay/histogram so torsion is drawn from the same reward
+        window. Falls back to the fixed ``saccade_win`` search when omitted.
     plot : bool, optional
         When ``True`` the function generates the same diagnostic plots as
         before and returns them alongside the sorted saccade indices.
@@ -667,7 +683,7 @@ def sort_saccades(
         ax_quiver.set_ylabel("Y (°)")
         ax_quiver.set_title(
             f"{session_name}\n"
-            + f"All translational saccades ({n_all}) — {eye_name}  (stim: {stim_type})\n"
+            + f"ALL saccades in session ({n_all}) — not trial-aligned — {eye_name}  (stim: {stim_type})\n"
             + f"saccade_thresh = {saccade_config.saccade_threshold}, "
             f"saccade_win = {saccade_config.saccade_win}s\n"
             + f"blink_thresh = {saccade_config.blink_threshold}, "
@@ -704,20 +720,28 @@ def sort_saccades(
     for label, frames in stim_frames.items():
         if label == "All":
             continue
-        idx_buf = []
-        sorted_pairs_xy = sorted(zip(saccade_frames_xy, saccade_indices_xy))
-        for f in frames:
-            lower_bound = max(f + plot_window[0], 0)
-            upper_bound = min(f + plot_window[-1], saccade_frames_xy.max())
-            for sf, idx in sorted_pairs_xy:
-                if sf < lower_bound:
-                    continue
-                elif sf <= upper_bound:
-                    idx_buf.append(idx)
-                    break
-                else:
-                    break
-        idx_use = np.array(idx_buf, dtype=int)
+        if first_saccade_indices is not None:
+            # First saccade per trial in the online reward window
+            # (target onset -> end-of-trial), matching the latency/congruency
+            # analysis; drop any landing on non-finite eye positions.
+            idx_use = np.asarray(first_saccade_indices.get(label, []), dtype=int)
+            if idx_use.size:
+                idx_use = idx_use[mask[idx_use]]
+        else:
+            idx_buf = []
+            sorted_pairs_xy = sorted(zip(saccade_frames_xy, saccade_indices_xy))
+            for f in frames:
+                lower_bound = max(f + plot_window[0], 0)
+                upper_bound = min(f + plot_window[-1], saccade_frames_xy.max())
+                for sf, idx in sorted_pairs_xy:
+                    if sf < lower_bound:
+                        continue
+                    elif sf <= upper_bound:
+                        idx_buf.append(idx)
+                        break
+                    else:
+                        break
+            idx_use = np.array(idx_buf, dtype=int)
         if idx_use.size == 0:
             continue
         sorted_data[label] = idx_use
@@ -736,7 +760,14 @@ def sort_saccades(
             ax_q.set_ylim(*Y_LIM)
             ax_q.set_xlabel("X (°)")
             ax_q.set_ylabel("Y (°)")
-            ax_q.set_title(f"{session_name}\n{eye_name} — {label} (n={n_cond})")
+            _win_note = (
+                "first saccade per trial, target onset → end-of-trial (reward window)"
+                if first_saccade_indices is not None
+                else f"first saccade per trial, fixed {saccade_config.saccade_win}s window"
+            )
+            ax_q.set_title(
+                f"{session_name}\n{eye_name} — {label} (n={n_cond})\n{_win_note}"
+            )
 
             cols = np.array([vector_to_rgb(a) for a in ang])
             ax_q.quiver(
@@ -755,22 +786,31 @@ def sort_saccades(
             plot_linear_histogram(ang, ax_l)
 
             if torsion_present and saccade_indices_theta is not None:
-                idx_buf_torsion: list[int] = []
-                sorted_pairs_theta = sorted(
-                    zip(saccade_frames_theta, saccade_indices_theta)
-                )
-                for f in frames:
-                    lower_bound = max(f + plot_window[0], 0)
-                    upper_bound = min(f + plot_window[-1], saccade_frames_theta.max())
-                    for sf, idx in sorted_pairs_theta:
-                        if sf < lower_bound:
-                            continue
-                        elif sf <= upper_bound:
-                            idx_buf_torsion.append(idx)
-                            break
-                        else:
-                            break
-                idx_use_t = np.array(idx_buf_torsion, dtype=int)
+                if first_saccade_indices_theta is not None:
+                    # First torsional saccade per trial in the same reward
+                    # window as the translational one; drop non-finite eyes.
+                    idx_use_t = np.asarray(
+                        first_saccade_indices_theta.get(label, []), dtype=int
+                    )
+                    if idx_use_t.size:
+                        idx_use_t = idx_use_t[mask[idx_use_t]]
+                else:
+                    idx_buf_torsion: list[int] = []
+                    sorted_pairs_theta = sorted(
+                        zip(saccade_frames_theta, saccade_indices_theta)
+                    )
+                    for f in frames:
+                        lower_bound = max(f + plot_window[0], 0)
+                        upper_bound = min(f + plot_window[-1], saccade_frames_theta.max())
+                        for sf, idx in sorted_pairs_theta:
+                            if sf < lower_bound:
+                                continue
+                            elif sf <= upper_bound:
+                                idx_buf_torsion.append(idx)
+                                break
+                            else:
+                                break
+                    idx_use_t = np.array(idx_buf_torsion, dtype=int)
                 for i in idx_use_t:
                     x, y = eye_pos[i, 0], eye_pos[i, 1]
                     arrow = FancyArrowPatch(
