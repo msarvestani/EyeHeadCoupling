@@ -572,8 +572,8 @@ def sort_saccades(
         Same as in the original :func:`sort_plot_saccades`.
     first_saccade_indices : dict, optional
         Mapping of stimulus-direction label (``"Left"``, ``"Right"``, ...) to
-        the eye-position indices of each trial's first saccade in the online
-        reward window (see
+        the eye-position indices of each trial's first saccade over the full
+        trial (target onset → end-of-trial; see
         :func:`prosaccade_session.first_saccade_indices_by_direction`). When
         provided, the per-condition translational figures plot exactly these
         first saccades instead of searching a fixed ``saccade_win`` window, so
@@ -582,7 +582,7 @@ def sort_saccades(
     first_saccade_indices_theta : dict, optional
         Same as ``first_saccade_indices`` but for the torsional stream
         (indices into ``saccade_indices_theta``); used for the per-condition
-        torsion overlay/histogram so torsion is drawn from the same reward
+        torsion overlay/histogram so torsion is drawn from the same full-trial
         window. Falls back to the fixed ``saccade_win`` search when omitted.
     plot : bool, optional
         When ``True`` the function generates the same diagnostic plots as
@@ -720,9 +720,9 @@ def sort_saccades(
         if label == "All":
             continue
         if first_saccade_indices is not None:
-            # First saccade per trial in the online reward window
-            # (target onset -> end-of-trial), matching the latency/congruency
-            # analysis; drop any landing on non-finite eye positions.
+            # First saccade per trial over the full trial (target onset ->
+            # end-of-trial), matching the latency/congruency analysis; drop
+            # any landing on non-finite eye positions.
             idx_use = np.asarray(first_saccade_indices.get(label, []), dtype=int)
             if idx_use.size:
                 idx_use = idx_use[mask[idx_use]]
@@ -760,7 +760,7 @@ def sort_saccades(
             ax_q.set_xlabel("X (°)")
             ax_q.set_ylabel("Y (°)")
             _win_note = (
-                "first saccade per trial, target onset → end-of-trial (reward window)"
+                "first saccade per trial, target onset → end-of-trial (full trial)"
                 if first_saccade_indices is not None
                 else f"first saccade per trial, fixed {saccade_config.saccade_win}s window"
             )
