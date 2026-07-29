@@ -143,6 +143,41 @@ def find_first_saccade_per_trial(
     return np.array(latencies), np.array(congruent, dtype=bool)
 
 
+def session_max_trial_duration(
+    data: SessionData,
+    config,
+    mask: Optional[np.ndarray] = None,
+    default: float = 1.5,
+) -> float:
+    """Maximum trial duration for the session, in seconds, derived from data.
+
+    Uses the longest interval from target onset (``go_frame``) to trial end
+    (``end_of_trial_frame``). Trials in which the animal never made the
+    trial-ending saccade run to the task's time-out, so this maximum recovers
+    the response-window ceiling rather than a lone outlier. It is meant to be
+    computed once per session and used as the common upper time bound across
+    the PSTH, first-saccade latency, fraction-toward, and congruency analyses
+    so they all share the same window.
+
+    Falls back to ``default`` seconds if end-of-trial timing is unavailable.
+    """
+    if data.end_of_trial_frame is None:
+        warnings.warn(
+            "No end_of_trial data; using default max trial duration of "
+            f"{default}s for analysis windows."
+        )
+        return float(default)
+    dur = (
+        np.asarray(data.end_of_trial_frame) - np.asarray(data.go_frame)
+    ) / config.ttl_freq
+    if mask is not None:
+        dur = dur[mask]
+    dur = dur[np.isfinite(dur) & (dur > 0)]
+    if dur.size == 0:
+        return float(default)
+    return float(np.max(dur))
+
+
 def first_saccade_indices_by_direction(
     data: SessionData,
     saccades: Dict[str, np.ndarray],
@@ -586,9 +621,18 @@ def main(session_id: str) -> pd.DataFrame:
 
         }
     )
-    first_saccades = first_saccade_indices_by_direction(data, saccades, config)
+    mask_horizontal = data.go_direction_x != 0
+
+    # Single per-session max trial duration (target onset -> trial end),
+    # derived from the data, used as the common upper time bound across all
+    # of the analyses below so they share one window.
+    max_trial_time = session_max_trial_duration(data, config, mask=mask_horizontal)
+
+    first_saccades = first_saccade_indices_by_direction(
+        data, saccades, config, max_latency=max_trial_time
+    )
     first_saccades_theta = first_saccade_indices_by_direction(
-        data, saccades, config,
+        data, saccades, config, max_latency=max_trial_time,
         frames_key="saccade_frames_theta", indices_key="saccade_indices_theta",
     )
     sorted_data,left_angle,right_angle,fig_sorted, _ = sort_saccades(
@@ -600,15 +644,15 @@ def main(session_id: str) -> pd.DataFrame:
     if fig_sorted is not None:
         plt.close(fig_sorted)
 
-    mask_horizontal = data.go_direction_x != 0
     psth_centers, psth_rate, psth_ci, n_trials_psth = compute_saccade_psth(
-        data, saccades, config, mask=mask_horizontal
+        data, saccades, config, window=(-max_trial_time, max_trial_time),
+        mask=mask_horizontal,
     )
     latencies, congruent = find_first_saccade_per_trial(
-        data, saccades, config, mask=mask_horizontal
+        data, saccades, config, max_latency=max_trial_time, mask=mask_horizontal
     )
     latency_centers, fraction_toward, n_per_window = fraction_toward_target_by_latency(
-        latencies, congruent
+        latencies, congruent, window_span=(0.2, max_trial_time)
     )
 
     window = (0.15, 0.45)
@@ -626,7 +670,9 @@ def main(session_id: str) -> pd.DataFrame:
         config, window=window,
     )
 
-    latency_outcome = analyze_latency_by_outcome(data, saccades, config, mask=mask_horizontal)
+    latency_outcome = analyze_latency_by_outcome(
+        data, saccades, config, mask=mask_horizontal, max_latency=max_trial_time
+    )
     plot_latency_by_outcome(latency_outcome, config)
 
 
