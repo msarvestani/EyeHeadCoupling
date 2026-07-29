@@ -10,7 +10,6 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import cv2
 from matplotlib import cm, gridspec
 from matplotlib.patches import FancyArrowPatch
 from scipy.signal import medfilt
@@ -1412,6 +1411,7 @@ def extract_eye_position_from_dlc(
     pupil_area       : (N,) ndarray
         Pupil area in pixels squared (interpolated across blinks).
     """
+    import cv2  # local import: OpenCV is only needed for DLC pupil fitting
 
     # --- Extract keypoints ---
     pupil_points = dlc_data[
