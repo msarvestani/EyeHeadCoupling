@@ -206,6 +206,59 @@ def session_max_trial_duration(
     return float(np.max(dur))
 
 
+def session_reward_window(
+    data: SessionData,
+    saccades: Dict[str, np.ndarray],
+    config,
+    mask: Optional[np.ndarray] = None,
+    max_latency: float = 1.5,
+) -> Optional[float]:
+    """Reward-window duration (s), derived from the data.
+
+    A saccade within the reward window is rewarded and ends the trial;
+    ``data.trial_success`` (the ``end_of_trial`` CSV's success column) logs
+    which trials were rewarded. This returns the **maximum first-saccade
+    latency among rewarded trials** (``trial_success > 0``) — i.e. the latest a
+    rewarded response occurred — which recovers the reward-window cut-off.
+
+    Returns ``None`` if ``trial_success`` is unavailable or no rewarded trial
+    has a detectable first saccade, so callers can fall back (e.g. to
+    ``saccade_win``).
+    """
+    trial_success = data.trial_success
+    if trial_success is None:
+        return None
+    ttl_freq = config.ttl_freq
+    go_frame = np.asarray(data.go_frame)
+    end_frame = data.end_of_trial_frame
+    if end_frame is None:
+        end_frame = go_frame + max_latency * ttl_freq
+    end_frame = np.asarray(end_frame)
+    trial_success = np.asarray(trial_success)
+    if mask is not None:
+        go_frame = go_frame[mask]
+        end_frame = end_frame[mask]
+        trial_success = trial_success[mask]
+
+    saccade_frames = saccades["saccade_frames_xy"]
+
+    rewarded_latencies = []
+    for f, end_f, succ in zip(go_frame, end_frame, trial_success):
+        if not (succ > 0):
+            continue
+        valid = (saccade_frames > f) & (saccade_frames < end_f)
+        if not np.any(valid):
+            continue
+        first = float(np.min((saccade_frames[valid] - f) / ttl_freq))
+        if first > max_latency:
+            continue
+        rewarded_latencies.append(first)
+
+    if not rewarded_latencies:
+        return None
+    return float(np.max(rewarded_latencies))
+
+
 def first_saccade_indices_by_direction(
     data: SessionData,
     saccades: Dict[str, np.ndarray],
@@ -692,7 +745,19 @@ def main(session_id: str) -> pd.DataFrame:
     # (~time-out); the shorter rewarded epoch (saccade_win) is drawn on the
     # plots as a marker for reference.
     max_trial_time = session_max_trial_duration(data, config, mask=mask_horizontal)
-    reward_window = saccade_cfg.saccade_win
+
+    # Reward window derived from the data: the max first-saccade latency among
+    # rewarded trials (logged trial_success). Falls back to the configured
+    # saccade_win only if trial_success is unavailable.
+    reward_window = session_reward_window(
+        data, saccades, config, mask=mask_horizontal, max_latency=max_trial_time
+    )
+    if reward_window is None:
+        warnings.warn(
+            "Could not derive reward window from trial_success; "
+            "falling back to saccade_win for the reward-window marker."
+        )
+        reward_window = saccade_cfg.saccade_win
 
     first_saccades = first_saccade_indices_by_direction(
         data, saccades, config, max_latency=max_trial_time
