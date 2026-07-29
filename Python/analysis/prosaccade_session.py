@@ -265,7 +265,6 @@ def analyze_latency_by_outcome(
     go_frame = data.go_frame
     go_dir_x = data.go_direction_x
     end_frame = data.end_of_trial_frame
-    trial_success = data.trial_success
 
     if end_frame is None:
         warnings.warn(
@@ -278,8 +277,7 @@ def analyze_latency_by_outcome(
         go_frame = go_frame[mask]
         go_dir_x = go_dir_x[mask]
         end_frame = end_frame[mask]
-        if trial_success is not None:
-            trial_success = trial_success[mask]
+
 
     go_dir_x = -np.array(go_dir_x, dtype=np.float64)  # fixing target direction mapping
 
@@ -287,9 +285,9 @@ def analyze_latency_by_outcome(
     saccade_indices = saccades["saccade_indices_xy"]
     dx = saccades["eye_vel"][:, 0]
 
-    latencies, congruent, success_out = [], [], []
+    latencies, congruent = [], []
     n_no_saccade = 0
-    for i, (f, gdx, end_f) in enumerate(zip(go_frame, go_dir_x, end_frame)):
+    for f, gdx, end_f in zip(go_frame, go_dir_x, end_frame):
         valid = (saccade_frames > f) & (saccade_frames < end_f)
         if not np.any(valid):
             n_no_saccade += 1
@@ -302,12 +300,10 @@ def analyze_latency_by_outcome(
         idx_first = saccade_indices[valid][first]
         latencies.append(rel_valid[first])
         congruent.append(np.sign(dx[idx_first]) == np.sign(gdx))
-        success_out.append(trial_success[i] if trial_success is not None else np.nan)
 
     return {
         "latencies": np.array(latencies),
         "congruent": np.array(congruent, dtype=bool),
-        "trial_success": np.array(success_out, dtype=float),
         "n_no_saccade": n_no_saccade,
         "n_total": len(go_frame),
     }
@@ -319,44 +315,50 @@ def plot_latency_by_outcome(
     bins: int = 20,
     show_plots: bool = True,
 ) -> plt.Figure:
-    """Two-panel histogram of first-saccade latency: congruency-based vs.
-    logged-trial_success-based definitions of "correct", for comparison."""
+
+    """First-saccade latency split by saccade-target congruency.
+
+    Top: overlaid histograms of latency for congruent ("correct", toward the
+    target) vs. incongruent ("incorrect") first saccades. Bottom: empirical
+    CDFs of those same two distributions, using the matching colour scheme."""
     latencies = result["latencies"]
     congruent = result["congruent"]
-    trial_success = result["trial_success"]
     n_no_saccade = result["n_no_saccade"]
 
-    has_success = ~np.isnan(trial_success)
-    n_with_success = int(np.count_nonzero(has_success))
+    correct = latencies[congruent]
+    incorrect = latencies[~congruent]
+    n_correct = correct.size
+    n_incorrect = incorrect.size
 
-    fig, (ax_cong, ax_succ) = plt.subplots(1, 2, figsize=(11, 4), sharey=True)
+    fig, (ax_hist, ax_cdf) = plt.subplots(2, 1, figsize=(6, 8), sharex=True)
 
-    def _hist_panel(ax, correct_mask, label):
-        n_correct = int(np.count_nonzero(correct_mask))
-        n_incorrect = int(np.count_nonzero(~correct_mask))
-        ax.hist(latencies[correct_mask], bins=bins, alpha=0.6, color="tab:green", label="correct")
-        ax.hist(latencies[~correct_mask], bins=bins, alpha=0.6, color="tab:red", label="incorrect")
-        ax.set_xlabel("First-saccade latency (s)")
-        ax.set_title(f"{label}\n{n_correct} correct, {n_incorrect} incorrect")
-        ax.legend(fontsize=8)
+    ax_hist.hist(correct, bins=bins, alpha=0.6, color="tab:green", label="correct")
+    ax_hist.hist(incorrect, bins=bins, alpha=0.6, color="tab:red", label="incorrect")
+    ax_hist.set_ylabel("Trial count")
+    ax_hist.set_title(
+        f"Correct = saccade toward target\n{n_correct} correct, {n_incorrect} incorrect"
+    )
+    ax_hist.legend(fontsize=8)
 
-    _hist_panel(ax_cong, congruent, "Correct = saccade toward target")
+    def _cdf(ax, values, color, label):
+        if values.size == 0:
+            return
+        x = np.sort(values)
+        y = np.arange(1, x.size + 1) / x.size
+        ax.step(x, y, where="post", color=color, label=label)
 
-    if n_with_success > 0:
-        succ_bool = trial_success[has_success] > 0
-        _hist_panel(ax_succ, succ_bool, "Correct = logged trial_success")
-        agree = np.mean(congruent[has_success] == succ_bool)
-        agree_txt = f"agreement: {agree:.0%} (n={n_with_success})"
-    else:
-        ax_succ.set_title("Correct = logged trial_success\n(no trial_success data)")
-        ax_succ.set_xlabel("First-saccade latency (s)")
-        agree_txt = "no trial_success data to compare"
+    _cdf(ax_cdf, correct, "tab:green", "correct")
+    _cdf(ax_cdf, incorrect, "tab:red", "incorrect")
+    ax_cdf.set_ylim(0, 1)
+    ax_cdf.set_xlabel("First-saccade latency (s)")
+    ax_cdf.set_ylabel("Cumulative fraction")
+    ax_cdf.set_title("Latency CDF")
+    ax_cdf.legend(fontsize=8)
 
-    ax_cong.set_ylabel("Trial count")
     fig.suptitle(
         f"{config.animal_name or ''} {config.session_name}  \u2014  "
         f"{result['n_total']} trials, {len(latencies)} with a saccade, "
-        f"{n_no_saccade} excluded (no saccade)  \u2014  {agree_txt}"
+        f"{n_no_saccade} excluded (no saccade)"
     )
     fig.tight_layout()
     fig.savefig(config.results_dir / f"{config.session_name}_latency_by_outcome.png",
