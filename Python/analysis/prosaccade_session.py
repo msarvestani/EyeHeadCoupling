@@ -142,6 +142,80 @@ def find_first_saccade_per_trial(
 
     return np.array(latencies), np.array(congruent, dtype=bool)
 
+
+def first_saccade_indices_by_direction(
+    data: SessionData,
+    saccades: Dict[str, np.ndarray],
+    config,
+    max_latency: float = 1.5,
+    frames_key: str = "saccade_frames_xy",
+    indices_key: str = "saccade_indices_xy",
+) -> Dict[str, np.ndarray]:
+    """First-saccade eye indices per trial, grouped by stimulus direction.
+
+    Selects, for every trial, the *first* saccade in the same reward window
+    used by :func:`find_first_saccade_per_trial` /
+    :func:`analyze_latency_by_outcome` — i.e. between target onset
+    (``go_frame``) and that trial's actual end (``end_of_trial_frame``),
+    capped at ``max_latency`` — and returns the corresponding index into the
+    eye-position arrays. This is the same saccade the online task scored for
+    reward.
+
+    ``frames_key`` / ``indices_key`` select which saccade stream to search:
+    the translational stream (``saccade_frames_xy`` / ``saccade_indices_xy``,
+    the default) or the torsional stream (``saccade_frames_theta`` /
+    ``saccade_indices_theta``). Returns an empty dict if that stream is absent
+    or empty.
+
+    Trials are grouped into direction labels exactly as :func:`organize_stims`
+    groups them, so the returned dict can be dropped straight into
+    :func:`eyehead.sort_saccades` in place of its fixed-window search.
+    """
+    ttl_freq = config.ttl_freq
+    go_frame = data.go_frame
+    go_dir_x = data.go_direction_x
+    go_dir_y = data.go_direction_y
+    end_frame = data.end_of_trial_frame
+    if end_frame is None:
+        warnings.warn(
+            "No end_of_trial data available; falling back to a flat "
+            f"{max_latency}s latency cap instead of each trial's actual end."
+        )
+        end_frame = go_frame + max_latency * ttl_freq
+
+    saccade_frames = saccades.get(frames_key)
+    saccade_indices = saccades.get(indices_key)
+    if saccade_frames is None or saccade_indices is None or len(saccade_frames) == 0:
+        return {}
+    saccade_frames = np.asarray(saccade_frames)
+    saccade_indices = np.asarray(saccade_indices)
+
+    first_idx = np.full(len(go_frame), -1, dtype=int)
+    for i, (f, end_f) in enumerate(zip(go_frame, end_frame)):
+        valid = (saccade_frames > f) & (saccade_frames < end_f)
+        if not np.any(valid):
+            continue
+        rel_valid = (saccade_frames[valid] - f) / ttl_freq
+        first = np.argmin(rel_valid)
+        if rel_valid[first] > max_latency:
+            continue
+        first_idx[i] = saccade_indices[valid][first]
+
+    have = first_idx >= 0
+    groups: Dict[str, np.ndarray] = {}
+    if go_dir_x is not None and np.any(np.asarray(go_dir_x) != 0):
+        go_dir_x = np.asarray(go_dir_x)
+        groups["Left"] = first_idx[have & (go_dir_x < 0)]
+        groups["Right"] = first_idx[have & (go_dir_x > 0)]
+    if go_dir_y is not None and np.any(np.asarray(go_dir_y) != 0):
+        go_dir_y = np.asarray(go_dir_y)
+        groups["Down"] = first_idx[have & (go_dir_y < 0)]
+        groups["Up"] = first_idx[have & (go_dir_y > 0)]
+    if not groups:
+        groups["All"] = first_idx[have]
+    return groups
+
+
 def find_precue_saccade_per_trial(
     data: SessionData,
     saccades: Dict[str, np.ndarray],
@@ -512,7 +586,17 @@ def main(session_id: str) -> pd.DataFrame:
 
         }
     )
-    sorted_data,left_angle,right_angle,fig_sorted, _ = sort_saccades(config, saccade_cfg, saccades, stim_type=stim_type, plot=True)
+    first_saccades = first_saccade_indices_by_direction(data, saccades, config)
+    first_saccades_theta = first_saccade_indices_by_direction(
+        data, saccades, config,
+        frames_key="saccade_frames_theta", indices_key="saccade_indices_theta",
+    )
+    sorted_data,left_angle,right_angle,fig_sorted, _ = sort_saccades(
+        config, saccade_cfg, saccades, stim_type=stim_type,
+        first_saccade_indices=first_saccades,
+        first_saccade_indices_theta=first_saccades_theta or None,
+        plot=True,
+    )
     if fig_sorted is not None:
         plt.close(fig_sorted)
 
