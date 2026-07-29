@@ -6,6 +6,7 @@ from typing import Dict, Optional, Tuple
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import warnings
 
 # Put the repo's “Python” folder on sys.path so `import eyehead` works
 sys.path.append(str(Path(__file__).resolve().parents[1]))
@@ -94,6 +95,8 @@ def compute_saccade_psth(
     return bin_centers, rate, ci, n_trials
 
 
+
+
 def find_first_saccade_per_trial(
     data: SessionData,
     saccades: Dict[str, np.ndarray],
@@ -101,26 +104,20 @@ def find_first_saccade_per_trial(
     max_latency: float = 1.5,
     mask: Optional[np.ndarray] = None,
 ) -> Tuple[np.ndarray, np.ndarray]:
-    """Latency and target-congruency of the first saccade after each target onset.
-
-    A trial's first saccade is congruent when its horizontal direction (sign
-    of ``eye_vel``'s x-component at the saccade index) matches the sign of
-    that trial's ``go_direction_x``.
-
-    Returns
-    -------
-    latencies : ndarray
-        Time (s) from target onset to each trial's first saccade. Trials with
-        no saccade within ``max_latency`` are omitted.
-    congruent : ndarray of bool
-        Whether that first saccade went toward the target.
-    """
     ttl_freq = config.ttl_freq
     go_frame = data.go_frame
     go_dir_x = data.go_direction_x
+    end_frame = data.end_of_trial_frame
+    if end_frame is None:
+        warnings.warn(
+            "No end_of_trial data available; falling back to a flat "
+            f"{max_latency}s latency cap instead of each trial's actual end."
+        )
+        end_frame = go_frame + max_latency * ttl_freq
     if mask is not None:
         go_frame = go_frame[mask]
         go_dir_x = go_dir_x[mask]
+        end_frame = end_frame[mask]
 
     go_dir_x = -np.array(go_dir_x, dtype=np.float64) #fixing target direction mapping
 
@@ -130,12 +127,12 @@ def find_first_saccade_per_trial(
 
 
     latencies, congruent = [], []
-    for f, gdx in zip(go_frame, go_dir_x):
-        rel = (saccade_frames - f) / ttl_freq
-        valid = rel > 0
+    for f, gdx, end_f in zip(go_frame, go_dir_x, end_frame):
+        # only saccades after target onset and before this trial actually ends
+        valid = (saccade_frames > f) & (saccade_frames < end_f)
         if not np.any(valid):
             continue
-        rel_valid = rel[valid]
+        rel_valid = (saccade_frames[valid] - f) / ttl_freq
         first = np.argmin(rel_valid)
         if rel_valid[first] > max_latency:
             continue
@@ -145,6 +142,80 @@ def find_first_saccade_per_trial(
 
     return np.array(latencies), np.array(congruent, dtype=bool)
 
+def find_precue_saccade_per_trial(
+    data: SessionData,
+    saccades: Dict[str, np.ndarray],
+    config,
+    window: float = 0.5,
+    mask: Optional[np.ndarray] = None,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Latency and target-congruency of the last saccade before target onset.
+
+    Serves as a pre-cue/pre-target control: since the target hasn't appeared
+    yet, any lateral bias in this saccade's direction can't reflect
+    target-directed behaviour, so congruency here should sit near chance.
+
+    Returns
+    -------
+    latencies : ndarray
+        Time (s), negative, from target onset to each trial's last saccade
+        in the preceding ``window`` seconds. Trials with none are omitted.
+    congruent : ndarray of bool
+        Whether that saccade's direction happened to match the (not-yet-seen)
+        target's direction.
+    """
+    ttl_freq = config.ttl_freq
+    go_frame = data.go_frame
+    go_dir_x = data.go_direction_x
+    if mask is not None:
+        go_frame = go_frame[mask]
+        go_dir_x = go_dir_x[mask]
+
+    go_dir_x = -np.array(go_dir_x, dtype=np.float64)  # fixing target direction mapping
+
+    saccade_frames = saccades["saccade_frames_xy"]
+    saccade_indices = saccades["saccade_indices_xy"]
+    dx = saccades["eye_vel"][:, 0]
+
+    latencies, congruent = [], []
+    for f, gdx in zip(go_frame, go_dir_x):
+        rel = (saccade_frames - f) / ttl_freq
+        valid = (rel < 0) & (rel >= -window)
+        if not np.any(valid):
+            continue
+        rel_valid = rel[valid]
+        last = np.argmax(rel_valid)  # closest to (but before) target onset
+        idx_last = saccade_indices[valid][last]
+        latencies.append(rel_valid[last])
+        congruent.append(np.sign(dx[idx_last]) == np.sign(gdx))
+
+    return np.array(latencies), np.array(congruent, dtype=bool)
+
+
+def wilson_ci(successes: int, n: int, z: float = 1.96) -> Tuple[float, float]:
+    """Wilson score interval for a binomial proportion."""
+    if n == 0:
+        return (np.nan, np.nan)
+    phat = successes / n
+    denom = 1 + z**2 / n
+    center = (phat + z**2 / (2 * n)) / denom
+    margin = (z / denom) * np.sqrt(phat * (1 - phat) / n + z**2 / (4 * n**2))
+    return (center - margin, center + margin)
+
+
+def congruency_in_window(
+    latencies: np.ndarray,
+    congruent: np.ndarray,
+    window: Tuple[float, float] = (0.15, 0.45),
+) -> Tuple[float, int, float, float]:
+    """Fraction congruent (with Wilson 95% CI) for saccades in a fixed latency window."""
+    sel = (latencies >= window[0]) & (latencies < window[1])
+    n = int(np.count_nonzero(sel))
+    if n == 0:
+        return np.nan, 0, np.nan, np.nan
+    frac = float(np.mean(congruent[sel]))
+    ci_lo, ci_hi = wilson_ci(int(np.sum(congruent[sel])), n)
+    return frac, n, ci_lo, ci_hi
 
 def fraction_toward_target_by_latency(
     latencies: np.ndarray,
@@ -168,6 +239,133 @@ def fraction_toward_target_by_latency(
     return centers, fraction, n_per_window
 
 
+def analyze_latency_by_outcome(
+    data: SessionData,
+    saccades: Dict[str, np.ndarray],
+    config,
+    mask: Optional[np.ndarray] = None,
+    max_latency: float = 1.5,
+) -> Dict[str, np.ndarray]:
+    """Per-trial first-saccade latency, paired with two independent "correct" labels.
+
+    For every trial, finds the first saccade between target onset and that
+    trial's actual end (``data.end_of_trial_frame``) and records its latency,
+    together with:
+
+    - ``congruent``: whether that saccade's direction matched the target's
+      (same definition as :func:`find_first_saccade_per_trial`).
+    - ``trial_success``: the independently-logged outcome from
+      ``data.trial_success`` (the ``end_of_trial`` CSV's success column), or
+      NaN if that file didn't load for this session.
+
+    Trials with no saccade between target onset and trial end are excluded
+    from the returned arrays but counted in ``n_no_saccade``.
+    """
+    ttl_freq = config.ttl_freq
+    go_frame = data.go_frame
+    go_dir_x = data.go_direction_x
+    end_frame = data.end_of_trial_frame
+    trial_success = data.trial_success
+
+    if end_frame is None:
+        warnings.warn(
+            "No end_of_trial data available; falling back to a flat "
+            f"{max_latency}s latency cap instead of each trial's actual end."
+        )
+        end_frame = go_frame + max_latency * ttl_freq
+
+    if mask is not None:
+        go_frame = go_frame[mask]
+        go_dir_x = go_dir_x[mask]
+        end_frame = end_frame[mask]
+        if trial_success is not None:
+            trial_success = trial_success[mask]
+
+    go_dir_x = -np.array(go_dir_x, dtype=np.float64)  # fixing target direction mapping
+
+    saccade_frames = saccades["saccade_frames_xy"]
+    saccade_indices = saccades["saccade_indices_xy"]
+    dx = saccades["eye_vel"][:, 0]
+
+    latencies, congruent, success_out = [], [], []
+    n_no_saccade = 0
+    for i, (f, gdx, end_f) in enumerate(zip(go_frame, go_dir_x, end_frame)):
+        valid = (saccade_frames > f) & (saccade_frames < end_f)
+        if not np.any(valid):
+            n_no_saccade += 1
+            continue
+        rel_valid = (saccade_frames[valid] - f) / ttl_freq
+        first = np.argmin(rel_valid)
+        if rel_valid[first] > max_latency:
+            n_no_saccade += 1
+            continue
+        idx_first = saccade_indices[valid][first]
+        latencies.append(rel_valid[first])
+        congruent.append(np.sign(dx[idx_first]) == np.sign(gdx))
+        success_out.append(trial_success[i] if trial_success is not None else np.nan)
+
+    return {
+        "latencies": np.array(latencies),
+        "congruent": np.array(congruent, dtype=bool),
+        "trial_success": np.array(success_out, dtype=float),
+        "n_no_saccade": n_no_saccade,
+        "n_total": len(go_frame),
+    }
+
+
+def plot_latency_by_outcome(
+    result: Dict[str, np.ndarray],
+    config,
+    bins: int = 20,
+    show_plots: bool = True,
+) -> plt.Figure:
+    """Two-panel histogram of first-saccade latency: congruency-based vs.
+    logged-trial_success-based definitions of "correct", for comparison."""
+    latencies = result["latencies"]
+    congruent = result["congruent"]
+    trial_success = result["trial_success"]
+    n_no_saccade = result["n_no_saccade"]
+
+    has_success = ~np.isnan(trial_success)
+    n_with_success = int(np.count_nonzero(has_success))
+
+    fig, (ax_cong, ax_succ) = plt.subplots(1, 2, figsize=(11, 4), sharey=True)
+
+    def _hist_panel(ax, correct_mask, label):
+        n_correct = int(np.count_nonzero(correct_mask))
+        n_incorrect = int(np.count_nonzero(~correct_mask))
+        ax.hist(latencies[correct_mask], bins=bins, alpha=0.6, color="tab:green", label="correct")
+        ax.hist(latencies[~correct_mask], bins=bins, alpha=0.6, color="tab:red", label="incorrect")
+        ax.set_xlabel("First-saccade latency (s)")
+        ax.set_title(f"{label}\n{n_correct} correct, {n_incorrect} incorrect")
+        ax.legend(fontsize=8)
+
+    _hist_panel(ax_cong, congruent, "Correct = saccade toward target")
+
+    if n_with_success > 0:
+        succ_bool = trial_success[has_success] > 0
+        _hist_panel(ax_succ, succ_bool, "Correct = logged trial_success")
+        agree = np.mean(congruent[has_success] == succ_bool)
+        agree_txt = f"agreement: {agree:.0%} (n={n_with_success})"
+    else:
+        ax_succ.set_title("Correct = logged trial_success\n(no trial_success data)")
+        ax_succ.set_xlabel("First-saccade latency (s)")
+        agree_txt = "no trial_success data to compare"
+
+    ax_cong.set_ylabel("Trial count")
+    fig.suptitle(
+        f"{config.animal_name or ''} {config.session_name}  \u2014  "
+        f"{result['n_total']} trials, {len(latencies)} with a saccade, "
+        f"{n_no_saccade} excluded (no saccade)  \u2014  {agree_txt}"
+    )
+    fig.tight_layout()
+    fig.savefig(config.results_dir / f"{config.session_name}_latency_by_outcome.png",
+                dpi=300, bbox_inches="tight")
+    if show_plots:
+        plt.show()
+    plt.close(fig)
+    return fig
+
 def plot_psth_and_congruency(
     psth_centers: np.ndarray,
     psth_rate: np.ndarray,
@@ -176,11 +374,18 @@ def plot_psth_and_congruency(
     latency_centers: np.ndarray,
     fraction_toward: np.ndarray,
     n_per_window: np.ndarray,
+    frac: float,
+    n_window: int,
+    ci_lo: float,
+    ci_hi: float,
+    precue_frac: float,
+    precue_n: int,
     config,
+    window: Tuple[float, float] = (0.15, 0.45),
     show_plots: bool = True,
 ) -> plt.Figure:
-    """Two-panel figure: target-aligned rate PSTH, and accuracy-by-latency."""
-    fig, (ax_rate, ax_frac) = plt.subplots(1, 2, figsize=(10, 4))
+    """Three-panel figure: target-aligned rate PSTH, accuracy-by-latency, and windowed congruency vs. pre-cue control."""
+    fig, (ax_rate, ax_frac, ax_summary) = plt.subplots(1, 3, figsize=(14, 4))
 
     ax_rate.fill_between(psth_centers, psth_ci[0], psth_ci[1], color="tab:blue", alpha=0.25, lw=0)
     ax_rate.plot(psth_centers, psth_rate, color="tab:blue", lw=1.4)
@@ -196,6 +401,40 @@ def plot_psth_and_congruency(
     ax_frac.set_xlabel("Window centre, time from target (s)")
     ax_frac.set_ylabel("Fraction of first saccades toward target")
     ax_frac.set_title("Saccade accuracy vs. latency")
+
+    if n_window > 0:
+        ax_summary.errorbar(
+            frac, 0,
+            xerr=[[frac - ci_lo], [ci_hi - frac]],
+            fmt="D", color="tab:red", ecolor="tab:red", capsize=4, ms=9,
+        )
+        ax_summary.text(max(ci_hi, frac) + 0.03, 0, f"{frac:.0%}  (n={n_window})",
+                         va="center", fontsize=9, color="dimgray")
+
+    if n_window > 0:
+        ax_summary.errorbar(
+            frac, 0,
+            xerr=[[frac - ci_lo], [ci_hi - frac]],
+            fmt="D", color="tab:red", ecolor="tab:red", capsize=4, ms=9,
+        )
+        ax_summary.text(max(ci_hi, frac) + 0.03, 0.15, f"{frac:.0%}  (n={n_window})",
+                         va="center", fontsize=9, color="tab:red")
+    if precue_n > 0 and not np.isnan(precue_frac):
+        ax_summary.plot(precue_frac, 0, "o", mfc="none", mec="gray", ms=9)
+        ax_summary.text(precue_frac, -0.15, f"pre-cue: {precue_frac:.0%} (n={precue_n})",
+                         va="center", ha="center", fontsize=8, color="dimgray")
+    ax_summary.axvline(0.5, color="gray", ls="--", lw=1)
+    ax_summary.set_xlim(0.0, 1.15)
+    ax_summary.set_ylim(-0.5, 0.5)
+    ax_summary.set_yticks([])
+    ax_summary.set_xlabel(f"Fraction toward target, {window[0]:.2f}\u2013{window[1]:.2f} s")
+    ax_summary.set_title("Congruency vs. pre-cue control")
+    
+    ax_summary.axvline(0.5, color="gray", ls="--", lw=1)
+    ax_summary.set_xlim(0.0, 1.15)
+    ax_summary.set_yticks([])
+    ax_summary.set_xlabel(f"Fraction toward target, {window[0]:.2f}\u2013{window[1]:.2f} s")
+    ax_summary.set_title("Congruency vs. pre-cue control")
 
     fig.suptitle(f"{config.animal_name or ''} {config.session_name}".strip())
     fig.tight_layout()
@@ -285,11 +524,24 @@ def main(session_id: str) -> pd.DataFrame:
     latency_centers, fraction_toward, n_per_window = fraction_toward_target_by_latency(
         latencies, congruent
     )
+
+    window = (0.15, 0.45)
+    frac, n_window, ci_lo, ci_hi = congruency_in_window(latencies, congruent, window=window)
+    precue_latencies, precue_congruent = find_precue_saccade_per_trial(
+        data, saccades, config, mask=mask_horizontal
+    )
+    precue_frac = float(np.mean(precue_congruent)) if len(precue_congruent) else np.nan
+    precue_n = len(precue_congruent)
+
     plot_psth_and_congruency(
         psth_centers, psth_rate, psth_ci, n_trials_psth,
         latency_centers, fraction_toward, n_per_window,
-        config,
+        frac, n_window, ci_lo, ci_hi, precue_frac, precue_n,
+        config, window=window,
     )
+
+    latency_outcome = analyze_latency_by_outcome(data, saccades, config, mask=mask_horizontal)
+    plot_latency_by_outcome(latency_outcome, config)
 
 
     df = pd.DataFrame(
