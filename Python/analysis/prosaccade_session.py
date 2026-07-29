@@ -623,10 +623,13 @@ def main(session_id: str) -> pd.DataFrame:
     )
     mask_horizontal = data.go_direction_x != 0
 
-    # Single per-session max trial duration (target onset -> trial end),
-    # derived from the data, used as the common upper time bound across all
-    # of the analyses below so they share one window.
-    max_trial_time = session_max_trial_duration(data, config, mask=mask_horizontal)
+    # Single response window used as the common upper time bound across all
+    # of the analyses below so they share one window. This is the configured
+    # ``saccade_win`` (the same value shown in the first figure's title), i.e.
+    # how long after target onset a first/response saccade is considered.
+    # (``session_max_trial_duration(data, config, mask=mask_horizontal)`` is
+    # available if you'd rather derive it per session from end_of_trial.)
+    max_trial_time = saccade_cfg.saccade_win
 
     first_saccades = first_saccade_indices_by_direction(
         data, saccades, config, max_latency=max_trial_time
