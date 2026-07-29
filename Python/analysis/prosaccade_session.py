@@ -218,11 +218,14 @@ def session_reward_window(
     A saccade within the reward window is rewarded and ends the trial;
     ``data.trial_success`` (the ``end_of_trial`` CSV's success column) logs
     which trials were rewarded. This returns the **maximum first-saccade
-    latency among rewarded trials** (``trial_success > 0``) — i.e. the latest a
-    rewarded response occurred — which recovers the reward-window cut-off.
+    latency among rewarded, congruent trials** — trials that were rewarded
+    (``trial_success > 0``) *and* whose first saccade went toward the target
+    (same congruency definition as :func:`find_first_saccade_per_trial`) —
+    i.e. the latest a correct rewarded response occurred, which recovers the
+    reward-window cut-off.
 
-    Returns ``None`` if ``trial_success`` is unavailable or no rewarded trial
-    has a detectable first saccade, so callers can fall back (e.g. to
+    Returns ``None`` if ``trial_success`` is unavailable or no such trial has a
+    detectable first saccade, so callers can fall back (e.g. to
     ``saccade_win``).
     """
     trial_success = data.trial_success
@@ -235,24 +238,34 @@ def session_reward_window(
         end_frame = go_frame + max_latency * ttl_freq
     end_frame = np.asarray(end_frame)
     trial_success = np.asarray(trial_success)
+    go_dir_x = np.asarray(data.go_direction_x)
     if mask is not None:
         go_frame = go_frame[mask]
         end_frame = end_frame[mask]
         trial_success = trial_success[mask]
+        go_dir_x = go_dir_x[mask]
+
+    go_dir_x = -go_dir_x.astype(np.float64)  # fixing target direction mapping
 
     saccade_frames = saccades["saccade_frames_xy"]
+    saccade_indices = saccades["saccade_indices_xy"]
+    dx = saccades["eye_vel"][:, 0]
 
     rewarded_latencies = []
-    for f, end_f, succ in zip(go_frame, end_frame, trial_success):
+    for f, end_f, succ, gdx in zip(go_frame, end_frame, trial_success, go_dir_x):
         if not (succ > 0):
             continue
         valid = (saccade_frames > f) & (saccade_frames < end_f)
         if not np.any(valid):
             continue
-        first = float(np.min((saccade_frames[valid] - f) / ttl_freq))
-        if first > max_latency:
+        rel = (saccade_frames[valid] - f) / ttl_freq
+        first = np.argmin(rel)
+        if rel[first] > max_latency:
             continue
-        rewarded_latencies.append(first)
+        idx_first = saccade_indices[valid][first]
+        if np.sign(dx[idx_first]) != np.sign(gdx):
+            continue  # first saccade not toward the target
+        rewarded_latencies.append(float(rel[first]))
 
     if not rewarded_latencies:
         return None
