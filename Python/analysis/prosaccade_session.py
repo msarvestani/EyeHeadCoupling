@@ -31,6 +31,7 @@ def compute_saccade_psth(
     bin_width: float = 0.1,
     mask: Optional[np.ndarray] = None,
     n_boot: int = 200,
+    respect_trial_end: bool = True,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, int]:
     """Target-aligned saccade rate (Hz), with a bootstrap confidence band.
 
@@ -55,40 +56,67 @@ def compute_saccade_psth(
     n_boot : int
         Trial-resampling bootstrap iterations for the CI band; set to 0 to
         skip the bootstrap (``ci`` then just repeats ``rate``).
+    respect_trial_end : bool
+        When ``True`` (default) each trial only contributes saccades and
+        exposure up to its own ``end_of_trial_frame``: post-target bins are
+        normalised by the number of trials still within their trial at that
+        bin (the "at-risk" count), so saccades from after a trial ended (the
+        inter-trial period of trials that ended early) don't leak into the
+        rate. Pre-target bins use all trials. With ``False`` (or no
+        ``end_of_trial`` data) every trial contributes to the whole fixed
+        window, normalised by the flat trial count (the original behaviour).
 
     Returns
     -------
     bin_centers, rate, ci, n_trials
         ``ci`` is a ``(2, n_bins)`` array of (lower, upper) 95% bootstrap
-        bounds on the rate.
+        bounds on the rate. Bins with no at-risk trials are ``NaN``.
     """
     ttl_freq = config.ttl_freq
-    go_frame = data.go_frame
+    go_frame = np.asarray(data.go_frame)
+    end_frame = data.end_of_trial_frame
     if mask is not None:
         go_frame = go_frame[mask]
+        if end_frame is not None:
+            end_frame = np.asarray(end_frame)[mask]
     n_trials = len(go_frame)
+
+    if respect_trial_end and end_frame is not None:
+        durations = (np.asarray(end_frame) - go_frame) / ttl_freq
+    else:
+        durations = np.full(n_trials, np.inf)
 
     saccade_times = saccades["saccade_frames_xy"] / ttl_freq
     edges = np.arange(window[0], window[1] + bin_width, bin_width)
     bin_centers = edges[:-1] + bin_width / 2
 
-    def _rate_for(frames: np.ndarray) -> np.ndarray:
+    def _rate_for(trial_idx: np.ndarray) -> np.ndarray:
         counts = np.zeros(len(bin_centers))
-        for f in frames:
+        at_risk = np.zeros(len(bin_centers))
+        for i in trial_idx:
+            f = go_frame[i]
+            dur = durations[i]
+            # a bin is "observed" for this trial if it is pre-target or falls
+            # before the trial ended
+            observed = (bin_centers < 0) | (bin_centers < dur)
+            at_risk += observed
             rel = saccade_times - f / ttl_freq
             in_window = rel[(rel >= window[0]) & (rel < window[1])]
+            in_window = in_window[(in_window < 0) | (in_window < dur)]
             counts += np.histogram(in_window, bins=edges)[0]
-        return counts / (len(frames) * bin_width) if len(frames) else counts
+        with np.errstate(divide="ignore", invalid="ignore"):
+            return np.where(at_risk > 0, counts / (at_risk * bin_width), np.nan)
 
-    rate = _rate_for(go_frame)
+    all_idx = np.arange(n_trials)
+    rate = _rate_for(all_idx)
 
     if n_trials and n_boot:
         rng = np.random.default_rng()
         boot_rates = np.empty((n_boot, len(bin_centers)))
         for b in range(n_boot):
-            resampled = rng.choice(go_frame, size=n_trials, replace=True)
+            resampled = rng.choice(all_idx, size=n_trials, replace=True)
             boot_rates[b] = _rate_for(resampled)
-        ci = np.percentile(boot_rates, [2.5, 97.5], axis=0)
+        ci = np.nanpercentile(boot_rates, [2.5, 97.5], axis=0)
     else:
         ci = np.tile(rate, (2, 1))
 
@@ -423,13 +451,18 @@ def plot_latency_by_outcome(
     config,
     bins: int = 20,
     show_plots: bool = True,
+    reward_window: Optional[float] = None,
 ) -> plt.Figure:
 
     """First-saccade latency split by saccade-target congruency.
 
     Top: overlaid histograms of latency for congruent ("correct", toward the
     target) vs. incongruent ("incorrect") first saccades. Bottom: empirical
-    CDFs of those same two distributions, using the matching colour scheme."""
+    CDFs of those same two distributions, using the matching colour scheme.
+
+    ``reward_window`` (seconds), if given, is drawn as a shaded region /
+    dashed line marking the rewarded epoch, and the fraction of first
+    saccades that fell within it is reported in the title."""
     latencies = result["latencies"]
     congruent = result["congruent"]
     n_no_saccade = result["n_no_saccade"]
@@ -447,6 +480,15 @@ def plot_latency_by_outcome(
     ax_hist.set_title(
         f"Correct = saccade toward target\n{n_correct} correct, {n_incorrect} incorrect"
     )
+
+    def _mark_reward(ax):
+        if reward_window is None:
+            return
+        ax.axvspan(0, reward_window, color="gold", alpha=0.12, lw=0)
+        ax.axvline(reward_window, color="goldenrod", ls=":", lw=1.2,
+                   label=f"reward window ({reward_window:g}s)")
+
+    _mark_reward(ax_hist)
     ax_hist.legend(fontsize=8)
 
     def _cdf(ax, values, color, label):
@@ -458,16 +500,22 @@ def plot_latency_by_outcome(
 
     _cdf(ax_cdf, correct, "tab:green", "correct")
     _cdf(ax_cdf, incorrect, "tab:red", "incorrect")
+    _mark_reward(ax_cdf)
     ax_cdf.set_ylim(0, 1)
     ax_cdf.set_xlabel("First-saccade latency (s)")
     ax_cdf.set_ylabel("Cumulative fraction")
     ax_cdf.set_title("Latency CDF")
     ax_cdf.legend(fontsize=8)
 
+    reward_txt = ""
+    if reward_window is not None and len(latencies):
+        within = float(np.mean(latencies <= reward_window))
+        reward_txt = f"  \u2014  {within:.0%} of first saccades within reward window (\u2264{reward_window:g}s)"
+
     fig.suptitle(
         f"{config.animal_name or ''} {config.session_name}  \u2014  "
         f"{result['n_total']} trials, {len(latencies)} with a saccade, "
-        f"{n_no_saccade} excluded (no saccade)"
+        f"{n_no_saccade} excluded (no saccade){reward_txt}"
     )
     fig.tight_layout()
     fig.savefig(config.results_dir / f"{config.session_name}_latency_by_outcome.png",
@@ -494,20 +542,35 @@ def plot_psth_and_congruency(
     config,
     window: Tuple[float, float] = (0.15, 0.45),
     show_plots: bool = True,
+    reward_window: Optional[float] = None,
 ) -> plt.Figure:
-    """Three-panel figure: target-aligned rate PSTH, accuracy-by-latency, and windowed congruency vs. pre-cue control."""
+    """Three-panel figure: target-aligned rate PSTH, accuracy-by-latency, and windowed congruency vs. pre-cue control.
+
+    ``reward_window`` (seconds), if given, is shaded on the time-resolved
+    panels (PSTH and accuracy-vs-latency) to mark the rewarded epoch."""
     fig, (ax_rate, ax_frac, ax_summary) = plt.subplots(1, 3, figsize=(14, 4))
+
+    def _mark_reward(ax):
+        if reward_window is None:
+            return
+        ax.axvspan(0, reward_window, color="gold", alpha=0.12, lw=0)
+        ax.axvline(reward_window, color="goldenrod", ls=":", lw=1.2,
+                   label=f"reward window ({reward_window:g}s)")
 
     ax_rate.fill_between(psth_centers, psth_ci[0], psth_ci[1], color="tab:blue", alpha=0.25, lw=0)
     ax_rate.plot(psth_centers, psth_rate, color="tab:blue", lw=1.4)
     ax_rate.axvline(0, color="k", lw=0.8)
+    _mark_reward(ax_rate)
     ax_rate.set_xlabel("Time from target onset (s)")
     ax_rate.set_ylabel("Saccade rate (Hz)")
     ax_rate.set_title(f"Target-aligned saccade rate (n={n_trials} trials)")
+    if reward_window is not None:
+        ax_rate.legend(fontsize=8)
 
     valid = n_per_window > 0
     ax_frac.axhline(0.5, color="gray", ls="--", lw=0.8)
     ax_frac.plot(latency_centers[valid], fraction_toward[valid], "-o", color="tab:green", ms=3)
+    _mark_reward(ax_frac)
     ax_frac.set_ylim(0, 1)
     ax_frac.set_xlabel("Window centre, time from target (s)")
     ax_frac.set_ylabel("Fraction of first saccades toward target")
@@ -625,8 +688,11 @@ def main(session_id: str) -> pd.DataFrame:
 
     # Single per-session max trial duration (target onset -> trial end),
     # derived from the data, used as the common upper time bound across all
-    # of the analyses below so they share one window.
+    # of the analyses below so they share one window. This is the full trial
+    # (~time-out); the shorter rewarded epoch (saccade_win) is drawn on the
+    # plots as a marker for reference.
     max_trial_time = session_max_trial_duration(data, config, mask=mask_horizontal)
+    reward_window = saccade_cfg.saccade_win
 
     first_saccades = first_saccade_indices_by_direction(
         data, saccades, config, max_latency=max_trial_time
@@ -667,13 +733,13 @@ def main(session_id: str) -> pd.DataFrame:
         psth_centers, psth_rate, psth_ci, n_trials_psth,
         latency_centers, fraction_toward, n_per_window,
         frac, n_window, ci_lo, ci_hi, precue_frac, precue_n,
-        config, window=window,
+        config, window=window, reward_window=reward_window,
     )
 
     latency_outcome = analyze_latency_by_outcome(
         data, saccades, config, mask=mask_horizontal, max_latency=max_trial_time
     )
-    plot_latency_by_outcome(latency_outcome, config)
+    plot_latency_by_outcome(latency_outcome, config, reward_window=reward_window)
 
 
     df = pd.DataFrame(
