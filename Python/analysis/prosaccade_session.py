@@ -187,6 +187,11 @@ def session_max_trial_duration(
     the PSTH, first-saccade latency, fraction-toward, and congruency analyses
     so they all share the same window.
 
+    ``go_frame`` (target onset) and ``end_of_trial_frame`` (trial end) are
+    read from the session's ``*_go.csv`` and ``*_end_of_trial.csv`` files
+    respectively (loaded into ``data`` by :func:`eyehead.io.load_session_data`,
+    column 0 of each file), not computed here.
+
     Falls back to ``default`` seconds if end-of-trial timing is unavailable.
     """
     if data.end_of_trial_frame is None:
@@ -729,10 +734,9 @@ def main(session_id: str) -> pd.DataFrame:
         saccade_cfg,
         config,
         data=data,
-        plot=False,
+        plot=True,
     )
-    if fig_saccades is not None:
-        plt.close(fig_saccades)
+
     indices = saccades["saccade_indices_xy"]
     saccade_frames = saccades.get("saccade_frames_xy", [])
     print(f"Detected {len(indices)} saccades")
