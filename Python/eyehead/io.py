@@ -183,6 +183,9 @@ def load_session_data(config: SessionConfig) -> SessionData:
     data.vdaxis = _load_csv("vdaxis", per_eye=True)
     data.imu = _load_csv("imu")
     data.end_of_trial = _load_csv("end_of_trial")
+    if data.end_of_trial is None:
+        data.end_of_trial = _load_csv("endoftrial")
+
     if data.end_of_trial is not None:
         arr = data.end_of_trial
         data.end_of_trial_frame = arr[:, 0].astype(int)

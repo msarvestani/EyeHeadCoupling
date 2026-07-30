@@ -13,23 +13,13 @@ saccade_config:
 
 reward_contingency:
   reward_angle: 35 #half-width, in degrees, of the rewarded zone around the target direction
-
 experiment_type: prosaccade #default session type when not overridden per-session below  
 
 sessions:
 
-################################### Paris Fixation Sessions ###################################
- ########### these are the first fixation sessions, where they were interleaved with saccades      
+######################################################### Fixation sessions ####################
 
-#  Tsh001_2025-07-22T15_25_56:
-#  #this is where we showed the blue fixation dot, but there was no punishment or reward for fixating
-#     experiment_type: fixation-control
-#     session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-07-22T15_25_56
-#     calibration_factor : 3.76
-#     ttl_freq: 60
-#     camera_side: L
-
-
+######Paris fixation learning
  Tsh001_2025-07-30T15_29_31:
  #starting here we made it so she had to fixate on the blue fixation dot before the trial could go on
     experiment_type: fixation_learning
@@ -59,7 +49,7 @@ sessions:
     ttl_freq: 60
     camera_side: L
 
-########### Below are clean fixation-only sessions        
+#### Paris Fixation sessions        
 
  Tsh001_2025-08-01T15_15_48:
     experiment_type: fixation
@@ -108,7 +98,7 @@ sessions:
       saccade_config:
         saccade_threshold: 1.0
 
-###############Fixation sessions with visual feedback (central dot various sizes - 7  sizes)
+#####Paris Fixation sessions with visual feedback (central dot various sizes - 7  sizes)
 
  Tsh001_2026-01-09T12_54_50:
     experiment_type: fixation_feedback
@@ -188,7 +178,7 @@ sessions:
         saccade_threshold: 1.0
 
 
-################################### Clean Apollo Fixation Sessions ###################################
+##### Apollo Fixation Sessions 
  Tsh002_2025-09-05T10_59_22:
     experiment_type: fixation_learning
     session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh02_Apollo_server\Tsh002_2025-09-05T10_59_22
@@ -270,7 +260,7 @@ sessions:
       saccade_config:
         saccade_threshold: 1.0
 
-######################## Apollo fixation with feedback
+######## fixation with feedback
 
  Tsh002_2026-01-09T15_17_59:
     experiment_type: fixation_feedback
@@ -332,55 +322,143 @@ sessions:
       saccade_config:
         saccade_threshold: 1.0
 
-############################################################  Bayleaf Fixation Sessions
- Rat022_2025-09-11T12_58_38:
-    experiment_type: fixation_learning
-    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\Rat22_Bayleaf_server\Rat022_2025-09-11T12_58_38
+############################################################  Prosaccade sessions
+#Apollo (first saccade ends the task, saccades in the direction of target are rewarded. reward window is 1.5 secs).
+#Targets are L/R, randomly presented
+ Tsh002_2025-10-30T15_38_57:
+    experiment_type: prosaccade
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh02_Apollo_server\Tsh002_2025-10-30T15_38_57
     calibration_factor : 3.76
     ttl_freq: 60
     camera_side: L
     params:
       saccade_config:
-        saccade_threshold: 1.0
+        saccade_threshold: 2.0
 
- Rat022_2025-09-12T15_52_12:
-    experiment_type: fixation_learning
-    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\Rat22_Bayleaf_server\Rat022_2025-09-12T15_52_12
+ Tsh002_2025-11-03T11_58_17:
+    experiment_type: prosaccade
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh02_Apollo_server\Tsh002_2025-11-03T11_58_17
     calibration_factor : 3.76
     ttl_freq: 60
     camera_side: L
     params:
       saccade_config:
-        saccade_threshold: 1.0
+        saccade_threshold: 2.0
 
- Rat022_2025-09-12T16_13_12:
-    experiment_type: fixation_learning
-    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\Rat22_Bayleaf_server\Rat022_2025-09-12T16_13_12
+
+ Tsh002_2025-11-10T14_59_24:
+    experiment_type: prosaccade
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh02_Apollo_server\Tsh002_2025-11-10T14_59_24
     calibration_factor : 3.76
     ttl_freq: 60
     camera_side: L
     params:
       saccade_config:
-        saccade_threshold: 1.0
-        
- Rat022_2025-09-18T12_43_05:
-    experiment_type: fixation_learning
-    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\Rat22_Bayleaf_server\Rat022_2025-09-18T12_43_05
+        saccade_threshold: 2.0
+      
+
+#Paris (first saccade in the direction of the target ends the task, reward window is 0.7 secs)
+#Targets are L/R, randomly presented
+
+#great
+ Tsh001_2025-07-02T15_14_29:
+    experiment_type: prosaccade
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-07-02T15_14_29
     calibration_factor : 3.76
     ttl_freq: 60
     camera_side: L
     params:
       saccade_config:
-        saccade_threshold: 1.0
+        saccade_threshold: 2.0
 
-
- Rat022_2025-09-19T14_37_27:
-    experiment_type: fixation_learning
-    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\Rat22_Bayleaf_server\Rat022_2025-09-19T14_37_27
+ #great
+ Tsh001_2025-07-08T15_04_12:
+    experiment_type: prosaccade
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-07-08T15_04_12
     calibration_factor : 3.76
     ttl_freq: 60
     camera_side: L
     params:
       saccade_config:
-        saccade_threshold: 1.0
+        saccade_threshold: 2.0   
 
+#great!
+ Tsh001_2025-07-13T18_19_05:
+    experiment_type: prosaccade
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-07-13T18_19_05
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+    params:
+      saccade_config:
+        saccade_threshold: 2.0
+
+#excluding 7/14-7/15 data because we were experiment with monitor height
+
+ #this has L/R & U/D targets, great!
+ Tsh001_2025-07-17T15_32_42:
+    experiment_type: prosaccade
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-07-17T15_32_42
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+    params:
+      saccade_config:
+        saccade_threshold: 2.0  
+
+ #this has L/R & U/D targets, great!
+ Tsh001_2025-07-18T14_57_23:
+    experiment_type: prosaccade
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-07-18T14_57_23
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+    params:
+      saccade_config:
+        saccade_threshold: 2.0  
+      
+ #this has L/R & U/D targets, great!
+ Tsh001_2025-07-22T15_02_57:
+    experiment_type: prosaccade
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-07-22T15_02_57
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+    params:
+      saccade_config:
+        saccade_threshold: 2.0  
+
+ #this has L/R & U/D targets, great!
+ Tsh001_2025-07-22T15_25_56:
+    experiment_type: prosaccade
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-07-22T15_25_56
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+    params:
+      saccade_config:
+        saccade_threshold: 2.0  
+
+ #this has L/R & U/D targets, good
+ Tsh001_2025-07-23T16_20_03:
+    experiment_type: prosaccade
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-07-23T16_20_03
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+    params:
+      saccade_config:
+        saccade_threshold: 2.0  
+
+ #this has L/R & U/D targets, good
+ Tsh001_2025-07-29T16_36_12:
+    experiment_type: prosaccade
+    session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-07-29T16_36_12
+    calibration_factor : 3.76
+    ttl_freq: 60
+    camera_side: L
+    params:
+      saccade_config:
+        saccade_threshold: 2.0  
+
+#Targets are L/R, randomly presented

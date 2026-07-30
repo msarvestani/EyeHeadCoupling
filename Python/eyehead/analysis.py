@@ -760,7 +760,7 @@ def sort_saccades(
             ax_q.set_xlabel("X (°)")
             ax_q.set_ylabel("Y (°)")
             _win_note = (
-                "first saccade per trial, target onset → end-of-trial (reward window)"
+                "first saccade per trial, target onset → end-of-trial"
                 if first_saccade_indices is not None
                 else f"first saccade per trial, fixed {saccade_config.saccade_win}s window"
             )
