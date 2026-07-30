@@ -354,11 +354,11 @@ def plot_left_right_angle(left_angle,right_angle,reward_angle=35,sessionname=Non
         # Plot the reward zone
         #reward_angle = reward_angle  # This should be extracted from the config
         if experiment_type == "prosaccade":
-            reward_zone_left = np.deg2rad(np.arange(-reward_angle, reward_angle, 1))
-            reward_zone_right = np.deg2rad(np.arange(180 - reward_angle, 180 + reward_angle, 1))
-        elif experiment_type == "antisaccade":
             reward_zone_left = np.deg2rad(np.arange(180 - reward_angle, 180 + reward_angle, 1))
             reward_zone_right = np.deg2rad(np.arange(-reward_angle, reward_angle, 1))
+        elif experiment_type == "antisaccade":
+            reward_zone_left = np.deg2rad(np.arange(-reward_angle, reward_angle, 1))
+            reward_zone_right = np.deg2rad(np.arange(180 - reward_angle, 180 + reward_angle, 1))
         ax_polar_left.fill_between(
             reward_zone_left,
             0,
@@ -409,11 +409,11 @@ def plot_left_right_angle(left_angle,right_angle,reward_angle=35,sessionname=Non
 
         ## print the saccade percentage on the plot
         if experiment_type == "prosaccade":
-            saccade_percentage_left = np.sum(np.abs(left_angle) <= np.deg2rad(reward_angle)) / len(left_angle) * 100
-            saccade_percentage_right = np.sum(np.abs(right_angle) >= np.deg2rad(180-reward_angle)) / len(right_angle) * 100
-        elif experiment_type == "antisaccade":
             saccade_percentage_left = np.sum(np.abs(left_angle) >= np.deg2rad(180-reward_angle)) / len(left_angle) * 100
             saccade_percentage_right = np.sum(np.abs(right_angle) <= np.deg2rad(reward_angle)) / len(right_angle) * 100
+        elif experiment_type == "antisaccade":
+            saccade_percentage_left = np.sum(np.abs(left_angle) <= np.deg2rad(reward_angle)) / len(left_angle) * 100
+            saccade_percentage_right = np.sum(np.abs(right_angle) >= np.deg2rad(180-reward_angle)) / len(right_angle) * 100
 
         ax_polar_left.text(
             0.5,

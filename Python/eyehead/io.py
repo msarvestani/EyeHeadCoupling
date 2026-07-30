@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+from logging import config
 import re
 from dataclasses import dataclass
 from datetime import datetime
 from io import StringIO
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Sequence
 
 import numpy as np
 
@@ -102,6 +103,8 @@ class SessionData:
     trial_eye_movement_direction: Optional[np.ndarray] = None
     trial_torsion_angle: Optional[np.ndarray] = None
     trial_success: Optional[np.ndarray] = None
+    trial_outcome_encoding: Optional[str] = None
+
 
     cue_frame: Optional[np.ndarray] = None
     cue_time: Optional[np.ndarray] = None
@@ -113,11 +116,16 @@ def load_session_data(config: SessionConfig) -> SessionData:
     folder = Path(config.folder_path)
     data = SessionData()
 
-    def _find_file(name: str, per_eye: bool) -> Optional[Path]:
+    def _find_file(name: str, per_eye: bool, exclude: Sequence[str] = ()) -> Optional[Path]:
         animal = (config.animal_id or "").lower()
         side = (config.camera_side or "").lower() if per_eye else ""
         files = list(folder.glob("*.csv"))
+        if exclude:
+            files = [p for p in files if not any(x.lower() in p.name.lower() for x in exclude)]
+        files.sort(key=lambda p: (len(p.name), p.name))
         name_l = name.lower()
+
+
         side_tag = f"_{side}" if side else ""
         exact = f"{name_l}{side_tag}.csv"
 
@@ -148,8 +156,15 @@ def load_session_data(config: SessionConfig) -> SessionData:
             return p
         return None
 
-    def _load_csv(name: str, *, required: bool = False, per_eye: bool = False) -> Optional[np.ndarray]:
-        file_path = _find_file(name, per_eye)
+    def _load_csv(
+        name: str,
+        *,
+        required: bool = False,
+        per_eye: bool = False,
+        exclude: Sequence[str] = (),
+    ) -> Optional[np.ndarray]:
+        file_path = _find_file(name, per_eye, exclude=exclude)
+
         if file_path is None:
             if required:
                 raise FileNotFoundError(f"Required file matching '{name}' not found in {folder}")
@@ -163,7 +178,7 @@ def load_session_data(config: SessionConfig) -> SessionData:
     if data.go is not None:
         data.go_frame = data.go[:, 0].astype(int)
         data.go_time = data.go[:, 1]
-        data.go_direction_x = data.go[:, 2]
+        data.go_direction_x = -data.go[:, 2] #right is negative values
         data.go_direction_y = data.go[:, 3]
         # Optional: combined direction if present
         if data.go.shape[1] > 4:
@@ -182,22 +197,34 @@ def load_session_data(config: SessionConfig) -> SessionData:
     data.torsion = _load_csv("torsion", per_eye=True)
     data.vdaxis = _load_csv("vdaxis", per_eye=True)
     data.imu = _load_csv("imu")
-    data.end_of_trial = _load_csv("end_of_trial")
+    data.end_of_trial = _load_csv("end_of_trial", exclude=("early",))
     if data.end_of_trial is None:
-        data.end_of_trial = _load_csv("endoftrial")
+        data.end_of_trial = _load_csv("endoftrial", exclude=("early",))
 
     if data.end_of_trial is not None:
         arr = data.end_of_trial
+        ncol = arr.shape[1]
         data.end_of_trial_frame = arr[:, 0].astype(int)
         data.end_of_trial_ts = arr[:, 1].astype(float)
-        if arr.shape[1] > 2:
+        if ncol > 2:
             data.trial_stim_direction = arr[:, 2].astype(float)
-        if arr.shape[1] > 3:
+        if ncol > 3:
             data.trial_eye_movement_direction = arr[:, 3].astype(float)
-        if arr.shape[1] > 4:
+        if ncol >= 6:
             data.trial_torsion_angle = arr[:, 4].astype(float)
-        if arr.shape[1] > 5:
             data.trial_success = arr[:, 5].astype(int)
+        elif ncol == 5:
+            data.trial_torsion_angle = None
+            data.trial_success = arr[:, 4].astype(int)
+            
+        #which values mean "rewarded" is NOT determiend by columnt count: some 6-col sessions still log a plain 0/1 flag.
+        #so we decide from the observed code set instead. only 3-code reward code uses 2 for moved toward the target
+
+        if data.trial_success is not None:
+            codes = set(np.unique(data.trial_success).tolist())
+            data.trial_outcome_encoding = "code012" if 2 in codes else "bool"
+
+            
     data.cue = _load_csv("cue")
     if data.cue is not None:
         cue = data.cue

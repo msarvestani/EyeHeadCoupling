@@ -147,7 +147,7 @@ def find_first_saccade_per_trial(
         go_dir_x = go_dir_x[mask]
         end_frame = end_frame[mask]
 
-    go_dir_x = -np.array(go_dir_x, dtype=np.float64) #fixing target direction mapping
+    go_dir_x = np.array(go_dir_x, dtype=np.float64) #fixing target direction mapping
 
     saccade_frames = saccades["saccade_frames_xy"]
     saccade_indices = saccades["saccade_indices_xy"]
@@ -169,112 +169,6 @@ def find_first_saccade_per_trial(
         congruent.append(np.sign(dx[idx_first]) == np.sign(gdx))
 
     return np.array(latencies), np.array(congruent, dtype=bool)
-
-
-def session_max_trial_duration(
-    data: SessionData,
-    config,
-    mask: Optional[np.ndarray] = None,
-    default: float = 1.5,
-) -> float:
-    """Maximum trial duration for the session, in seconds, derived from data.
-
-    Uses the longest interval from target onset (``go_frame``) to trial end
-    (``end_of_trial_frame``). Trials in which the animal never made the
-    trial-ending saccade run to the task's time-out, so this maximum recovers
-    the response-window ceiling rather than a lone outlier. It is meant to be
-    computed once per session and used as the common upper time bound across
-    the PSTH, first-saccade latency, fraction-toward, and congruency analyses
-    so they all share the same window.
-
-    ``go_frame`` (target onset) and ``end_of_trial_frame`` (trial end) are
-    read from the session's ``*_go.csv`` and ``*_end_of_trial.csv`` files
-    respectively (loaded into ``data`` by :func:`eyehead.io.load_session_data`,
-    column 0 of each file), not computed here.
-
-    Falls back to ``default`` seconds if end-of-trial timing is unavailable.
-    """
-    if data.end_of_trial_frame is None:
-        warnings.warn(
-            "No end_of_trial data; using default max trial duration of "
-            f"{default}s for analysis windows."
-        )
-        return float(default)
-    dur = (
-        np.asarray(data.end_of_trial_frame) - np.asarray(data.go_frame)
-    ) / config.ttl_freq
-    if mask is not None:
-        dur = dur[mask]
-    dur = dur[np.isfinite(dur) & (dur > 0)]
-    if dur.size == 0:
-        return float(default)
-    return float(np.max(dur))
-
-
-def session_reward_window(
-    data: SessionData,
-    saccades: Dict[str, np.ndarray],
-    config,
-    mask: Optional[np.ndarray] = None,
-    max_latency: float = 1.5,
-) -> Optional[float]:
-    """Reward-window duration (s), derived from the data.
-
-    A saccade within the reward window is rewarded and ends the trial;
-    ``data.trial_success`` (the ``end_of_trial`` CSV's success column) logs
-    which trials were rewarded. This returns the **maximum first-saccade
-    latency among rewarded, congruent trials** — trials that were rewarded
-    (``trial_success > 0``) *and* whose first saccade went toward the target
-    (same congruency definition as :func:`find_first_saccade_per_trial`) —
-    i.e. the latest a correct rewarded response occurred, which recovers the
-    reward-window cut-off.
-
-    Returns ``None`` if ``trial_success`` is unavailable or no such trial has a
-    detectable first saccade, so callers can fall back (e.g. to
-    ``saccade_win``).
-    """
-    trial_success = data.trial_success
-    if trial_success is None:
-        return None
-    ttl_freq = config.ttl_freq
-    go_frame = np.asarray(data.go_frame)
-    end_frame = data.end_of_trial_frame
-    if end_frame is None:
-        end_frame = go_frame + max_latency * ttl_freq
-    end_frame = np.asarray(end_frame)
-    trial_success = np.asarray(trial_success)
-    go_dir_x = np.asarray(data.go_direction_x)
-    if mask is not None:
-        go_frame = go_frame[mask]
-        end_frame = end_frame[mask]
-        trial_success = trial_success[mask]
-        go_dir_x = go_dir_x[mask]
-
-    go_dir_x = -go_dir_x.astype(np.float64)  # fixing target direction mapping
-
-    saccade_frames = saccades["saccade_frames_xy"]
-    saccade_indices = saccades["saccade_indices_xy"]
-    dx = saccades["eye_vel"][:, 0]
-
-    rewarded_latencies = []
-    for f, end_f, succ, gdx in zip(go_frame, end_frame, trial_success, go_dir_x):
-        if not (succ > 0):
-            continue
-        valid = (saccade_frames > f) & (saccade_frames < end_f)
-        if not np.any(valid):
-            continue
-        rel = (saccade_frames[valid] - f) / ttl_freq
-        first = np.argmin(rel)
-        if rel[first] > max_latency:
-            continue
-        idx_first = saccade_indices[valid][first]
-        if np.sign(dx[idx_first]) != np.sign(gdx):
-            continue  # first saccade not toward the target
-        rewarded_latencies.append(float(rel[first]))
-
-    if not rewarded_latencies:
-        return None
-    return float(np.max(rewarded_latencies))
 
 
 def first_saccade_indices_by_direction(
@@ -379,7 +273,7 @@ def find_precue_saccade_per_trial(
         go_frame = go_frame[mask]
         go_dir_x = go_dir_x[mask]
 
-    go_dir_x = -np.array(go_dir_x, dtype=np.float64)  # fixing target direction mapping
+    go_dir_x = np.array(go_dir_x, dtype=np.float64)  # fixing target direction mapping
 
     saccade_frames = saccades["saccade_frames_xy"]
     saccade_indices = saccades["saccade_indices_xy"]
@@ -487,7 +381,7 @@ def analyze_latency_by_outcome(
         end_frame = end_frame[mask]
 
 
-    go_dir_x = -np.array(go_dir_x, dtype=np.float64)  # fixing target direction mapping
+    go_dir_x = np.array(go_dir_x, dtype=np.float64)  # fixing target direction mapping
 
     saccade_frames = saccades["saccade_frames_xy"]
     saccade_indices = saccades["saccade_indices_xy"]
@@ -756,26 +650,23 @@ def main(session_id: str) -> pd.DataFrame:
     )
     mask_horizontal = data.go_direction_x != 0
 
-    # Single per-session max trial duration (target onset -> trial end),
-    # derived from the data, used as the common upper time bound across all
-    # of the analyses below so they share one window. This is the full trial
-    # (~time-out); the shorter rewarded epoch (saccade_win) is drawn on the
-    # plots as a marker for reference.
-    max_trial_time = session_max_trial_duration(data, config, mask=mask_horizontal)
 
-    # Reward window derived from the data: the max first-saccade latency among
-    # rewarded trials (logged trial_success). Falls back to the configured
-    # saccade_win only if trial_success is unavailable.
-    reward_window = session_reward_window(
-        data, saccades, config, mask=mask_horizontal, max_latency=max_trial_time
-    )
+    # Reward window from the manifest's reward_contingency (per-session
+    # override merged over the global default in session_manifest.yml), not
+    # derived from data.
+    reward_contingency = config.params.get("reward_contingency") or {}
+    reward_window = reward_contingency.get("reward_window")
     if reward_window is None:
         warnings.warn(
-            "Could not derive reward window from trial_success; "
+            "No reward_window configured in reward_contingency; "
             "falling back to saccade_win for the reward-window marker."
         )
         reward_window = saccade_cfg.saccade_win
 
+    # Single per-session max trial duration (target onset -> trial end), used as the common upper time bound across all
+    # of the analyses below so they share one window. 
+    max_trial_time = reward_window
+    
     first_saccades = first_saccade_indices_by_direction(
         data, saccades, config, max_latency=max_trial_time
     )

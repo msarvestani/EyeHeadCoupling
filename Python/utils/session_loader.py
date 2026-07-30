@@ -150,8 +150,10 @@ def load_session(session_id: str) -> SessionConfig:
     if "max_interval_fixations" not in params and default_max_interval is not None:
         params["max_interval_fixations"] = default_max_interval
 
-    if "reward_contingency" not in params and default_reward_contingency is not None:
-        params["reward_contingency"] = default_reward_contingency
+    session_reward_contingency: Dict[str, Any] = session_params.get("reward_contingency", {})
+    merged_reward_contingency = {**(default_reward_contingency or {}), **session_reward_contingency}
+    if merged_reward_contingency:
+        params["reward_contingency"] = merged_reward_contingency
 
     if "experiment_type" not in params and default_experiment_type is not None:
         params["experiment_type"] = default_experiment_type

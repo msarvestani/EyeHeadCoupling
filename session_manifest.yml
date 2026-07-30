@@ -11,9 +11,12 @@ saccade_config:
   blink_detection: 1
   saccade_win: 0.7
 
+#prosaccade session
+experiment_type: prosaccade #default session type when not overridden per-session below  
+
 reward_contingency:
   reward_angle: 35 #half-width, in degrees, of the rewarded zone around the target direction
-experiment_type: prosaccade #default session type when not overridden per-session below  
+  reward_window: 0.7 #reward window in seconds
 
 sessions:
 
@@ -334,6 +337,8 @@ sessions:
     params:
       saccade_config:
         saccade_threshold: 2.0
+      reward_contingency:
+        reward_window: 1.5 #reward window in seconds
 
  Tsh002_2025-11-03T11_58_17:
     experiment_type: prosaccade
@@ -344,7 +349,8 @@ sessions:
     params:
       saccade_config:
         saccade_threshold: 2.0
-
+      reward_contingency:
+        reward_window: 1.5 #reward window in seconds
 
  Tsh002_2025-11-10T14_59_24:
     experiment_type: prosaccade
@@ -355,6 +361,8 @@ sessions:
     params:
       saccade_config:
         saccade_threshold: 2.0
+      reward_contingency:
+        reward_window: 1.5 #reward window in seconds
       
 
 #Paris (first saccade in the direction of the target ends the task, reward window is 0.7 secs)
@@ -370,6 +378,8 @@ sessions:
     params:
       saccade_config:
         saccade_threshold: 2.0
+      reward_contingency:
+          reward_window: 0.75 #reward window in seconds
 
  #great
  Tsh001_2025-07-08T15_04_12:
@@ -380,7 +390,9 @@ sessions:
     camera_side: L
     params:
       saccade_config:
-        saccade_threshold: 2.0   
+        saccade_threshold: 2.0
+      reward_contingency:
+          reward_window: 0.75 #reward window in seconds
 
 #great!
  Tsh001_2025-07-13T18_19_05:
@@ -392,6 +404,8 @@ sessions:
     params:
       saccade_config:
         saccade_threshold: 2.0
+      reward_contingency:
+          reward_window: 0.75 #reward window in seconds
 
 #excluding 7/14-7/15 data because we were experiment with monitor height
 
@@ -404,7 +418,9 @@ sessions:
     camera_side: L
     params:
       saccade_config:
-        saccade_threshold: 2.0  
+        saccade_threshold: 2.0
+      reward_contingency:
+          reward_window: 0.75 #reward window in seconds
 
  #this has L/R & U/D targets, great!
  Tsh001_2025-07-18T14_57_23:
@@ -415,7 +431,9 @@ sessions:
     camera_side: L
     params:
       saccade_config:
-        saccade_threshold: 2.0  
+        saccade_threshold: 2.0
+      reward_contingency:
+          reward_window: 0.75 #reward window in seconds
       
  #this has L/R & U/D targets, great!
  Tsh001_2025-07-22T15_02_57:
@@ -426,7 +444,9 @@ sessions:
     camera_side: L
     params:
       saccade_config:
-        saccade_threshold: 2.0  
+        saccade_threshold: 2.0
+      reward_contingency:
+          reward_window: 0.75 #reward window in seconds
 
  #this has L/R & U/D targets, great!
  Tsh001_2025-07-22T15_25_56:
@@ -437,7 +457,9 @@ sessions:
     camera_side: L
     params:
       saccade_config:
-        saccade_threshold: 2.0  
+        saccade_threshold: 2.0
+      reward_contingency:
+          reward_window: 0.75 #reward window in seconds
 
  #this has L/R & U/D targets, good
  Tsh001_2025-07-23T16_20_03:
@@ -448,7 +470,9 @@ sessions:
     camera_side: L
     params:
       saccade_config:
-        saccade_threshold: 2.0  
+        saccade_threshold: 2.0
+      reward_contingency:
+          reward_window: 0.75 #reward window in seconds
 
  #this has L/R & U/D targets, good
  Tsh001_2025-07-29T16_36_12:
@@ -459,6 +483,8 @@ sessions:
     camera_side: L
     params:
       saccade_config:
-        saccade_threshold: 2.0  
+        saccade_threshold: 2.0
+      reward_contingency:
+          reward_window: 0.75 #reward window in seconds
 
 #Targets are L/R, randomly presented
