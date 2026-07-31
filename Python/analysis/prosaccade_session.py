@@ -336,7 +336,7 @@ def session_acceptance_angle(
     scoring_mode: str,
     mask: Optional[np.ndarray] = None,
     percentile: float = 90.0,
-    tolerance: float = 0.50,
+    tolerance: float = 0.80,
 ) -> Optional[float]:
     """Acceptance angle (deg), derived from the data, as a QC cross-check.
 
@@ -523,7 +523,7 @@ def first_saccade_indices_by_direction(
     acceptance_angle_deg: float,
     max_latency: float,
     scoring_mode: str,
-) -> Dict[str, np.ndarray]:
+) -> Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray]]:
     """First-saccade eye indices per trial, grouped by stimulus direction.
 
     Selects, for every trial, the saccade the rig actually scored the trial
@@ -537,8 +537,18 @@ def first_saccade_indices_by_direction(
     stream only. Torsional saccade grouping is out of scope here.
 
     Trials are grouped into direction labels exactly as :func:`organize_stims`
-    groups them, so the returned dict can be dropped straight into
+    groups them, so the returned dicts can be dropped straight into
     :func:`eyehead.sort_saccades` in place of its fixed-window search.
+
+    Returns
+    -------
+    indices_by_direction : dict
+        Direction label -> eye-position indices of the scored saccade.
+    congruent_by_direction : dict
+        Same keys/order as ``indices_by_direction``; whether each of those
+        saccades was the calculated "correct" outcome (within
+        ``acceptance_angle_deg`` of the target) — lets callers recolor
+        plots by correctness instead of direction.
     """
     ttl_freq = config.ttl_freq
     go_frame = data.go_frame
@@ -555,7 +565,7 @@ def first_saccade_indices_by_direction(
     saccade_frames = saccades.get("saccade_frames_xy")
     saccade_indices = saccades.get("saccade_indices_xy")
     if saccade_frames is None or saccade_indices is None or len(saccade_frames) == 0:
-        return {}
+        return {}, {}
     saccade_frames = np.asarray(saccade_frames)
     saccade_indices = np.asarray(saccade_indices)
     dx = saccades["eye_vel"][:, 0]
@@ -565,6 +575,7 @@ def first_saccade_indices_by_direction(
     go_dir_y_f = np.array(go_dir_y, dtype=np.float64)
 
     first_idx = np.full(len(go_frame), -1, dtype=int)
+    first_congruent = np.zeros(len(go_frame), dtype=bool)
     for i, (f, end_f, gdx, gdy) in enumerate(zip(go_frame, end_frame, go_dir_x_f, go_dir_y_f)):
         valid = (saccade_frames > f) & (saccade_frames < end_f)
         if not np.any(valid):
@@ -574,25 +585,36 @@ def first_saccade_indices_by_direction(
         in_latency = rel_valid <= max_latency
         if not np.any(in_latency):
             continue
-        idx_chosen, _, _ = _find_scored_saccade(
+        idx_chosen, _, is_congruent = _find_scored_saccade(
             rel_valid[in_latency], idx_valid[in_latency], dx, dy, gdx, gdy,
             acceptance_angle_deg, scoring_mode,
         )
         first_idx[i] = idx_chosen
+        first_congruent[i] = is_congruent
 
     have = first_idx >= 0
     groups: Dict[str, np.ndarray] = {}
+    congruent_groups: Dict[str, np.ndarray] = {}
     if go_dir_x is not None and np.any(np.asarray(go_dir_x) != 0):
         go_dir_x = np.asarray(go_dir_x)
-        groups["Left"] = first_idx[have & (go_dir_x < 0)]
-        groups["Right"] = first_idx[have & (go_dir_x > 0)]
+        sel_left = have & (go_dir_x < 0)
+        sel_right = have & (go_dir_x > 0)
+        groups["Left"] = first_idx[sel_left]
+        groups["Right"] = first_idx[sel_right]
+        congruent_groups["Left"] = first_congruent[sel_left]
+        congruent_groups["Right"] = first_congruent[sel_right]
     if go_dir_y is not None and np.any(np.asarray(go_dir_y) != 0):
         go_dir_y = np.asarray(go_dir_y)
-        groups["Down"] = first_idx[have & (go_dir_y < 0)]
-        groups["Up"] = first_idx[have & (go_dir_y > 0)]
+        sel_down = have & (go_dir_y < 0)
+        sel_up = have & (go_dir_y > 0)
+        groups["Down"] = first_idx[sel_down]
+        groups["Up"] = first_idx[sel_up]
+        congruent_groups["Down"] = first_congruent[sel_down]
+        congruent_groups["Up"] = first_congruent[sel_up]
     if not groups:
         groups["All"] = first_idx[have]
-    return groups
+        congruent_groups["All"] = first_congruent[have]
+    return groups, congruent_groups
 
 def find_precue_saccade_per_trial(
     data: SessionData,
@@ -890,7 +912,6 @@ def calculate_trial_success(
     return calculated_success
 
 
-
 def plot_latency_by_outcome(
     result: Dict[str, np.ndarray],
     config,
@@ -925,6 +946,51 @@ def plot_latency_by_outcome(
     ax_hist.set_title(
         f"Correct = saccade toward target\n{n_correct} correct, {n_incorrect} incorrect"
     )
+
+    def _mark_reward(ax):
+        if reward_window is None:
+            return
+        ax.axvspan(0, reward_window, color="gold", alpha=0.12, lw=0)
+        ax.axvline(reward_window, color="goldenrod", ls=":", lw=1.2,
+                   label=f"reward window ({reward_window:g}s)")
+
+    _mark_reward(ax_hist)
+    ax_hist.legend(fontsize=8)
+
+    def _cdf(ax, values, color, label):
+        if values.size == 0:
+            return
+        x = np.sort(values)
+        y = np.arange(1, x.size + 1) / x.size
+        ax.step(x, y, where="post", color=color, label=label)
+
+    _cdf(ax_cdf, correct, "tab:green", "correct")
+    _cdf(ax_cdf, incorrect, "tab:red", "incorrect")
+    _mark_reward(ax_cdf)
+    ax_cdf.set_ylim(0, 1)
+    ax_cdf.set_xlabel("First-saccade latency (s)")
+    ax_cdf.set_ylabel("Cumulative fraction")
+    ax_cdf.set_title("Latency CDF")
+    ax_cdf.legend(fontsize=8)
+
+    reward_txt = ""
+    if reward_window is not None and len(latencies):
+        within = float(np.mean(latencies <= reward_window))
+        reward_txt = f"  —  {within:.0%} of first saccades within reward window (≤{reward_window:g}s)"
+
+    fig.suptitle(
+        f"{config.animal_name or ''} {config.session_name}  —  "
+        f"{result['n_total']} trials, {len(latencies)} with a saccade, "
+        f"{n_no_saccade} excluded (no saccade){reward_txt}"
+    )
+    fig.tight_layout()
+    fig.savefig(config.results_dir / f"{config.session_name}_latency_by_outcome.png",
+                dpi=300, bbox_inches="tight")
+    if show_plots:
+        plt.show()
+    plt.close(fig)
+    return fig
+
 
 def plot_trial_success_agreement(
     calculated_success: np.ndarray,
@@ -962,10 +1028,14 @@ def plot_trial_success_agreement(
     ax.set_yticks([])
     ax.set_xlabel("Trial index")
     pct_agree = 100 * np.mean(agree) if n else float("nan")
+    pct_rig = 100 * np.mean(rig_success) if n else float("nan")
+    pct_calc = 100 * np.mean(calculated_success) if n else float("nan")
+
     ax.set_title(
         f"{config.animal_name or ''} {config.session_name} — calculated vs. rig trial outcome "
-        f"({pct_agree:.1f}% agreement, {int(np.sum(~agree))}/{n} disagree)"
-    )
+        f"({pct_agree:.1f}% agreement, {int(np.sum(~agree))}/{n} disagree)\n"
+        f"% correct — rig: {pct_rig:.1f}%, calculated: {pct_calc:.1f}%",
+        fontsize=10, wrap=True)
     fig.tight_layout()
     fig.savefig(config.results_dir / f"{config.session_name}_trial_success_agreement.png",
                 dpi=300, bbox_inches="tight")
@@ -973,6 +1043,7 @@ def plot_trial_success_agreement(
         plt.show()
     plt.close(fig)
     return fig
+
 
 
     def _mark_reward(ax):
@@ -1222,7 +1293,7 @@ def main(session_id: str) -> pd.DataFrame:
     max_trial_time = reward_window
 
     
-    first_saccades = first_saccade_indices_by_direction(
+    first_saccades, first_saccades_congruent = first_saccade_indices_by_direction(
         data, saccades, config, acceptance_angle_deg=acceptance_angle,
         max_latency=max_trial_time, scoring_mode=scoring_mode,
     )
@@ -1230,6 +1301,7 @@ def main(session_id: str) -> pd.DataFrame:
     sorted_data,left_angle,right_angle,fig_sorted, _ = sort_saccades(
         config, saccade_cfg, saccades, stim_type=stim_type,
         first_saccade_indices=first_saccades,
+        first_saccade_congruent=first_saccades_congruent,
         plot=True,
     )
 

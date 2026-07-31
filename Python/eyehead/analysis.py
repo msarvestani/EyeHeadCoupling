@@ -561,14 +561,22 @@ def sort_saccades(
     first_saccade_indices: Dict[str, np.ndarray],
     stim_type: str = "None",
     first_saccade_indices_theta: Optional[Dict[str, np.ndarray]] = None,
+    first_saccade_congruent: Optional[Dict[str, np.ndarray]] = None,
     plot: bool = False,
 ) -> Dict[str, np.ndarray] | Tuple[Dict[str, np.ndarray], plt.Figure, Tuple[plt.Axes, plt.Axes, plt.Axes]]:
+    
     """Sort saccades by stimulus and optionally plot summaries.
 
     Parameters
     ----------
     config, saccade_config, saccades, stim_type :
         Same as in the original :func:`sort_plot_saccades`.
+    first_saccade_congruent : dict, optional
+        Direction label -> boolean array (same keys/order as
+        ``first_saccade_indices``) marking whether each saccade was the
+        calculated "correct" outcome. When provided, the per-condition
+        quiver plots are colored green (correct) / red (incorrect) instead
+        of by saccade angle.
     first_saccade_indices : dict
         Mapping of stimulus-direction label (``"Left"``, ``"Right"``, ...) to
         the eye-position indices of each trial's first saccade in the online
@@ -715,9 +723,18 @@ def sort_saccades(
         if label == "All":
             continue
 
-        idx_use = np.asarray(first_saccade_indices.get(label, []), dtype=int)
-        if idx_use.size:
-            idx_use = idx_use[mask[idx_use]]
+        idx_use_raw = np.asarray(first_saccade_indices.get(label, []), dtype=int)
+        congruent_use = (
+            np.asarray(first_saccade_congruent.get(label, []), dtype=bool)
+            if first_saccade_congruent is not None else None
+        )
+        if idx_use_raw.size:
+            keep = mask[idx_use_raw]
+            idx_use = idx_use_raw[keep]
+            if congruent_use is not None:
+                congruent_use = congruent_use[keep]
+        else:
+            idx_use = idx_use_raw
         if idx_use.size == 0:
             continue
         sorted_data[label] = idx_use
@@ -741,7 +758,12 @@ def sort_saccades(
                 f"{session_name}\n{eye_name} — {label} (n={n_cond})\n{_win_note}"
             )
 
-            cols = np.array([vector_to_rgb(a) for a in ang])
+            #color code isc orrect (green) vs incorrect (red)
+            if congruent_use is not None:
+                cols = np.where(congruent_use, "tab:green", "tab:red")
+            else:
+                cols = np.array([vector_to_rgb(a) for a in ang])
+
             ax_q.quiver(
                 eye_pos[idx_use, 0],
                 eye_pos[idx_use, 1],
@@ -759,7 +781,7 @@ def sort_saccades(
 
             if torsion_present and saccade_indices_theta is not None and first_saccade_indices_theta is not None:
                 idx_use_t = np.asarray(first_saccade_indices_theta.get(label, []), dtype=int)
-                
+
                 if idx_use_t.size:
                     idx_use_t = idx_use_t[mask[idx_use_t]]
 
