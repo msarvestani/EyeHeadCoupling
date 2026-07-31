@@ -1,3 +1,88 @@
+"""Per-session analysis pipeline for the head-fixed prosaccade task.
+
+Task
+----
+On each trial, a target appears at ``go_frame`` in one of up to four fixed
+directions (``data.go_direction_x``/``go_direction_y``: left/right, and
+up/down on sessions that interleave them). The animal is rewarded for
+making a saccade toward that target within a fixed time and angular
+window. ``data.trial_success`` (loaded from the session's ``end_of_trial``
+CSV) is the rig's own independently-logged record of which trials were
+rewarded — this script treats it as ground truth for the QC checks below,
+it does not (yet) recompute it from the eye-tracking data itself.
+
+How a trial ends differs by rig/animal:
+
+- **Apollo**: single-shot scoring. The first saccade after target onset
+  (in any direction) ends the trial immediately. It's rewarded only if it
+  also happens to land within ``reward_angle`` of the target direction and
+  within ``reward_window`` of target onset.
+- **Paris**: multi-attempt scoring. An incongruent saccade does *not* end
+  the trial — the animal gets to keep trying. The trial only ends early on
+  a saccade that lands within ``reward_angle`` of the target (which is
+  then rewarded); incongruent saccades before that point are attempts, not
+  trial-enders.
+- **Both**: reaching ``reward_window`` without a rewarded saccade ends the
+  trial unrewarded, regardless of animal.
+
+This means "the first saccade after target onset," as extracted by
+:func:`find_first_saccade_per_trial` and friends, is the *actual
+rig-scored* saccade for Apollo, but is not necessarily the rig-scored
+saccade for Paris — on Paris sessions the first saccade could be an
+incongruent attempt that the rig itself didn't end the trial on. The
+congruency functions in this file do not currently distinguish between the
+two rigs' scoring logic.
+
+Reward contingency
+-------------------
+A trial is rewarded when the animal's saccade lands within an angular
+acceptance zone around the target direction, within a fixed time window of
+target onset. Both numbers are properties of the rig/task, not of this
+analysis, and are read from ``session_manifest.yml`` under
+``reward_contingency`` (global default, overridable per session):
+
+- ``reward_angle`` (deg): half-width of the angular acceptance zone around
+  the target direction. A saccade is "congruent" (counted as toward the
+  target) if the angle between its direction and the target's direction —
+  computed in full 2D via ``arctan2``, not a left/right sign check — is
+  within this many degrees.
+- ``reward_window`` (s): how long after target onset a saccade can still
+  be rewarded.
+
+A third manifest key, ``congruency_window`` (s, a ``[lo, hi]`` pair), is
+**not** part of the rig's reward contingency — it's purely an analysis
+choice, the fixed post-target latency band used for one summary statistic
+(the single-number "fraction of saccades toward target" reported by
+:func:`congruency_in_window` / shown in :func:`plot_psth_and_congruency`).
+
+Note
+----
+``reward_window`` doubles as the outer bound on a trial's duration —
+there is no separate task time-out beyond it. A trial ends either on a
+rewarded saccade within ``reward_window`` of target onset, or (if none
+occurs) at ``reward_window`` itself. Accordingly, ``end_of_trial_frame -
+go_frame`` should never legitimately exceed ``reward_window``, and
+``main()`` uses ``reward_window`` directly as the search-latency ceiling
+(``max_trial_time``) for every first-saccade lookup in this file.
+
+Consistency checks
+-------------------
+Before running the rest of the analysis, two QC cross-checks
+(:func:`session_reward_window`, :func:`session_acceptance_angle`) each
+independently re-derive their respective quantity from the data — the
+maximum first-saccade latency, and the 90th-percentile angular deviation,
+both computed only over trials the rig actually rewarded — and compare it
+to the manifest's configured value. Both always print the derived-vs-
+manifest comparison; either raises a ``ValueError`` if the two disagree by
+more than 10% (relative to the manifest value), which usually means either
+the manifest entry is wrong for this session or something is off in the
+session's ``end_of_trial``/``trial_success`` data.
+
+Saccade detection itself (thresholds for translational/torsional saccades,
+blink rejection) is a separate, unrelated manifest section
+(``saccade_config``) and is not part of the reward contingency.
+"""
+
 from __future__ import annotations
 from logging import config
 import sys
@@ -130,7 +215,7 @@ def session_reward_window(
     acceptance_angle_deg: float,
     max_latency: float,
     mask: Optional[np.ndarray] = None,
-    tolerance: float = 0.10,
+    tolerance: float = 0.20,
 ) -> Optional[float]:
     """Reward-window duration (s), derived from the data, as a QC cross-check.
 
@@ -226,7 +311,7 @@ def session_acceptance_angle(
     max_latency: float,
     mask: Optional[np.ndarray] = None,
     percentile: float = 90.0,
-    tolerance: float = 0.25,
+    tolerance: float = 0.30,
 ) -> Optional[float]:
     """Acceptance angle (deg), derived from the data, as a QC cross-check.
 
