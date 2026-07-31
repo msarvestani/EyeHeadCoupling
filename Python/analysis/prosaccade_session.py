@@ -648,6 +648,7 @@ def main(session_id: str) -> pd.DataFrame:
 
         }
     )
+    #disregard Up/Down target trials if they exist
     mask_horizontal = data.go_direction_x != 0
 
 
