@@ -13,6 +13,7 @@ reward_contingency:
   reward_angle: 35 #half-width, in degrees, of the rewarded zone around the target direction
   reward_window: 0.7 #reward window in seconds
   congruency_window: [0.15, 0.45]  #fixed latency band (s, post target-onset) for the single-number "fraction toward target" congruency summary stat
+  scoring_mode: single_shot
 
 #for fixation experiments
 max_interval_fixations: 1.0 #this is how long we count a fixation of 0.7 sec valid after cue is presented.......
@@ -326,7 +327,7 @@ sessions:
       saccade_config:
         saccade_threshold: 1.0
 
-############################################################  Prosaccade sessions
+############################################################################  Prosaccade sessions
 #Apollo (first saccade ends the task, saccades in the direction of target are rewarded. reward window is 1.5 secs).
 #Targets are L/R, randomly presented
  Tsh002_2025-10-30T15_38_57:
@@ -340,6 +341,7 @@ sessions:
         saccade_threshold: 2.0
       reward_contingency:
         reward_window: 1.5 #reward window in seconds
+        scoring_mode: single_shot
 
  Tsh002_2025-11-03T11_58_17:
     experiment_type: prosaccade
@@ -352,6 +354,7 @@ sessions:
         saccade_threshold: 2.0
       reward_contingency:
         reward_window: 1.5 #reward window in seconds
+        scoring_mode: single_shot
 
  Tsh002_2025-11-10T14_59_24:
     experiment_type: prosaccade
@@ -364,9 +367,10 @@ sessions:
         saccade_threshold: 2.0
       reward_contingency:
         reward_window: 1.5 #reward window in seconds
+        scoring_mode: single_shot
       
 
-#Paris (first saccade in the direction of the target ends the task, reward window is 0.7 secs)
+#Paris (first CORRECT saccade in the direction of the target ends the task, reward window is 0.7 secs)
 #Targets are L/R, randomly presented
 
 #great
@@ -381,6 +385,7 @@ sessions:
         saccade_threshold: 2.0
       reward_contingency:
           reward_window: 0.75 #reward window in seconds
+          scoring_mode: multi_attempt
 
  #great
  Tsh001_2025-07-08T15_04_12:
@@ -394,6 +399,7 @@ sessions:
         saccade_threshold: 2.0
       reward_contingency:
           reward_window: 0.75 #reward window in seconds
+          scoring_mode: multi_attempt
 
 #great!
  Tsh001_2025-07-13T18_19_05:
@@ -407,6 +413,7 @@ sessions:
         saccade_threshold: 2.0
       reward_contingency:
           reward_window: 0.75 #reward window in seconds
+          scoring_mode: multi_attempt
 
 #excluding 7/14-7/15 data because we were experiment with monitor height
 
@@ -422,6 +429,7 @@ sessions:
         saccade_threshold: 2.0
       reward_contingency:
           reward_window: 0.75 #reward window in seconds
+          scoring_mode: multi_attempt
 
  #this has L/R & U/D targets, great!
  Tsh001_2025-07-18T14_57_23:
@@ -435,6 +443,7 @@ sessions:
         saccade_threshold: 2.0
       reward_contingency:
           reward_window: 0.75 #reward window in seconds
+          scoring_mode: multi_attempt
       
  #this has L/R & U/D targets, so great!
  Tsh001_2025-07-22T15_02_57:
@@ -448,6 +457,7 @@ sessions:
         saccade_threshold: 2.0
       reward_contingency:
           reward_window: 0.75 #reward window in seconds
+          scoring_mode: multi_attempt
 
  #this has L/R & U/D targets, great!
  Tsh001_2025-07-22T15_25_56:
@@ -461,6 +471,7 @@ sessions:
         saccade_threshold: 2.0
       reward_contingency:
           reward_window: 0.75 #reward window in seconds
+          scoring_mode: multi_attempt
 
  #this has L/R & U/D targets, good
  Tsh001_2025-07-23T16_20_03:
@@ -474,6 +485,7 @@ sessions:
         saccade_threshold: 2.0
       reward_contingency:
           reward_window: 0.75 #reward window in seconds
+          scoring_mode: multi_attempt
 
  #this has L/R & U/D targets, good
  Tsh001_2025-07-29T16_36_12:
@@ -487,5 +499,6 @@ sessions:
         saccade_threshold: 2.0
       reward_contingency:
           reward_window: 0.75 #reward window in seconds
+          scoring_mode: multi_attempt
 
 #Targets are L/R, randomly presented

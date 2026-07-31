@@ -214,6 +214,7 @@ def session_reward_window(
     config,
     acceptance_angle_deg: float,
     max_latency: float,
+    scoring_mode: str,
     mask: Optional[np.ndarray] = None,
     tolerance: float = 0.20,
 ) -> Optional[float]:
@@ -271,14 +272,18 @@ def session_reward_window(
         valid = (saccade_frames > f) & (saccade_frames < end_f)
         if not np.any(valid):
             continue
-        rel = (saccade_frames[valid] - f) / ttl_freq
-        first = np.argmin(rel)
-        if rel[first] > max_latency:
+        rel_valid = (saccade_frames[valid] - f) / ttl_freq
+        idx_valid = saccade_indices[valid]
+        in_latency = rel_valid <= max_latency
+        if not np.any(in_latency):
             continue
-        idx_first = saccade_indices[valid][first]
-        if _angular_deviation_deg(dx[idx_first], dy[idx_first], gdx, gdy) > acceptance_angle_deg:
-            continue  # first saccade not within the acceptance angle
-        rewarded_latencies.append(float(rel[first]))
+        _, latency, is_congruent = _find_scored_saccade(
+            rel_valid[in_latency], idx_valid[in_latency], dx, dy, gdx, gdy,
+            acceptance_angle_deg, scoring_mode,
+        )
+        if not is_congruent:
+            continue  # rig marked this rewarded, but no attempt actually was congruent — don't corrupt the estimate
+        rewarded_latencies.append(latency)
 
     if not rewarded_latencies:
         return None
@@ -309,6 +314,8 @@ def session_acceptance_angle(
     saccades: Dict[str, np.ndarray],
     config,
     max_latency: float,
+    acceptance_angle_deg: float,
+    scoring_mode: str,
     mask: Optional[np.ndarray] = None,
     percentile: float = 90.0,
     tolerance: float = 0.30,
@@ -367,12 +374,18 @@ def session_acceptance_angle(
         valid = (saccade_frames > f) & (saccade_frames < end_f)
         if not np.any(valid):
             continue
-        rel = (saccade_frames[valid] - f) / ttl_freq
-        first = np.argmin(rel)
-        if rel[first] > max_latency:
+        rel_valid = (saccade_frames[valid] - f) / ttl_freq
+        idx_valid = saccade_indices[valid]
+        in_latency = rel_valid <= max_latency
+        if not np.any(in_latency):
             continue
-        idx_first = saccade_indices[valid][first]
-        deviations.append(_angular_deviation_deg(dx[idx_first], dy[idx_first], gdx, gdy))
+        idx_chosen, _, is_congruent = _find_scored_saccade(
+            rel_valid[in_latency], idx_valid[in_latency], dx, dy, gdx, gdy,
+            acceptance_angle_deg, scoring_mode,
+        )
+        if not is_congruent:
+            continue
+        deviations.append(_angular_deviation_deg(dx[idx_chosen], dy[idx_chosen], gdx, gdy))
 
     if not deviations:
         return None
@@ -405,6 +418,7 @@ def find_first_saccade_per_trial(
     config,
     acceptance_angle_deg: float,
     max_latency: float,
+    scoring_mode: str,
     mask: Optional[np.ndarray] = None,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Latency and target-congruency of the first saccade in each trial.
@@ -466,17 +480,20 @@ def find_first_saccade_per_trial(
 
     latencies, congruent = [], []
     for f, gdx, gdy, end_f in zip(go_frame, go_dir_x, go_dir_y, end_frame):
-        # only saccades after target onset and before this trial actually ends
         valid = (saccade_frames > f) & (saccade_frames < end_f)
         if not np.any(valid):
             continue
         rel_valid = (saccade_frames[valid] - f) / ttl_freq
-        first = np.argmin(rel_valid)
-        if rel_valid[first] > max_latency:
+        idx_valid = saccade_indices[valid]
+        in_latency = rel_valid <= max_latency
+        if not np.any(in_latency):
             continue
-        idx_first = saccade_indices[valid][first]
-        latencies.append(rel_valid[first])
-        congruent.append(_angular_deviation_deg(dx[idx_first], dy[idx_first], gdx, gdy) <= acceptance_angle_deg)
+        _, latency, is_congruent = _find_scored_saccade(
+            rel_valid[in_latency], idx_valid[in_latency], dx, dy, gdx, gdy,
+            acceptance_angle_deg, scoring_mode,
+        )
+        latencies.append(latency)
+        congruent.append(is_congruent)
 
     return np.array(latencies), np.array(congruent, dtype=bool)
 
@@ -485,25 +502,21 @@ def first_saccade_indices_by_direction(
     data: SessionData,
     saccades: Dict[str, np.ndarray],
     config,
+    acceptance_angle_deg: float,
     max_latency: float,
-    frames_key: str = "saccade_frames_xy",
-    indices_key: str = "saccade_indices_xy",
+    scoring_mode: str,
 ) -> Dict[str, np.ndarray]:
     """First-saccade eye indices per trial, grouped by stimulus direction.
 
-    Selects, for every trial, the *first* saccade in the same reward window
-    used by :func:`find_first_saccade_per_trial` /
-    :func:`analyze_latency_by_outcome` — i.e. between target onset
-    (``go_frame``) and that trial's actual end (``end_of_trial_frame``),
-    capped at ``max_latency`` — and returns the corresponding index into the
-    eye-position arrays. This is the same saccade the online task scored for
-    reward.
+    Selects, for every trial, the saccade the rig actually scored the trial
+    on — see :func:`_find_scored_saccade` for the ``scoring_mode``-dependent
+    definition (``single_shot``: the first saccade, any direction;
+    ``multi_attempt``: the first congruent saccade, or the last attempt if
+    none was congruent) — and returns the corresponding index into the
+    eye-position arrays.
 
-    ``frames_key`` / ``indices_key`` select which saccade stream to search:
-    the translational stream (``saccade_frames_xy`` / ``saccade_indices_xy``,
-    the default) or the torsional stream (``saccade_frames_theta`` /
-    ``saccade_indices_theta``). Returns an empty dict if that stream is absent
-    or empty.
+    Operates on the translational (``saccade_frames_xy`` / ``eye_vel``)
+    stream only. Torsional saccade grouping is out of scope here.
 
     Trials are grouped into direction labels exactly as :func:`organize_stims`
     groups them, so the returned dict can be dropped straight into
@@ -521,23 +534,33 @@ def first_saccade_indices_by_direction(
         )
         end_frame = go_frame + max_latency * ttl_freq
 
-    saccade_frames = saccades.get(frames_key)
-    saccade_indices = saccades.get(indices_key)
+    saccade_frames = saccades.get("saccade_frames_xy")
+    saccade_indices = saccades.get("saccade_indices_xy")
     if saccade_frames is None or saccade_indices is None or len(saccade_frames) == 0:
         return {}
     saccade_frames = np.asarray(saccade_frames)
     saccade_indices = np.asarray(saccade_indices)
+    dx = saccades["eye_vel"][:, 0]
+    dy = saccades["eye_vel"][:, 1]
+
+    go_dir_x_f = np.array(go_dir_x, dtype=np.float64)
+    go_dir_y_f = np.array(go_dir_y, dtype=np.float64)
 
     first_idx = np.full(len(go_frame), -1, dtype=int)
-    for i, (f, end_f) in enumerate(zip(go_frame, end_frame)):
+    for i, (f, end_f, gdx, gdy) in enumerate(zip(go_frame, end_frame, go_dir_x_f, go_dir_y_f)):
         valid = (saccade_frames > f) & (saccade_frames < end_f)
         if not np.any(valid):
             continue
         rel_valid = (saccade_frames[valid] - f) / ttl_freq
-        first = np.argmin(rel_valid)
-        if rel_valid[first] > max_latency:
+        idx_valid = saccade_indices[valid]
+        in_latency = rel_valid <= max_latency
+        if not np.any(in_latency):
             continue
-        first_idx[i] = saccade_indices[valid][first]
+        idx_chosen, _, _ = _find_scored_saccade(
+            rel_valid[in_latency], idx_valid[in_latency], dx, dy, gdx, gdy,
+            acceptance_angle_deg, scoring_mode,
+        )
+        first_idx[i] = idx_chosen
 
     have = first_idx >= 0
     groups: Dict[str, np.ndarray] = {}
@@ -552,7 +575,6 @@ def first_saccade_indices_by_direction(
     if not groups:
         groups["All"] = first_idx[have]
     return groups
-
 
 def find_precue_saccade_per_trial(
     data: SessionData,
@@ -633,6 +655,49 @@ def wilson_ci(successes: int, n: int, z: float = 1.96) -> Tuple[float, float]:
     margin = (z / denom) * np.sqrt(phat * (1 - phat) / n + z**2 / (4 * n**2))
     return (center - margin, center + margin)
 
+def _find_scored_saccade(rel_valid, idx_valid, dx, dy, gdx, gdy, acceptance_angle_deg, scoring_mode):
+    """Pick which in-window saccade the Bonsai code used.
+
+    ``single_shot`` (Apollo): the first saccade ends the trial regardless
+    of direction.
+
+    ``multi_attempt`` (Paris): an incongruent saccade doesn't end the
+    trial, so the scored saccade is the first *congruent* one. If none of
+    the attempts in the window were congruent (never rewarded), the last
+    attempt is returned instead, with congruent=False — its latency
+    reflects how long the animal kept trying before time-out.
+
+    Returns
+    -------
+    idx : int
+        Index into the eye-velocity arrays (``dx``/``dy``) for the chosen
+        saccade.
+    latency : float
+        Its time (s) since target onset.
+    congruent : bool
+        Whether it fell within ``acceptance_angle_deg`` of the target
+        direction.
+    """
+    order = np.argsort(rel_valid)
+    rel_sorted = rel_valid[order]
+    idx_sorted = idx_valid[order]
+
+    if scoring_mode == "single_shot":
+        idx0 = idx_sorted[0]
+        is_congruent = _angular_deviation_deg(dx[idx0], dy[idx0], gdx, gdy) <= acceptance_angle_deg
+        return idx0, float(rel_sorted[0]), bool(is_congruent)
+
+    if scoring_mode == "multi_attempt":
+        for t, idx in zip(rel_sorted, idx_sorted):
+            if _angular_deviation_deg(dx[idx], dy[idx], gdx, gdy) <= acceptance_angle_deg:
+                return idx, float(t), True
+        return idx_sorted[-1], float(rel_sorted[-1]), False
+
+    raise ValueError(
+        f"Unknown scoring_mode {scoring_mode!r}; expected 'single_shot' or 'multi_attempt'."
+    )
+
+
 def _angular_deviation_deg(dx, dy, gdx, gdy):
     saccade_angle = np.arctan2(dy, dx)
     target_angle = np.arctan2(gdy, gdx)
@@ -681,6 +746,7 @@ def analyze_latency_by_outcome(
     config,
     acceptance_angle_deg: float,
     max_latency: float,
+    scoring_mode: str,
     mask: Optional[np.ndarray] = None,
 ) -> Dict[str, np.ndarray]:
     """Per-trial first-saccade latency, paired with a "correct" label.
@@ -1001,33 +1067,40 @@ def main(session_id: str) -> pd.DataFrame:
         )
     acceptance_angle = float(acceptance_angle)
 
+    #figure out which rule the Bonsai used (first-saccade or first correct saccade)
+    scoring_mode = reward_contingency.get("scoring_mode")
+    if scoring_mode is None:
+        raise ValueError(
+            "No scoring_mode configured in reward_contingency for this session; "
+            "add one to session_manifest.yml ('single_shot' for Apollo, "
+            "'multi_attempt' for Paris — no safe global default, must be set per session)."
+        )
+
     # QC cross-checks: each raises if the data's own rewarded-trial statistic
     # disagrees with its manifest value by more than 10% (both also print
     # derived-vs-manifest regardless of pass/fail).
     session_reward_window(
         data, saccades, config, acceptance_angle_deg=acceptance_angle,
-        mask=mask_horizontal, max_latency=reward_window,
+        mask=mask_horizontal, max_latency=reward_window,scoring_mode=scoring_mode,
     )
     session_acceptance_angle(
-        data, saccades, config, mask=mask_horizontal, max_latency=reward_window,
+        data, saccades, config, mask=mask_horizontal, max_latency=reward_window, scoring_mode=scoring_mode,
     )
 
     max_trial_time = reward_window
 
     
     first_saccades = first_saccade_indices_by_direction(
-        data, saccades, config, max_latency=max_trial_time
+        data, saccades, config, acceptance_angle_deg=acceptance_angle,
+        max_latency=max_trial_time, scoring_mode=scoring_mode,
     )
-    first_saccades_theta = first_saccade_indices_by_direction(
-        data, saccades, config, max_latency=max_trial_time,
-        frames_key="saccade_frames_theta", indices_key="saccade_indices_theta",
-    )
+    # Torsional saccade grouping removed here — to be handled by a separate script.
     sorted_data,left_angle,right_angle,fig_sorted, _ = sort_saccades(
         config, saccade_cfg, saccades, stim_type=stim_type,
         first_saccade_indices=first_saccades,
-        first_saccade_indices_theta=first_saccades_theta or None,
         plot=True,
     )
+
     if fig_sorted is not None:
         plt.close(fig_sorted)
 
@@ -1037,7 +1110,7 @@ def main(session_id: str) -> pd.DataFrame:
     )
     latencies, congruent = find_first_saccade_per_trial(
         data, saccades, config, acceptance_angle_deg=acceptance_angle,
-        max_latency=max_trial_time, mask=mask_horizontal,
+        max_latency=max_trial_time, mask=mask_horizontal, scoring_mode=scoring_mode,
     )
     latency_centers, fraction_toward, n_per_window = fraction_toward_target_by_latency(
         latencies, congruent, window_span=(0.2, max_trial_time)
@@ -1072,7 +1145,7 @@ def main(session_id: str) -> pd.DataFrame:
 
     latency_outcome = analyze_latency_by_outcome(
         data, saccades, config, acceptance_angle_deg=acceptance_angle,
-        mask=mask_horizontal, max_latency=max_trial_time)
+        mask=mask_horizontal, max_latency=max_trial_time, scoring_mode=scoring_mode)
     
     plot_latency_by_outcome(latency_outcome, config, reward_window=reward_window)
 
