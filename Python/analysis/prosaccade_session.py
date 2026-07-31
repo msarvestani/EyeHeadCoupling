@@ -832,6 +832,64 @@ def analyze_latency_by_outcome(
         "n_total": len(go_frame),
     }
 
+def calculate_trial_success(
+    data: SessionData,
+    saccades: Dict[str, np.ndarray],
+    config,
+    acceptance_angle_deg: float,
+    max_latency: float,
+    scoring_mode: str,
+    mask: Optional[np.ndarray] = None,
+) -> np.ndarray:
+    """Per-trial calculated success/failure, using the same scoring rule as
+    the rest of this file (:func:`_find_scored_saccade`).
+
+    Unlike :func:`find_first_saccade_per_trial`, no trial is dropped: a
+    trial with no detectable saccade in the window is recorded as a
+    calculated failure (``False``) rather than omitted, so the result has
+    exactly one entry per trial and can be compared 1:1 against the rig's
+    own ``data.trial_success`` log.
+    """
+    ttl_freq = config.ttl_freq
+    go_frame = data.go_frame
+    go_dir_x = data.go_direction_x
+    go_dir_y = data.go_direction_y
+    end_frame = data.end_of_trial_frame
+    if end_frame is None:
+        end_frame = go_frame + max_latency * ttl_freq
+    if mask is not None:
+        go_frame = go_frame[mask]
+        go_dir_x = go_dir_x[mask]
+        go_dir_y = go_dir_y[mask]
+        end_frame = end_frame[mask]
+
+    go_dir_x = np.array(go_dir_x, dtype=np.float64)
+    go_dir_y = np.array(go_dir_y, dtype=np.float64)
+
+    saccade_frames = saccades["saccade_frames_xy"]
+    saccade_indices = saccades["saccade_indices_xy"]
+    dx = saccades["eye_vel"][:, 0]
+    dy = saccades["eye_vel"][:, 1]
+
+    calculated_success = np.zeros(len(go_frame), dtype=bool)
+    for i, (f, gdx, gdy, end_f) in enumerate(zip(go_frame, go_dir_x, go_dir_y, end_frame)):
+        valid = (saccade_frames > f) & (saccade_frames < end_f)
+        if not np.any(valid):
+            continue  # no saccade at all -> calculated failure
+        rel_valid = (saccade_frames[valid] - f) / ttl_freq
+        idx_valid = saccade_indices[valid]
+        in_latency = rel_valid <= max_latency
+        if not np.any(in_latency):
+            continue
+        _, _, is_congruent = _find_scored_saccade(
+            rel_valid[in_latency], idx_valid[in_latency], dx, dy, gdx, gdy,
+            acceptance_angle_deg, scoring_mode,
+        )
+        calculated_success[i] = is_congruent
+
+    return calculated_success
+
+
 
 def plot_latency_by_outcome(
     result: Dict[str, np.ndarray],
@@ -867,6 +925,55 @@ def plot_latency_by_outcome(
     ax_hist.set_title(
         f"Correct = saccade toward target\n{n_correct} correct, {n_incorrect} incorrect"
     )
+
+def plot_trial_success_agreement(
+    calculated_success: np.ndarray,
+    rig_success: np.ndarray,
+    config,
+    show_plots: bool = True,
+) -> plt.Figure:
+    """Per-trial comparison of calculated vs. rig-logged trial outcomes.
+
+    Two rows of colored ticks over trial index (rig outcome, calculated
+    outcome; green = success, red = failure), plus a third strip marking
+    per-trial agreement (light gray = agree, black = disagree). Overall
+    agreement percentage is reported in the title.
+    """
+    agree = calculated_success == rig_success
+    n = len(calculated_success)
+    trial_idx = np.arange(n)
+
+    fig, ax = plt.subplots(figsize=(max(8, n * 0.02), 3))
+
+    def _row(y, values, label):
+        colors = np.where(values, "tab:green", "tab:red")
+        ax.scatter(trial_idx, np.full(n, y), c=colors, marker="|", s=200, linewidths=1.5)
+        ax.text(-n * 0.02, y, label, ha="right", va="center", fontsize=9)
+
+    _row(2, rig_success, "Rig")
+    _row(1, calculated_success, "Calculated")
+
+    disagree_colors = np.where(agree, "lightgray", "black")
+    ax.scatter(trial_idx, np.full(n, 0), c=disagree_colors, marker="|", s=200, linewidths=1.5)
+    ax.text(-n * 0.02, 0, "Agreement", ha="right", va="center", fontsize=9)
+
+    ax.set_xlim(-n * 0.05, n)
+    ax.set_ylim(-0.5, 2.5)
+    ax.set_yticks([])
+    ax.set_xlabel("Trial index")
+    pct_agree = 100 * np.mean(agree) if n else float("nan")
+    ax.set_title(
+        f"{config.animal_name or ''} {config.session_name} — calculated vs. rig trial outcome "
+        f"({pct_agree:.1f}% agreement, {int(np.sum(~agree))}/{n} disagree)"
+    )
+    fig.tight_layout()
+    fig.savefig(config.results_dir / f"{config.session_name}_trial_success_agreement.png",
+                dpi=300, bbox_inches="tight")
+    if show_plots:
+        plt.show()
+    plt.close(fig)
+    return fig
+
 
     def _mark_reward(ax):
         if reward_window is None:
@@ -1056,6 +1163,7 @@ def main(session_id: str) -> pd.DataFrame:
         go_dir_x=data.go_direction_x,
         go_dir_y=data.go_direction_y,
     )
+
     df = pd.DataFrame(
         {
             "session_id": [session_id] * len(indices),
@@ -1170,6 +1278,25 @@ def main(session_id: str) -> pd.DataFrame:
         mask=mask_horizontal, max_latency=max_trial_time, scoring_mode=scoring_mode)
     
     plot_latency_by_outcome(latency_outcome, config, reward_window=reward_window)
+
+    #plot calculated trial success vs what the task produced    
+    if data.trial_success is not None:
+        trial_success_masked = np.asarray(data.trial_success)[mask_horizontal]
+        if data.trial_outcome_encoding == "code012":
+            rig_success = trial_success_masked == 2
+        else:
+            rig_success = trial_success_masked > 0
+
+        calculated_success = calculate_trial_success(
+            data, saccades, config, acceptance_angle_deg=acceptance_angle,
+            max_latency=max_trial_time, scoring_mode=scoring_mode, mask=mask_horizontal,
+        )
+        plot_trial_success_agreement(calculated_success, rig_success, config)
+    else:
+        warnings.warn(
+            "No trial_success data available; skipping calculated-vs-rig "
+            "trial outcome comparison."
+        )
 
 
     df = pd.DataFrame(
