@@ -10,7 +10,6 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import cv2
 from matplotlib import cm, gridspec
 from matplotlib.patches import FancyArrowPatch
 from scipy.signal import medfilt
@@ -35,7 +34,6 @@ class SaccadeConfig:
     saccade_threshold_torsion: float
     blink_threshold: float = 10.0
     blink_detection: int = 1
-    saccade_win: float = 0.7
 
 
 def _normalise_animal_tag(animal_name: str | None) -> str:
@@ -355,11 +353,11 @@ def plot_left_right_angle(left_angle,right_angle,reward_angle=35,sessionname=Non
         # Plot the reward zone
         #reward_angle = reward_angle  # This should be extracted from the config
         if experiment_type == "prosaccade":
-            reward_zone_left = np.deg2rad(np.arange(-reward_angle, reward_angle, 1))
-            reward_zone_right = np.deg2rad(np.arange(180 - reward_angle, 180 + reward_angle, 1))
-        elif experiment_type == "antisaccade":
             reward_zone_left = np.deg2rad(np.arange(180 - reward_angle, 180 + reward_angle, 1))
             reward_zone_right = np.deg2rad(np.arange(-reward_angle, reward_angle, 1))
+        elif experiment_type == "antisaccade":
+            reward_zone_left = np.deg2rad(np.arange(-reward_angle, reward_angle, 1))
+            reward_zone_right = np.deg2rad(np.arange(180 - reward_angle, 180 + reward_angle, 1))
         ax_polar_left.fill_between(
             reward_zone_left,
             0,
@@ -410,11 +408,11 @@ def plot_left_right_angle(left_angle,right_angle,reward_angle=35,sessionname=Non
 
         ## print the saccade percentage on the plot
         if experiment_type == "prosaccade":
-            saccade_percentage_left = np.sum(np.abs(left_angle) <= np.deg2rad(reward_angle)) / len(left_angle) * 100
-            saccade_percentage_right = np.sum(np.abs(right_angle) >= np.deg2rad(180-reward_angle)) / len(right_angle) * 100
-        elif experiment_type == "antisaccade":
             saccade_percentage_left = np.sum(np.abs(left_angle) >= np.deg2rad(180-reward_angle)) / len(left_angle) * 100
             saccade_percentage_right = np.sum(np.abs(right_angle) <= np.deg2rad(reward_angle)) / len(right_angle) * 100
+        elif experiment_type == "antisaccade":
+            saccade_percentage_left = np.sum(np.abs(left_angle) <= np.deg2rad(reward_angle)) / len(left_angle) * 100
+            saccade_percentage_right = np.sum(np.abs(right_angle) >= np.deg2rad(180-reward_angle)) / len(right_angle) * 100
 
         ax_polar_left.text(
             0.5,
@@ -560,7 +558,9 @@ def sort_saccades(
     config: SessionConfig,
     saccade_config: SaccadeConfig,
     saccades: Dict[str, np.ndarray],
+    first_saccade_indices: Dict[str, np.ndarray],
     stim_type: str = "None",
+    first_saccade_indices_theta: Optional[Dict[str, np.ndarray]] = None,
     plot: bool = False,
 ) -> Dict[str, np.ndarray] | Tuple[Dict[str, np.ndarray], plt.Figure, Tuple[plt.Axes, plt.Axes, plt.Axes]]:
     """Sort saccades by stimulus and optionally plot summaries.
@@ -569,6 +569,20 @@ def sort_saccades(
     ----------
     config, saccade_config, saccades, stim_type :
         Same as in the original :func:`sort_plot_saccades`.
+    first_saccade_indices : dict
+        Mapping of stimulus-direction label (``"Left"``, ``"Right"``, ...) to
+        the eye-position indices of each trial's first saccade in the online
+        reward window (see
+        :func:`prosaccade_session.first_saccade_indices_by_direction`). When
+        provided, the per-condition translational figures plot exactly these
+        first saccades instead of searching a fixed ``saccade_win`` window, so
+        they match the latency/congruency analysis. The session-wide "All"
+        figure is unaffected and still shows every detected saccade.
+    first_saccade_indices_theta : dict, optional
+        Same as ``first_saccade_indices`` but for the torsional stream
+        (indices into ``saccade_indices_theta``); used for the per-condition
+        torsion overlay/histogram so torsion is drawn from the same reward
+        window. Falls back to the fixed ``saccade_win`` search when omitted.
     plot : bool, optional
         When ``True`` the function generates the same diagnostic plots as
         before and returns them alongside the sorted saccade indices.
@@ -582,7 +596,6 @@ def sort_saccades(
         Only returned when ``plot=True``.  ``axes`` contains the main quiver,
         polar and linear histogram axes of the summary plot.
     """
-    saccade_window_frames = saccade_config.saccade_win * config.ttl_freq
     session_path = config.folder_path
     eye_name = config.eye_name
 
@@ -667,9 +680,8 @@ def sort_saccades(
         ax_quiver.set_ylabel("Y (°)")
         ax_quiver.set_title(
             f"{session_name}\n"
-            + f"All translational saccades ({n_all}) — {eye_name}  (stim: {stim_type})\n"
+            + f"ALL saccades in session ({n_all}) — not trial-aligned — {eye_name}  (stim: {stim_type})\n"
             + f"saccade_thresh = {saccade_config.saccade_threshold}, "
-            f"saccade_win = {saccade_config.saccade_win}s\n"
             + f"blink_thresh = {saccade_config.blink_threshold}, "
             f"blink_detection = {saccade_config.blink_detection}s\n"
         )
@@ -699,25 +711,13 @@ def sort_saccades(
         fig_all = None
         ax_quiver = ax_polar = ax_linear = None
 
-    plot_window = np.arange(0, saccade_window_frames, 1)
-
     for label, frames in stim_frames.items():
         if label == "All":
             continue
-        idx_buf = []
-        sorted_pairs_xy = sorted(zip(saccade_frames_xy, saccade_indices_xy))
-        for f in frames:
-            lower_bound = max(f + plot_window[0], 0)
-            upper_bound = min(f + plot_window[-1], saccade_frames_xy.max())
-            for sf, idx in sorted_pairs_xy:
-                if sf < lower_bound:
-                    continue
-                elif sf <= upper_bound:
-                    idx_buf.append(idx)
-                    break
-                else:
-                    break
-        idx_use = np.array(idx_buf, dtype=int)
+
+        idx_use = np.asarray(first_saccade_indices.get(label, []), dtype=int)
+        if idx_use.size:
+            idx_use = idx_use[mask[idx_use]]
         if idx_use.size == 0:
             continue
         sorted_data[label] = idx_use
@@ -736,7 +736,10 @@ def sort_saccades(
             ax_q.set_ylim(*Y_LIM)
             ax_q.set_xlabel("X (°)")
             ax_q.set_ylabel("Y (°)")
-            ax_q.set_title(f"{session_name}\n{eye_name} — {label} (n={n_cond})")
+            _win_note = "first saccade per trial, target onset → end-of-trial"
+            ax_q.set_title(
+                f"{session_name}\n{eye_name} — {label} (n={n_cond})\n{_win_note}"
+            )
 
             cols = np.array([vector_to_rgb(a) for a in ang])
             ax_q.quiver(
@@ -754,23 +757,12 @@ def sort_saccades(
             plot_angle_distribution(ang, ax_p)
             plot_linear_histogram(ang, ax_l)
 
-            if torsion_present and saccade_indices_theta is not None:
-                idx_buf_torsion: list[int] = []
-                sorted_pairs_theta = sorted(
-                    zip(saccade_frames_theta, saccade_indices_theta)
-                )
-                for f in frames:
-                    lower_bound = max(f + plot_window[0], 0)
-                    upper_bound = min(f + plot_window[-1], saccade_frames_theta.max())
-                    for sf, idx in sorted_pairs_theta:
-                        if sf < lower_bound:
-                            continue
-                        elif sf <= upper_bound:
-                            idx_buf_torsion.append(idx)
-                            break
-                        else:
-                            break
-                idx_use_t = np.array(idx_buf_torsion, dtype=int)
+            if torsion_present and saccade_indices_theta is not None and first_saccade_indices_theta is not None:
+                idx_use_t = np.asarray(first_saccade_indices_theta.get(label, []), dtype=int)
+                
+                if idx_use_t.size:
+                    idx_use_t = idx_use_t[mask[idx_use_t]]
+
                 for i in idx_use_t:
                     x, y = eye_pos[i, 0], eye_pos[i, 1]
                     arrow = FancyArrowPatch(
@@ -1372,6 +1364,7 @@ def extract_eye_position_from_dlc(
     pupil_area       : (N,) ndarray
         Pupil area in pixels squared (interpolated across blinks).
     """
+    import cv2  # local import: OpenCV is only needed for DLC pupil fitting
 
     # --- Extract keypoints ---
     pupil_points = dlc_data[
