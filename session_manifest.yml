@@ -12,6 +12,7 @@ saccade_config:
 reward_contingency:
   reward_angle: 35 #half-width, in degrees, of the rewarded zone around the target direction
   reward_window: 0.7 #reward window in seconds
+  congruency_window: [0.15, 0.45]  #fixed latency band (s, post target-onset) for the single-number "fraction toward target" congruency summary stat
 
 #for fixation experiments
 max_interval_fixations: 1.0 #this is how long we count a fixation of 0.7 sec valid after cue is presented.......

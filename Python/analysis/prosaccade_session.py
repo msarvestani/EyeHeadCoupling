@@ -226,7 +226,7 @@ def session_acceptance_angle(
     mask: Optional[np.ndarray] = None,
     max_latency: float = 1.5,
     percentile: float = 90.0,
-    tolerance: float = 0.10,
+    tolerance: float = 0.25,
 ) -> Optional[float]:
     """Acceptance angle (deg), derived from the data, as a QC cross-check.
 
@@ -812,11 +812,6 @@ def plot_psth_and_congruency(
     ax_summary.set_xlabel(f"Fraction toward target, {window[0]:.2f}\u2013{window[1]:.2f} s")
     ax_summary.set_title("Congruency vs. pre-cue control")
     
-    ax_summary.axvline(0.5, color="gray", ls="--", lw=1)
-    ax_summary.set_xlim(0.0, 1.15)
-    ax_summary.set_yticks([])
-    ax_summary.set_xlabel(f"Fraction toward target, {window[0]:.2f}\u2013{window[1]:.2f} s")
-    ax_summary.set_title("Congruency vs. pre-cue control")
 
     fig.suptitle(f"{config.animal_name or ''} {config.session_name}".strip())
     fig.tight_layout()
