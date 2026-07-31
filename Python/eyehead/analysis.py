@@ -759,30 +759,31 @@ def sort_saccades(
 
             if torsion_present and saccade_indices_theta is not None and first_saccade_indices_theta is not None:
                 idx_use_t = np.asarray(first_saccade_indices_theta.get(label, []), dtype=int)
-            if idx_use_t.size:
-                idx_use_t = idx_use_t[mask[idx_use_t]]
+                
+                if idx_use_t.size:
+                    idx_use_t = idx_use_t[mask[idx_use_t]]
 
-            for i in idx_use_t:
-                x, y = eye_pos[i, 0], eye_pos[i, 1]
-                arrow = FancyArrowPatch(
-                    (x, y),
-                    (x, y),
-                    connectionstyle=f"arc3,rad={0.3 * np.sign(dtheta[i])}",
-                    mutation_scale=10 * abs(dtheta[i]),
+                for i in idx_use_t:
+                    x, y = eye_pos[i, 0], eye_pos[i, 1]
+                    arrow = FancyArrowPatch(
+                        (x, y),
+                        (x, y),
+                        connectionstyle=f"arc3,rad={0.3 * np.sign(dtheta[i])}",
+                        mutation_scale=10 * abs(dtheta[i]),
+                        color="purple",
+                        linewidth=1.5,
+                    )
+                    ax_q.add_patch(arrow)
+                ax_t.hist(
+                    dtheta[idx_use_t],
+                    bins=20,
                     color="purple",
-                    linewidth=1.5,
+                    alpha=0.5,
+                    edgecolor="k",
                 )
-                ax_q.add_patch(arrow)
-            ax_t.hist(
-                dtheta[idx_use_t],
-                bins=20,
-                color="purple",
-                alpha=0.5,
-                edgecolor="k",
-            )
-            ax_t.set_xlabel("Δθ (deg/frame)")
-            ax_t.set_ylabel("Count")
-            ax_t.set_xlim(-15, 15)
+                ax_t.set_xlabel("Δθ (deg/frame)")
+                ax_t.set_ylabel("Count")
+                ax_t.set_xlim(-15, 15)
 
             fig.tight_layout()
             base_cond_fname = f"{config.session_name}_{eye_name}_{label}_{stim_type}.png"

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from logging import config
 import sys
 import argparse
 from pathlib import Path
@@ -122,19 +123,241 @@ def compute_saccade_psth(
 
     return bin_centers, rate, ci, n_trials
 
+def session_reward_window(
+    data: SessionData,
+    saccades: Dict[str, np.ndarray],
+    config,
+    acceptance_angle_deg: float,
+    mask: Optional[np.ndarray] = None,
+    max_latency: float = 1.5,
+    tolerance: float = 0.10,
+) -> Optional[float]:
+    """Reward-window duration (s), derived from the data, as a QC cross-check.
 
+    A saccade within the reward window is rewarded and ends the trial;
+    ``data.trial_success`` (the ``end_of_trial`` CSV's success column) logs
+    which trials were rewarded. This returns the **maximum first-saccade
+    latency among rewarded, congruent trials** — trials that were rewarded
+    *and* whose first saccade landed within ``acceptance_angle_deg`` of the
+    target direction.
+
+    The pipeline's actual ``reward_window`` comes from the manifest's
+    ``reward_contingency.reward_window``, not from this function. This
+    function is a QC cross-check: both the derived and manifest values are
+    always printed, and a ``ValueError`` is raised if they disagree by more
+    than ``tolerance`` (as a fraction of the manifest value).
+
+    Returns ``None`` if ``trial_success`` is unavailable or no such trial has
+    a detectable first saccade, in which case the cross-check is skipped.
+    """
+    trial_success = data.trial_success
+    if trial_success is None:
+        return None
+    ttl_freq = config.ttl_freq
+    go_frame = np.asarray(data.go_frame)
+    end_frame = data.end_of_trial_frame
+    if end_frame is None:
+        end_frame = go_frame + max_latency * ttl_freq
+    end_frame = np.asarray(end_frame)
+    trial_success = np.asarray(trial_success)
+    go_dir_x = np.asarray(data.go_direction_x, dtype=np.float64)
+    go_dir_y = np.asarray(data.go_direction_y, dtype=np.float64)
+    if mask is not None:
+        go_frame = go_frame[mask]
+        end_frame = end_frame[mask]
+        trial_success = trial_success[mask]
+        go_dir_x = go_dir_x[mask]
+        go_dir_y = go_dir_y[mask]
+
+    if data.trial_outcome_encoding == "code012":
+        is_success = trial_success == 2
+    else:
+        is_success = trial_success > 0
+
+    saccade_frames = saccades["saccade_frames_xy"]
+    saccade_indices = saccades["saccade_indices_xy"]
+    dx = saccades["eye_vel"][:, 0]
+    dy = saccades["eye_vel"][:, 1]
+
+    rewarded_latencies = []
+    for f, end_f, succ, gdx, gdy in zip(go_frame, end_frame, is_success, go_dir_x, go_dir_y):
+        if not succ:
+            continue
+        valid = (saccade_frames > f) & (saccade_frames < end_f)
+        if not np.any(valid):
+            continue
+        rel = (saccade_frames[valid] - f) / ttl_freq
+        first = np.argmin(rel)
+        if rel[first] > max_latency:
+            continue
+        idx_first = saccade_indices[valid][first]
+        if _angular_deviation_deg(dx[idx_first], dy[idx_first], gdx, gdy) > acceptance_angle_deg:
+            continue  # first saccade not within the acceptance angle
+        rewarded_latencies.append(float(rel[first]))
+
+    if not rewarded_latencies:
+        return None
+    derived = float(np.max(rewarded_latencies))
+
+    reward_contingency = config.params.get("reward_contingency") or {}
+    manifest_window = reward_contingency.get("reward_window")
+    if manifest_window is not None and manifest_window > 0:
+        relative_diff = abs(derived - manifest_window) / manifest_window
+        print(
+            f"Reward window check: derived (max over rewarded/congruent trials) "
+            f"= {derived:.3f}s, manifest reward_window = {manifest_window:.3f}s "
+            f"(diff {relative_diff:.0%})"
+        )
+        if relative_diff > tolerance:
+            raise ValueError(
+                f"Derived reward window ({derived:.3f}s, from rewarded/congruent "
+                f"trials) differs from the manifest's reward_contingency.reward_window "
+                f"({manifest_window:.3f}s) by {relative_diff:.0%}, more than the allowed "
+                f"{tolerance:.0%} tolerance. Check the manifest entry or this session's "
+                "end_of_trial/trial_success data."
+            )
+
+    return derived
+
+def session_acceptance_angle(
+    data: SessionData,
+    saccades: Dict[str, np.ndarray],
+    config,
+    mask: Optional[np.ndarray] = None,
+    max_latency: float = 1.5,
+    percentile: float = 90.0,
+    tolerance: float = 0.10,
+) -> Optional[float]:
+    """Acceptance angle (deg), derived from the data, as a QC cross-check.
+
+    Among rewarded trials, the first saccade within the reward window must
+    have landed inside the rig's true angular acceptance zone around the
+    target direction, or it wouldn't have been rewarded. This returns the
+    ``percentile``-th percentile of angular deviation among rewarded trials'
+    first saccades (default: 90th) — robust to a single noisy/mis-detected
+    rewarded trial, unlike a hard max.
+
+    The pipeline's actual acceptance angle comes from the manifest's
+    ``reward_contingency.reward_angle``, not from this function. This is a
+    QC cross-check: both the derived and manifest values are always printed,
+    and a ``ValueError`` is raised if they disagree by more than ``tolerance``
+    (as a fraction of the manifest value).
+
+    Returns ``None`` if ``trial_success`` is unavailable or no rewarded trial
+    has a detectable first saccade, in which case the cross-check is skipped.
+    """
+    trial_success = data.trial_success
+    if trial_success is None:
+        return None
+    ttl_freq = config.ttl_freq
+    go_frame = np.asarray(data.go_frame)
+    end_frame = data.end_of_trial_frame
+    if end_frame is None:
+        end_frame = go_frame + max_latency * ttl_freq
+    end_frame = np.asarray(end_frame)
+    trial_success = np.asarray(trial_success)
+    go_dir_x = np.asarray(data.go_direction_x, dtype=np.float64)
+    go_dir_y = np.asarray(data.go_direction_y, dtype=np.float64)
+    if mask is not None:
+        go_frame = go_frame[mask]
+        end_frame = end_frame[mask]
+        trial_success = trial_success[mask]
+        go_dir_x = go_dir_x[mask]
+        go_dir_y = go_dir_y[mask]
+
+    if data.trial_outcome_encoding == "code012":
+        is_success = trial_success == 2
+    else:
+        is_success = trial_success > 0
+
+    saccade_frames = saccades["saccade_frames_xy"]
+    saccade_indices = saccades["saccade_indices_xy"]
+    dx = saccades["eye_vel"][:, 0]
+    dy = saccades["eye_vel"][:, 1]
+
+    deviations = []
+    for f, end_f, succ, gdx, gdy in zip(go_frame, end_frame, is_success, go_dir_x, go_dir_y):
+        if not succ:
+            continue
+        valid = (saccade_frames > f) & (saccade_frames < end_f)
+        if not np.any(valid):
+            continue
+        rel = (saccade_frames[valid] - f) / ttl_freq
+        first = np.argmin(rel)
+        if rel[first] > max_latency:
+            continue
+        idx_first = saccade_indices[valid][first]
+        deviations.append(_angular_deviation_deg(dx[idx_first], dy[idx_first], gdx, gdy))
+
+    if not deviations:
+        return None
+    derived = float(np.percentile(deviations, percentile))
+
+    reward_contingency = config.params.get("reward_contingency") or {}
+    manifest_angle = reward_contingency.get("reward_angle")
+    if manifest_angle is not None and manifest_angle > 0:
+        relative_diff = abs(derived - manifest_angle) / manifest_angle
+        print(
+            f"Acceptance angle check: derived (p{percentile:g} of rewarded trials) "
+            f"= {derived:.1f}°, manifest reward_angle = {manifest_angle:.1f}° "
+            f"(diff {relative_diff:.0%})"
+        )
+        if relative_diff > tolerance:
+            raise ValueError(
+                f"Derived acceptance angle ({derived:.1f}°, p{percentile:g} of rewarded "
+                f"trials) differs from the manifest's reward_contingency.reward_angle "
+                f"({manifest_angle:.1f}°) by {relative_diff:.0%}, more than the allowed "
+                f"{tolerance:.0%} tolerance. Check the manifest entry or this session's "
+                "end_of_trial/trial_success data."
+            )
+
+    return derived
 
 
 def find_first_saccade_per_trial(
     data: SessionData,
     saccades: Dict[str, np.ndarray],
     config,
+    acceptance_angle_deg: float,
     max_latency: float = 1.5,
     mask: Optional[np.ndarray] = None,
 ) -> Tuple[np.ndarray, np.ndarray]:
+    """Latency and target-congruency of the first saccade in each trial.
+
+    For every trial, finds the first saccade between target onset
+    (``go_frame``) and that trial's actual end (``end_of_trial_frame``,
+    falling back to a flat ``max_latency`` cap if unavailable) and records
+    its latency together with whether it was congruent.
+
+    Parameters
+    ----------
+    acceptance_angle_deg : float
+        A saccade counts as congruent only if its 2D direction
+        (``arctan2(dy, dx)``) falls within this many degrees of the target's
+        actual direction (``arctan2(go_dir_y, go_dir_x)``) — see
+        :func:`_angular_deviation_deg`. This replaces the old left/right
+        hemifield-only check (``sign(dx) == sign(go_dir_x)``), so it also
+        handles oblique and up/down targets correctly, not just horizontal
+        ones. Should be the manifest's ``reward_contingency.reward_angle``,
+        so "congruent" here matches what the rig actually rewards.
+    max_latency : float
+        Trials whose first saccade lands later than this (seconds after
+        target onset) are excluded entirely, not counted as incongruent.
+
+    Returns
+    -------
+    latencies : ndarray
+        First-saccade latency (s) for each trial with a detectable saccade
+        in the search window. Trials with none are omitted.
+    congruent : ndarray of bool
+        Whether that trial's first saccade fell within ``acceptance_angle_deg``
+        of the target direction.
+    """
+
     ttl_freq = config.ttl_freq
     go_frame = data.go_frame
     go_dir_x = data.go_direction_x
+    go_dir_y = data.go_direction_y
     end_frame = data.end_of_trial_frame
     if end_frame is None:
         warnings.warn(
@@ -145,17 +368,19 @@ def find_first_saccade_per_trial(
     if mask is not None:
         go_frame = go_frame[mask]
         go_dir_x = go_dir_x[mask]
+        go_dir_y = go_dir_y[mask]
         end_frame = end_frame[mask]
 
-    go_dir_x = np.array(go_dir_x, dtype=np.float64) #fixing target direction mapping
+    go_dir_x = np.array(go_dir_x, dtype=np.float64)
+    go_dir_y = np.array(go_dir_y, dtype=np.float64)
 
     saccade_frames = saccades["saccade_frames_xy"]
     saccade_indices = saccades["saccade_indices_xy"]
     dx = saccades["eye_vel"][:, 0]
-
+    dy = saccades["eye_vel"][:, 1]
 
     latencies, congruent = [], []
-    for f, gdx, end_f in zip(go_frame, go_dir_x, end_frame):
+    for f, gdx, gdy, end_f in zip(go_frame, go_dir_x, go_dir_y, end_frame):
         # only saccades after target onset and before this trial actually ends
         valid = (saccade_frames > f) & (saccade_frames < end_f)
         if not np.any(valid):
@@ -166,7 +391,7 @@ def find_first_saccade_per_trial(
             continue
         idx_first = saccade_indices[valid][first]
         latencies.append(rel_valid[first])
-        congruent.append(np.sign(dx[idx_first]) == np.sign(gdx))
+        congruent.append(_angular_deviation_deg(dx[idx_first], dy[idx_first], gdx, gdy) <= acceptance_angle_deg)
 
     return np.array(latencies), np.array(congruent, dtype=bool)
 
@@ -248,14 +473,22 @@ def find_precue_saccade_per_trial(
     data: SessionData,
     saccades: Dict[str, np.ndarray],
     config,
+    acceptance_angle_deg: float,
     window: float = 0.5,
     mask: Optional[np.ndarray] = None,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Latency and target-congruency of the last saccade before target onset.
 
     Serves as a pre-cue/pre-target control: since the target hasn't appeared
-    yet, any lateral bias in this saccade's direction can't reflect
-    target-directed behaviour, so congruency here should sit near chance.
+    yet, any directional bias in this saccade can't reflect target-directed
+    behaviour, so congruency here should sit near chance.
+
+    Parameters
+    ----------
+    acceptance_angle_deg : float
+        Same angular acceptance-zone definition as in
+        :func:`find_first_saccade_per_trial` — should be the manifest's
+        ``reward_contingency.reward_angle``.
 
     Returns
     -------
@@ -263,24 +496,29 @@ def find_precue_saccade_per_trial(
         Time (s), negative, from target onset to each trial's last saccade
         in the preceding ``window`` seconds. Trials with none are omitted.
     congruent : ndarray of bool
-        Whether that saccade's direction happened to match the (not-yet-seen)
-        target's direction.
+        Whether that saccade's direction happened to fall within
+        ``acceptance_angle_deg`` of the (not-yet-seen) target's direction.
     """
+
     ttl_freq = config.ttl_freq
     go_frame = data.go_frame
     go_dir_x = data.go_direction_x
+    go_dir_y = data.go_direction_y
     if mask is not None:
         go_frame = go_frame[mask]
         go_dir_x = go_dir_x[mask]
+        go_dir_y = go_dir_y[mask]
 
-    go_dir_x = np.array(go_dir_x, dtype=np.float64)  # fixing target direction mapping
+    go_dir_x = np.array(go_dir_x, dtype=np.float64)
+    go_dir_y = np.array(go_dir_y, dtype=np.float64)
 
     saccade_frames = saccades["saccade_frames_xy"]
     saccade_indices = saccades["saccade_indices_xy"]
     dx = saccades["eye_vel"][:, 0]
+    dy = saccades["eye_vel"][:, 1]
 
     latencies, congruent = [], []
-    for f, gdx in zip(go_frame, go_dir_x):
+    for f, gdx, gdy in zip(go_frame, go_dir_x, go_dir_y):
         rel = (saccade_frames - f) / ttl_freq
         valid = (rel < 0) & (rel >= -window)
         if not np.any(valid):
@@ -289,7 +527,7 @@ def find_precue_saccade_per_trial(
         last = np.argmax(rel_valid)  # closest to (but before) target onset
         idx_last = saccade_indices[valid][last]
         latencies.append(rel_valid[last])
-        congruent.append(np.sign(dx[idx_last]) == np.sign(gdx))
+        congruent.append(_angular_deviation_deg(dx[idx_last], dy[idx_last], gdx, gdy) <= acceptance_angle_deg)
 
     return np.array(latencies), np.array(congruent, dtype=bool)
 
@@ -304,6 +542,11 @@ def wilson_ci(successes: int, n: int, z: float = 1.96) -> Tuple[float, float]:
     margin = (z / denom) * np.sqrt(phat * (1 - phat) / n + z**2 / (4 * n**2))
     return (center - margin, center + margin)
 
+def _angular_deviation_deg(dx, dy, gdx, gdy):
+    saccade_angle = np.arctan2(dy, dx)
+    target_angle = np.arctan2(gdy, gdx)
+    diff = np.arctan2(np.sin(saccade_angle - target_angle), np.cos(saccade_angle - target_angle))
+    return np.degrees(np.abs(diff))
 
 def congruency_in_window(
     latencies: np.ndarray,
@@ -345,20 +588,17 @@ def analyze_latency_by_outcome(
     data: SessionData,
     saccades: Dict[str, np.ndarray],
     config,
+    acceptance_angle_deg: float,
     mask: Optional[np.ndarray] = None,
     max_latency: float = 1.5,
 ) -> Dict[str, np.ndarray]:
-    """Per-trial first-saccade latency, paired with two independent "correct" labels.
+    """Per-trial first-saccade latency, paired with a "correct" label.
 
     For every trial, finds the first saccade between target onset and that
     trial's actual end (``data.end_of_trial_frame``) and records its latency,
-    together with:
-
-    - ``congruent``: whether that saccade's direction matched the target's
-      (same definition as :func:`find_first_saccade_per_trial`).
-    - ``trial_success``: the independently-logged outcome from
-      ``data.trial_success`` (the ``end_of_trial`` CSV's success column), or
-      NaN if that file didn't load for this session.
+    together with ``congruent``: whether that saccade's direction fell within
+    ``acceptance_angle_deg`` of the target's actual direction (same
+    definition as :func:`find_first_saccade_per_trial`).
 
     Trials with no saccade between target onset and trial end are excluded
     from the returned arrays but counted in ``n_no_saccade``.
@@ -366,6 +606,7 @@ def analyze_latency_by_outcome(
     ttl_freq = config.ttl_freq
     go_frame = data.go_frame
     go_dir_x = data.go_direction_x
+    go_dir_y = data.go_direction_y
     end_frame = data.end_of_trial_frame
 
     if end_frame is None:
@@ -378,18 +619,20 @@ def analyze_latency_by_outcome(
     if mask is not None:
         go_frame = go_frame[mask]
         go_dir_x = go_dir_x[mask]
+        go_dir_y = go_dir_y[mask]
         end_frame = end_frame[mask]
 
-
-    go_dir_x = np.array(go_dir_x, dtype=np.float64)  # fixing target direction mapping
+    go_dir_x = np.array(go_dir_x, dtype=np.float64)
+    go_dir_y = np.array(go_dir_y, dtype=np.float64)
 
     saccade_frames = saccades["saccade_frames_xy"]
     saccade_indices = saccades["saccade_indices_xy"]
     dx = saccades["eye_vel"][:, 0]
+    dy = saccades["eye_vel"][:, 1]
 
     latencies, congruent = [], []
     n_no_saccade = 0
-    for f, gdx, end_f in zip(go_frame, go_dir_x, end_frame):
+    for f, gdx, gdy, end_f in zip(go_frame, go_dir_x, go_dir_y, end_frame):
         valid = (saccade_frames > f) & (saccade_frames < end_f)
         if not np.any(valid):
             n_no_saccade += 1
@@ -401,7 +644,7 @@ def analyze_latency_by_outcome(
             continue
         idx_first = saccade_indices[valid][first]
         latencies.append(rel_valid[first])
-        congruent.append(np.sign(dx[idx_first]) == np.sign(gdx))
+        congruent.append(_angular_deviation_deg(dx[idx_first], dy[idx_first], gdx, gdy) <= acceptance_angle_deg)
 
     return {
         "latencies": np.array(latencies),
@@ -658,15 +901,33 @@ def main(session_id: str) -> pd.DataFrame:
     reward_contingency = config.params.get("reward_contingency") or {}
     reward_window = reward_contingency.get("reward_window")
     if reward_window is None:
-        warnings.warn(
-            "No reward_window configured in reward_contingency; "
-            "falling back to saccade_win for the reward-window marker."
+        raise ValueError(
+            "No reward_window configured in reward_contingency for this session; "
+            "add one to session_manifest.yml (global default or per-session override)."
         )
-        reward_window = saccade_cfg.saccade_win
+    reward_window = float(reward_window)
 
-    # Single per-session max trial duration (target onset -> trial end), used as the common upper time bound across all
-    # of the analyses below so they share one window. 
+    acceptance_angle = reward_contingency.get("reward_angle")
+    if acceptance_angle is None:
+        raise ValueError(
+            "No reward_angle configured in reward_contingency for this session; "
+            "add one to session_manifest.yml (global default or per-session override)."
+        )
+    acceptance_angle = float(acceptance_angle)
+
+    # QC cross-checks: each raises if the data's own rewarded-trial statistic
+    # disagrees with its manifest value by more than 10% (both also print
+    # derived-vs-manifest regardless of pass/fail).
+    session_reward_window(
+        data, saccades, config, acceptance_angle_deg=acceptance_angle,
+        mask=mask_horizontal, max_latency=reward_window,
+    )
+    session_acceptance_angle(
+        data, saccades, config, mask=mask_horizontal, max_latency=reward_window,
+    )
+
     max_trial_time = reward_window
+
     
     first_saccades = first_saccade_indices_by_direction(
         data, saccades, config, max_latency=max_trial_time
@@ -689,7 +950,8 @@ def main(session_id: str) -> pd.DataFrame:
         mask=mask_horizontal,
     )
     latencies, congruent = find_first_saccade_per_trial(
-        data, saccades, config, max_latency=max_trial_time, mask=mask_horizontal
+        data, saccades, config, acceptance_angle_deg=acceptance_angle,
+        max_latency=max_trial_time, mask=mask_horizontal,
     )
     latency_centers, fraction_toward, n_per_window = fraction_toward_target_by_latency(
         latencies, congruent, window_span=(0.2, max_trial_time)
@@ -697,8 +959,9 @@ def main(session_id: str) -> pd.DataFrame:
 
     window = (0.15, 0.45)
     frac, n_window, ci_lo, ci_hi = congruency_in_window(latencies, congruent, window=window)
+
     precue_latencies, precue_congruent = find_precue_saccade_per_trial(
-        data, saccades, config, mask=mask_horizontal
+        data, saccades, config, acceptance_angle_deg=acceptance_angle, mask=mask_horizontal,
     )
     precue_frac = float(np.mean(precue_congruent)) if len(precue_congruent) else np.nan
     precue_n = len(precue_congruent)
