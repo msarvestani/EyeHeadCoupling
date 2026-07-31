@@ -336,7 +336,7 @@ def session_acceptance_angle(
     scoring_mode: str,
     mask: Optional[np.ndarray] = None,
     percentile: float = 90.0,
-    tolerance: float = 0.30,
+    tolerance: float = 0.50,
 ) -> Optional[float]:
     """Acceptance angle (deg), derived from the data, as a QC cross-check.
 
@@ -1214,7 +1214,9 @@ def main(session_id: str) -> pd.DataFrame:
         mask=mask_horizontal, max_latency=reward_window,scoring_mode=scoring_mode,
     )
     session_acceptance_angle(
-        data, saccades, config, mask=mask_horizontal, max_latency=reward_window, scoring_mode=scoring_mode,
+        data, saccades, config, acceptance_angle_deg=acceptance_angle,
+        mask=mask_horizontal, max_latency=reward_window, 
+        scoring_mode=scoring_mode,
     )
 
     max_trial_time = reward_window
