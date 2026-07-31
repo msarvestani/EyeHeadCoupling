@@ -11,33 +11,48 @@ CSV) is the rig's own independently-logged record of which trials were
 rewarded — this script treats it as ground truth for the QC checks below,
 it does not (yet) recompute it from the eye-tracking data itself.
 
-How a trial ends differs by rig/animal:
+How a trial ends differs by rig/animal, via the manifest's
+``reward_contingency.scoring_mode`` (no safe global default — set
+explicitly per session):
 
-- **Apollo**: single-shot scoring. The first saccade after target onset
-  (in any direction) ends the trial immediately. It's rewarded only if it
-  also happens to land within ``reward_angle`` of the target direction and
-  within ``reward_window`` of target onset.
-- **Paris**: multi-attempt scoring. An incongruent saccade does *not* end
-  the trial — the animal gets to keep trying. The trial only ends early on
-  a saccade that lands within ``reward_angle`` of the target (which is
-  then rewarded); incongruent saccades before that point are attempts, not
+- ``single_shot`` (Apollo): the first saccade after target onset (in any
+  direction) ends the trial immediately. It's rewarded only if it also
+  lands within ``reward_angle`` of the target direction and within
+  ``reward_window`` of target onset.
+- ``multi_attempt`` (Paris): an incongruent saccade does *not* end the
+  trial — the animal gets to keep trying. The trial only ends early on a
+  saccade that lands within ``reward_angle`` of the target (which is then
+  rewarded); incongruent saccades before that point are attempts, not
   trial-enders.
 - **Both**: reaching ``reward_window`` without a rewarded saccade ends the
   trial unrewarded, regardless of animal.
 
-This means "the first saccade after target onset," as extracted by
-:func:`find_first_saccade_per_trial` and friends, is the *actual
-rig-scored* saccade for Apollo, but is not necessarily the rig-scored
-saccade for Paris — on Paris sessions the first saccade could be an
-incongruent attempt that the rig itself didn't end the trial on. The
-congruency functions in this file do not currently distinguish between the
-two rigs' scoring logic.
+Accordingly, "the first saccade after target onset" is not always the
+saccade the rig actually scored the trial on — only under ``single_shot``.
+:func:`_find_scored_saccade` resolves this per ``scoring_mode``: under
+``multi_attempt`` it returns the first *congruent* saccade in the window
+(skipping incongruent attempts, since they don't end the trial), or, if no
+attempt in the window was congruent, the *last* attempt — with
+``congruent=False`` and its latency reflecting how long the animal kept
+trying before time-out. Every congruency function in this file
+(:func:`session_reward_window`, :func:`session_acceptance_angle`,
+:func:`find_first_saccade_per_trial`, :func:`first_saccade_indices_by_direction`,
+:func:`analyze_latency_by_outcome`) goes through this helper, so "congruent"
+means the same thing everywhere and matches what the rig actually scored.
+The one exception is :func:`find_precue_saccade_per_trial` — it measures
+spontaneous pre-target saccade bias, which has nothing to do with how a
+trial ends, so it doesn't use ``scoring_mode`` at all.
+
+``first_saccade_indices_by_direction`` (and thus the eye-trace plots from
+:func:`eyehead.sort_saccades`) currently covers the translational
+(``saccade_frames_xy``) stream only; torsional saccade grouping has been
+factored out for a separate script.
 
 Reward contingency
 -------------------
 A trial is rewarded when the animal's saccade lands within an angular
 acceptance zone around the target direction, within a fixed time window of
-target onset. Both numbers are properties of the rig/task, not of this
+target onset. These numbers are properties of the rig/task, not of this
 analysis, and are read from ``session_manifest.yml`` under
 ``reward_contingency`` (global default, overridable per session):
 
@@ -48,8 +63,11 @@ analysis, and are read from ``session_manifest.yml`` under
   within this many degrees.
 - ``reward_window`` (s): how long after target onset a saccade can still
   be rewarded.
+- ``scoring_mode``: ``single_shot`` or ``multi_attempt`` — see above. Must
+  be set explicitly per session; there is no global fallback that would
+  make sense across both rigs.
 
-A third manifest key, ``congruency_window`` (s, a ``[lo, hi]`` pair), is
+A fourth manifest key, ``congruency_window`` (s, a ``[lo, hi]`` pair), is
 **not** part of the rig's reward contingency — it's purely an analysis
 choice, the fixed post-target latency band used for one summary statistic
 (the single-number "fraction of saccades toward target" reported by
@@ -795,13 +813,17 @@ def analyze_latency_by_outcome(
             n_no_saccade += 1
             continue
         rel_valid = (saccade_frames[valid] - f) / ttl_freq
-        first = np.argmin(rel_valid)
-        if rel_valid[first] > max_latency:
+        idx_valid = saccade_indices[valid]
+        in_latency = rel_valid <= max_latency
+        if not np.any(in_latency):
             n_no_saccade += 1
             continue
-        idx_first = saccade_indices[valid][first]
-        latencies.append(rel_valid[first])
-        congruent.append(_angular_deviation_deg(dx[idx_first], dy[idx_first], gdx, gdy) <= acceptance_angle_deg)
+        _, latency, is_congruent = _find_scored_saccade(
+            rel_valid[in_latency], idx_valid[in_latency], dx, dy, gdx, gdy,
+            acceptance_angle_deg, scoring_mode,
+        )
+        latencies.append(latency)
+        congruent.append(is_congruent)
 
     return {
         "latencies": np.array(latencies),
