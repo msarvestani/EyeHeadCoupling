@@ -28,7 +28,7 @@ def compute_saccade_psth(
     data: SessionData,
     saccades: Dict[str, np.ndarray],
     config,
-    window: Tuple[float, float] = (-1.5, 1.5),
+    window: Tuple[float, float],
     bin_width: float = 0.1,
     mask: Optional[np.ndarray] = None,
     n_boot: int = 200,
@@ -128,8 +128,8 @@ def session_reward_window(
     saccades: Dict[str, np.ndarray],
     config,
     acceptance_angle_deg: float,
+    max_latency: float,
     mask: Optional[np.ndarray] = None,
-    max_latency: float = 1.5,
     tolerance: float = 0.10,
 ) -> Optional[float]:
     """Reward-window duration (s), derived from the data, as a QC cross-check.
@@ -223,8 +223,8 @@ def session_acceptance_angle(
     data: SessionData,
     saccades: Dict[str, np.ndarray],
     config,
+    max_latency: float,
     mask: Optional[np.ndarray] = None,
-    max_latency: float = 1.5,
     percentile: float = 90.0,
     tolerance: float = 0.25,
 ) -> Optional[float]:
@@ -319,7 +319,7 @@ def find_first_saccade_per_trial(
     saccades: Dict[str, np.ndarray],
     config,
     acceptance_angle_deg: float,
-    max_latency: float = 1.5,
+    max_latency: float,
     mask: Optional[np.ndarray] = None,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Latency and target-congruency of the first saccade in each trial.
@@ -400,7 +400,7 @@ def first_saccade_indices_by_direction(
     data: SessionData,
     saccades: Dict[str, np.ndarray],
     config,
-    max_latency: float = 1.5,
+    max_latency: float,
     frames_key: str = "saccade_frames_xy",
     indices_key: str = "saccade_indices_xy",
 ) -> Dict[str, np.ndarray]:
@@ -474,7 +474,7 @@ def find_precue_saccade_per_trial(
     saccades: Dict[str, np.ndarray],
     config,
     acceptance_angle_deg: float,
-    window: float = 0.5,
+    window: float,
     mask: Optional[np.ndarray] = None,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Latency and target-congruency of the last saccade before target onset.
@@ -489,7 +489,13 @@ def find_precue_saccade_per_trial(
         Same angular acceptance-zone definition as in
         :func:`find_first_saccade_per_trial` — should be the manifest's
         ``reward_contingency.reward_angle``.
-
+    window : float
+        How far back before target onset to search (seconds). Should be the
+        manifest's ``reward_contingency.reward_window``, so this control
+        period has the same duration as the real post-target reward window
+        it's being compared against — an equal-duration baseline, not an
+        arbitrary lookback.
+        
     Returns
     -------
     latencies : ndarray
@@ -565,7 +571,7 @@ def congruency_in_window(
 def fraction_toward_target_by_latency(
     latencies: np.ndarray,
     congruent: np.ndarray,
-    window_span: Tuple[float, float] = (0.2, 1.0),
+    window_span: Tuple[float, float],
     win_width: float = 0.3,
     step: float = 0.05,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -589,8 +595,8 @@ def analyze_latency_by_outcome(
     saccades: Dict[str, np.ndarray],
     config,
     acceptance_angle_deg: float,
+    max_latency: float,
     mask: Optional[np.ndarray] = None,
-    max_latency: float = 1.5,
 ) -> Dict[str, np.ndarray]:
     """Per-trial first-saccade latency, paired with a "correct" label.
 
@@ -748,7 +754,7 @@ def plot_psth_and_congruency(
     precue_frac: float,
     precue_n: int,
     config,
-    window: Tuple[float, float] = (0.15, 0.45),
+    window: Tuple[float, float],
     show_plots: bool = True,
     reward_window: Optional[float] = None,
 ) -> plt.Figure:
@@ -966,8 +972,9 @@ def main(session_id: str) -> pd.DataFrame:
     frac, n_window, ci_lo, ci_hi = congruency_in_window(latencies, congruent, window=window)
 
     precue_latencies, precue_congruent = find_precue_saccade_per_trial(
-        data, saccades, config, acceptance_angle_deg=acceptance_angle, mask=mask_horizontal,
-    )
+        data, saccades, config, acceptance_angle_deg=acceptance_angle, 
+        window=reward_window, mask=mask_horizontal)
+    
     precue_frac = float(np.mean(precue_congruent)) if len(precue_congruent) else np.nan
     precue_n = len(precue_congruent)
 
