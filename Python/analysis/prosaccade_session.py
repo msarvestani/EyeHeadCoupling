@@ -551,7 +551,7 @@ def _angular_deviation_deg(dx, dy, gdx, gdy):
 def congruency_in_window(
     latencies: np.ndarray,
     congruent: np.ndarray,
-    window: Tuple[float, float] = (0.15, 0.45),
+    window: Tuple[float, float],
 ) -> Tuple[float, int, float, float]:
     """Fraction congruent (with Wilson 95% CI) for saccades in a fixed latency window."""
     sel = (latencies >= window[0]) & (latencies < window[1])
@@ -957,7 +957,17 @@ def main(session_id: str) -> pd.DataFrame:
         latencies, congruent, window_span=(0.2, max_trial_time)
     )
 
-    window = (0.15, 0.45)
+    #get the early congruency window from manifest
+    reward_contingency = config.params.get("reward_contingency") or {}
+    congruency_window = reward_contingency.get("congruency_window")
+    if congruency_window is None:
+        raise ValueError(
+            "No congruency_window configured in reward_contingency for this session; "
+            "add one to session_manifest.yml (global default or per-session override)."
+        )
+    window = tuple(float(w) for w in congruency_window)
+
+    #calculate direction congruency in the window
     frac, n_window, ci_lo, ci_hi = congruency_in_window(latencies, congruent, window=window)
 
     precue_latencies, precue_congruent = find_precue_saccade_per_trial(
@@ -974,8 +984,9 @@ def main(session_id: str) -> pd.DataFrame:
     )
 
     latency_outcome = analyze_latency_by_outcome(
-        data, saccades, config, mask=mask_horizontal, max_latency=max_trial_time
-    )
+        data, saccades, config, acceptance_angle_deg=acceptance_angle,
+        mask=mask_horizontal, max_latency=max_trial_time)
+    
     plot_latency_by_outcome(latency_outcome, config, reward_window=reward_window)
 
 
