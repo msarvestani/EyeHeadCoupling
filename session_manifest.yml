@@ -364,7 +364,7 @@ sessions:
       saccade_config:
         saccade_threshold: 2.0
       reward_contingency:
-        reward_window: 1.5 #reward window in seconds
+        reward_window: 1.0 #reward window in seconds
         scoring_mode: single_shot
       
 
@@ -485,7 +485,7 @@ sessions:
           reward_window: 0.75 #reward window in seconds
           scoring_mode: multi_attempt
 
- #this has L/R & U/D targets, good
+ #this has L/R & U/D targets, great
  Tsh001_2025-07-29T16_36_12:
     experiment_type: prosaccade
     session_path: X:\Experimental_Data\EyeHeadCoupling_RatTS_server\TSh01_Paris_server\Tsh001_2025-07-29T16_36_12
