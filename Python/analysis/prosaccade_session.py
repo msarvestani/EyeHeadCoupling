@@ -99,6 +99,124 @@ session's ``end_of_trial``/``trial_success`` data.
 Saccade detection itself (thresholds for translational/torsional saccades,
 blink rejection) is a separate, unrelated manifest section
 (``saccade_config``) and is not part of the reward contingency.
+
+Function reference
+-------------------
+:func:`compute_saccade_psth`
+    Target-aligned saccade-rate PSTH (Hz) with a trial-resampling bootstrap
+    CI. Respects each trial's actual end (``end_of_trial_frame``) so
+    post-target bins are normalised by the number of trials still "at risk"
+    at that bin, not a flat trial count.
+
+:func:`session_reward_window`
+    QC cross-check: derives the reward window directly from the data (max
+    first-saccade latency among rewarded, congruent trials) and compares it
+    to the manifest's ``reward_window``, raising if they disagree by more
+    than ``tolerance``.
+
+:func:`session_acceptance_angle`
+    QC cross-check: derives the acceptance angle directly from the data (a
+    percentile of angular deviation among rewarded trials' scored saccades)
+    and compares it to the manifest's ``reward_angle``, raising if they
+    disagree by more than ``tolerance``.
+
+:func:`find_first_saccade_per_trial`
+    For every trial, finds the saccade the rig actually scored (via
+    :func:`_find_scored_saccade`) and returns its latency and whether it was
+    congruent with the target direction. Trials with no detectable saccade
+    in the window are omitted.
+
+:func:`first_saccade_indices_by_direction`
+    Same per-trial scored-saccade lookup as
+    :func:`find_first_saccade_per_trial`, but returns eye-position indices
+    grouped by stimulus direction (Left/Right/Up/Down) instead of
+    latencies, for feeding into :func:`eyehead.sort_saccades`'s
+    per-condition plots. Also returns a matching congruent/incongruent flag
+    per group so those plots can be colored by correctness.
+
+:func:`find_precue_saccade_per_trial`
+    Pre-target control: finds each trial's last saccade before target onset
+    (within an equal-duration lookback window) and its "congruency" with
+    the not-yet-seen target, establishing the chance-level baseline that
+    real target-directed congruency is compared against.
+
+:func:`wilson_ci`
+    Wilson score confidence interval for a binomial proportion; used to put
+    error bars on congruency fractions.
+
+:func:`_find_scored_saccade`
+    Core scoring-mode logic. Given all in-window saccades of a trial, picks
+    the one the Bonsai code actually ended the trial on — the first
+    saccade for ``single_shot``, or the first congruent saccade (else the
+    last attempt) for ``multi_attempt``. Every congruency-aware function in
+    this file routes through this, so "congruent" means one consistent
+    thing everywhere.
+
+:func:`_angular_deviation_deg`
+    Angular difference, in degrees, between a saccade's 2D direction and
+    the target's direction, computed via ``arctan2`` so it's correct for
+    oblique/vertical targets, not just left/right.
+
+:func:`congruency_in_window`
+    Fraction of first saccades that were congruent, restricted to a fixed
+    post-target latency window, with a Wilson 95% CI. This is the
+    single-number summary shown in the psth/congruency figure's third
+    panel.
+
+:func:`fraction_toward_target_by_latency`
+    Same congruency fraction as :func:`congruency_in_window`, but computed
+    in sliding latency windows across the whole trial duration, to see how
+    accuracy evolves with response time. Feeds the psth/congruency
+    figure's middle panel.
+
+:func:`analyze_latency_by_outcome`
+    Per-trial first-saccade latency paired with its congruent/incongruent
+    label, computed the same way as :func:`find_first_saccade_per_trial`
+    but additionally keeping a full trial accounting (``n_no_saccade``,
+    ``n_total``) for the latency-by-outcome histogram/CDF figure.
+
+:func:`calculate_trial_success`
+    Recomputes trial-by-trial success/failure straight from the
+    eye-tracking data using the same scoring rule as everything else in
+    this file, with exactly one entry per trial (nothing dropped) so it can
+    be compared 1:1 against the rig's own logged ``trial_success``.
+
+:func:`plot_latency_by_outcome`
+    Draws the two-panel latency-by-outcome figure (top: histogram of
+    latency split by correct/incorrect; bottom: matching CDFs), optionally
+    shading the reward window, and saves it to ``results_dir``.
+
+:func:`plot_trial_success_agreement`
+    Draws a per-trial strip plot comparing the rig's logged outcome against
+    the outcome recomputed by :func:`calculate_trial_success`, with a third
+    row marking per-trial agreement/disagreement, and reports overall
+    percent agreement.
+
+:func:`plot_psth_and_congruency`
+    Draws the three-panel summary figure — target-aligned rate PSTH,
+    saccade accuracy vs. latency, and windowed congruency vs. a pre-cue
+    control — optionally shading the reward window on the time-resolved
+    panels.
+
+:func:`main`
+    Runs the full per-session pipeline, in this order: loads the session
+    and its config, calibrates eye position, detects saccades, and
+    organizes trials by stimulus direction; runs the two QC cross-checks
+    (:func:`session_reward_window`, :func:`session_acceptance_angle`);
+    computes first-saccade indices by direction
+    (:func:`first_saccade_indices_by_direction`) and feeds them to
+    :func:`eyehead.sort_saccades` for the per-condition/polar plots;
+    computes the target-aligned PSTH (:func:`compute_saccade_psth`),
+    per-trial latency/congruency (:func:`find_first_saccade_per_trial`,
+    :func:`fraction_toward_target_by_latency`,
+    :func:`congruency_in_window`) and the pre-cue control
+    (:func:`find_precue_saccade_per_trial`), then draws
+    :func:`plot_psth_and_congruency`; separately computes
+    :func:`analyze_latency_by_outcome` and draws
+    :func:`plot_latency_by_outcome`; and, if the rig's ``trial_success`` is
+    available, recomputes success via :func:`calculate_trial_success` and
+    draws :func:`plot_trial_success_agreement`. Returns a small per-saccade
+    DataFrame plus ``left_angle``/``right_angle``.
 """
 
 from __future__ import annotations
