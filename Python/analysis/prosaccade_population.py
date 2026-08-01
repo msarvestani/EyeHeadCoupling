@@ -196,6 +196,135 @@ def analyze_all_sessions(
         animal_pooled,
     )
 
+def plot_population_summary(
+    pooled: dict,
+    title: str,
+    save_stem: str,
+    results_dir: Path,
+    experiment_type: str = "prosaccade",
+    animal_name: str | None = None,
+    reward_angle: float = 35.0,
+) -> None:
+    """Draw the three population plots for one pooled trial set.
+
+    ``pooled`` is the output of :func:`pool_animal_sessions` (either one
+    animal's pooled sessions, or several animals' pooled dicts pooled again
+    for an all-animals-combined figure). Recomputes the target-aligned PSTH,
+    accuracy-vs-latency, and windowed-congruency-vs-pre-cue summaries from
+    the pooled per-trial data (via
+    :func:`prosaccade_session.psth_rate_from_trials`,
+    :func:`prosaccade_session.fraction_toward_target_by_latency`, and
+    :func:`prosaccade_session.congruency_in_window`), then draws the same
+    three figures :func:`prosaccade_session.main` draws per session:
+    :func:`prosaccade_session.plot_psth_and_congruency`,
+    :func:`prosaccade_session.plot_latency_by_outcome`, and
+    :func:`eyehead.analysis.plot_left_right_angle`.
+
+    ``title`` is used as the figure title/suptitle; ``save_stem`` is the
+    filename prefix (e.g. the animal name, or ``"all_animals"``) under
+    ``results_dir``.
+    """
+    from eyehead.analysis import plot_left_right_angle
+
+    reward_window = pooled["reward_window"]
+    congruency_window = pooled["congruency_window"]
+    latency_outcome = pooled["latency_outcome"]
+    latencies = latency_outcome["latencies"]
+    congruent = latency_outcome["congruent"]
+
+    psth_centers, psth_rate, psth_ci, n_trials_psth = prosaccade_session.psth_rate_from_trials(
+        pooled["psth_trial_rel_times"], pooled["psth_trial_durations"],
+        window=(-reward_window, reward_window),
+    )
+    latency_centers, fraction_toward, n_per_window = prosaccade_session.fraction_toward_target_by_latency(
+        latencies, congruent, window_span=(0.2, reward_window)
+    )
+    frac, n_window, ci_lo, ci_hi = prosaccade_session.congruency_in_window(
+        latencies, congruent, window=congruency_window
+    )
+    precue_congruent = pooled["precue_congruent"]
+    precue_frac = float(np.mean(precue_congruent)) if len(precue_congruent) else np.nan
+    precue_n = len(precue_congruent)
+
+    prosaccade_session.plot_psth_and_congruency(
+        psth_centers, psth_rate, psth_ci, n_trials_psth,
+        latency_centers, fraction_toward, n_per_window,
+        frac, n_window, ci_lo, ci_hi, precue_frac, precue_n,
+        title=title,
+        save_path=results_dir / f"{save_stem}_psth_congruency.png",
+        window=congruency_window, reward_window=reward_window,
+    )
+
+    prosaccade_session.plot_latency_by_outcome(
+        latency_outcome,
+        title=title,
+        save_path=results_dir / f"{save_stem}_latency_by_outcome.png",
+        reward_window=reward_window,
+    )
+
+    plot_left_right_angle(
+        pooled["left_angle"],
+        pooled["right_angle"],
+        reward_angle,
+        sessionname=save_stem,
+        resultdir=results_dir,
+        experiment_type=experiment_type,
+        animal_name=animal_name,
+    )
+
+
+def run_population_summary_plots(
+    animal_pooled: dict[str, dict],
+    results_dir: Path,
+    experiment_type: str = "prosaccade",
+) -> None:
+    """Draw the three population plots for every animal, plus one combined set.
+
+    Calls :func:`plot_population_summary` once per animal in
+    ``animal_pooled``, then — only when more than one animal is present, to
+    avoid a redundant duplicate of a single animal's own plots — once more
+    for every animal pooled together (via :func:`pool_animal_sessions`
+    applied to the already-pooled per-animal dicts, which share the same
+    shape as a raw per-session result).
+    """
+    animal_names_sorted = sorted(animal_pooled.keys())
+    if not animal_names_sorted:
+        warnings.warn(
+            f"No animals with pooled sessions found for experiment_type="
+            f"{experiment_type!r}; skipping population summary plots."
+        )
+        return
+
+    for animal in animal_names_sorted:
+        pooled = animal_pooled[animal]
+        safe_animal = re.sub(r"[^A-Za-z0-9_-]+", "_", animal).strip("_") or "unknown"
+        plot_population_summary(
+            pooled,
+            title=f"{animal} — population ({pooled['n_sessions']} sessions)",
+            save_stem=f"{experiment_type}_population_{safe_animal}",
+            results_dir=results_dir,
+            experiment_type=experiment_type,
+            animal_name=animal,
+        )
+
+    if len(animal_pooled) > 1:
+        combined_pooled = pool_animal_sessions(list(animal_pooled.values()))
+        total_sessions = sum(p["n_sessions"] for p in animal_pooled.values())
+        plot_population_summary(
+            combined_pooled,
+            title=f"All animals — population ({total_sessions} sessions across {len(animal_pooled)} animals)",
+            save_stem=f"{experiment_type}_population_all_animals",
+            results_dir=results_dir,
+            experiment_type=experiment_type,
+            animal_name=", ".join(animal_names_sorted),
+        )
+    else:
+        print(
+            "Only one animal in this run; skipping the all-animals-combined "
+            "plot (it would just duplicate that animal's own)."
+        )
+
+
 def plot_prosaccade_trends_from_dictionary(
     left_angle_dict: dict,
     right_angle_dict: dict,
@@ -325,4 +454,10 @@ if __name__ == "__main__":
     )
     aggregated.to_csv(
         results_root / f"{args.experiment_type}_population_results.csv", index=False
+    )
+
+    ### Per-animal (+ all-animals-combined) latency-by-outcome, psth/congruency,
+    ### and left/right polar population plots.
+    run_population_summary_plots(
+        animal_pooled, results_root, experiment_type=args.experiment_type,
     )
