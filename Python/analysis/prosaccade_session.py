@@ -197,7 +197,9 @@ Function reference
 :func:`plot_latency_by_outcome`
     Draws the two-panel latency-by-outcome figure (top: histogram of
     latency split by correct/incorrect; bottom: matching CDFs), optionally
-    shading the reward window, and saves it to ``results_dir``.
+    shading the reward window, and saves it to an explicit ``save_path``
+    under an explicit ``title`` — so the same function draws both a single
+    session's figure and a pooled population figure.
 
 :func:`plot_trial_success_agreement`
     Draws a per-trial strip plot comparing the rig's logged outcome against
@@ -209,7 +211,9 @@ Function reference
     Draws the three-panel summary figure — target-aligned rate PSTH,
     saccade accuracy vs. latency, and windowed congruency vs. a pre-cue
     control — optionally shading the reward window on the time-resolved
-    panels.
+    panels. Takes an explicit ``title``/``save_path`` (rather than a
+    per-session ``config``) so the same function draws both a single
+    session's figure and a pooled population figure.
 
 :func:`main`
     Runs the full per-session pipeline, in this order: loads the session
@@ -219,8 +223,9 @@ Function reference
     computes first-saccade indices by direction
     (:func:`first_saccade_indices_by_direction`) and feeds them to
     :func:`eyehead.sort_saccades` for the per-condition/polar plots;
-    computes the target-aligned PSTH (:func:`compute_saccade_psth`),
-    per-trial latency/congruency (:func:`find_first_saccade_per_trial`,
+    computes the target-aligned PSTH (:func:`collect_psth_trials` +
+    :func:`psth_rate_from_trials`), per-trial latency/congruency
+    (:func:`find_first_saccade_per_trial`,
     :func:`fraction_toward_target_by_latency`,
     :func:`congruency_in_window`) and the pre-cue control
     (:func:`find_precue_saccade_per_trial`), then draws
@@ -228,9 +233,13 @@ Function reference
     :func:`analyze_latency_by_outcome` and draws
     :func:`plot_latency_by_outcome`; and, if the rig's ``trial_success`` is
     available, recomputes success via :func:`calculate_trial_success` and
-    draws :func:`plot_trial_success_agreement`. Returns a small per-saccade
-    DataFrame plus ``left_angle``/``right_angle``.
-
+    draws :func:`plot_trial_success_agreement`. Returns a dict with the
+    per-saccade DataFrame (``df``), ``left_angle``/``right_angle``, and
+    everything a population script needs to pool this session with others:
+    ``latency_outcome``, ``precue_latencies``/``precue_congruent``, the
+    ``congruency_window``/``reward_window`` actually used, and
+    ``psth_trial_rel_times``/``psth_trial_durations`` (see
+    :func:`collect_psth_trials`).
 """
 
 from __future__ import annotations
@@ -261,6 +270,131 @@ from eyehead import (
     get_session_date_from_path,
 )
 
+def collect_psth_trials(
+    data: SessionData,
+    saccades: Dict[str, np.ndarray],
+    config,
+    window: Tuple[float, float],
+    mask: Optional[np.ndarray] = None,
+    respect_trial_end: bool = True,
+) -> Tuple[list, np.ndarray]:
+    """Per-trial relative saccade times and durations — the raw ingredients for a PSTH.
+
+    Converts each trial's target onset and saccade times to seconds (via
+    ``config.ttl_freq``), so the result no longer depends on any one
+    session's frame-number scale. This is what lets
+    :func:`psth_rate_from_trials` pool trials collected from many sessions
+    (e.g. every session belonging to one animal) into a single population
+    PSTH, exactly as :func:`compute_saccade_psth` pools trials within one
+    session.
+
+    Parameters
+    ----------
+    Same as :func:`compute_saccade_psth`.
+
+    Returns
+    -------
+    trial_rel_times : list of ndarray
+        One array per trial: times (s, relative to that trial's target
+        onset) of every saccade within ``window`` that also falls before
+        the trial's own end (see ``respect_trial_end``).
+    durations : ndarray
+        Each trial's duration (s), or ``inf`` per trial when
+        ``respect_trial_end`` is ``False`` or no ``end_of_trial`` data is
+        available.
+    """
+    ttl_freq = config.ttl_freq
+    go_frame = np.asarray(data.go_frame)
+    end_frame = data.end_of_trial_frame
+    if mask is not None:
+        go_frame = go_frame[mask]
+        if end_frame is not None:
+            end_frame = np.asarray(end_frame)[mask]
+    n_trials = len(go_frame)
+
+    if respect_trial_end and end_frame is not None:
+        durations = (np.asarray(end_frame) - go_frame) / ttl_freq
+    else:
+        durations = np.full(n_trials, np.inf)
+
+    saccade_times = saccades["saccade_frames_xy"] / ttl_freq
+
+    trial_rel_times = []
+    for f, dur in zip(go_frame, durations):
+        rel = saccade_times - f / ttl_freq
+        in_window = rel[(rel >= window[0]) & (rel < window[1])]
+        in_window = in_window[(in_window < 0) | (in_window < dur)]
+        trial_rel_times.append(in_window)
+
+    return trial_rel_times, durations
+
+
+def psth_rate_from_trials(
+    trial_rel_times: list,
+    durations: np.ndarray,
+    window: Tuple[float, float],
+    bin_width: float = 0.1,
+    n_boot: int = 200,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, int]:
+    """Target-aligned saccade rate (Hz), with a bootstrap CI, from pre-collected trials.
+
+    Session-agnostic pooling core behind :func:`compute_saccade_psth`: given
+    each trial's already-converted relative saccade times and duration (see
+    :func:`collect_psth_trials`), it has no notion of which session a trial
+    came from, so trials collected from several sessions can be
+    concatenated and passed in together to get one pooled PSTH.
+
+    Parameters
+    ----------
+    trial_rel_times : list of ndarray
+        One array per trial of saccade times (s, relative to target onset),
+        already restricted to ``window`` and to before that trial's own end
+        — see :func:`collect_psth_trials`.
+    durations : ndarray
+        Each trial's duration (s); ``inf`` for a trial that should be
+        treated as observed for the entire ``window``.
+    window, bin_width, n_boot :
+        Same as :func:`compute_saccade_psth`.
+
+    Returns
+    -------
+    bin_centers, rate, ci, n_trials
+        ``ci`` is a ``(2, n_bins)`` array of (lower, upper) 95% bootstrap
+        bounds on the rate. Bins with no at-risk trials are ``NaN``.
+    """
+    n_trials = len(trial_rel_times)
+    edges = np.arange(window[0], window[1] + bin_width, bin_width)
+    bin_centers = edges[:-1] + bin_width / 2
+
+    def _rate_for(trial_idx: np.ndarray) -> np.ndarray:
+        counts = np.zeros(len(bin_centers))
+        at_risk = np.zeros(len(bin_centers))
+        for i in trial_idx:
+            dur = durations[i]
+            # a bin is "observed" for this trial if it is pre-target or falls
+            # before the trial ended
+            observed = (bin_centers < 0) | (bin_centers < dur)
+            at_risk += observed
+            counts += np.histogram(trial_rel_times[i], bins=edges)[0]
+        with np.errstate(divide="ignore", invalid="ignore"):
+            return np.where(at_risk > 0, counts / (at_risk * bin_width), np.nan)
+
+    all_idx = np.arange(n_trials)
+    rate = _rate_for(all_idx)
+
+    if n_trials and n_boot:
+        rng = np.random.default_rng()
+        boot_rates = np.empty((n_boot, len(bin_centers)))
+        for b in range(n_boot):
+            resampled = rng.choice(all_idx, size=n_trials, replace=True)
+            boot_rates[b] = _rate_for(resampled)
+        ci = np.nanpercentile(boot_rates, [2.5, 97.5], axis=0)
+    else:
+        ci = np.tile(rate, (2, 1))
+
+    return bin_centers, rate, ci, n_trials
+
+
 def compute_saccade_psth(
     data: SessionData,
     saccades: Dict[str, np.ndarray],
@@ -272,6 +406,13 @@ def compute_saccade_psth(
     respect_trial_end: bool = True,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, int]:
     """Target-aligned saccade rate (Hz), with a bootstrap confidence band.
+
+    Thin per-session wrapper: calls :func:`collect_psth_trials` to gather
+    this session's per-trial relative saccade times/durations, then
+    :func:`psth_rate_from_trials` to turn them into a rate curve. Behaviour
+    for a single session is unchanged from before this was split in two —
+    the population script instead calls those two functions directly so it
+    can pool trials across sessions before computing the rate.
 
     Parameters
     ----------
@@ -310,55 +451,13 @@ def compute_saccade_psth(
         ``ci`` is a ``(2, n_bins)`` array of (lower, upper) 95% bootstrap
         bounds on the rate. Bins with no at-risk trials are ``NaN``.
     """
-    ttl_freq = config.ttl_freq
-    go_frame = np.asarray(data.go_frame)
-    end_frame = data.end_of_trial_frame
-    if mask is not None:
-        go_frame = go_frame[mask]
-        if end_frame is not None:
-            end_frame = np.asarray(end_frame)[mask]
-    n_trials = len(go_frame)
+    trial_rel_times, durations = collect_psth_trials(
+        data, saccades, config, window, mask=mask, respect_trial_end=respect_trial_end,
+    )
+    return psth_rate_from_trials(
+        trial_rel_times, durations, window, bin_width=bin_width, n_boot=n_boot,
+    )
 
-    if respect_trial_end and end_frame is not None:
-        durations = (np.asarray(end_frame) - go_frame) / ttl_freq
-    else:
-        durations = np.full(n_trials, np.inf)
-
-    saccade_times = saccades["saccade_frames_xy"] / ttl_freq
-    edges = np.arange(window[0], window[1] + bin_width, bin_width)
-    bin_centers = edges[:-1] + bin_width / 2
-
-    def _rate_for(trial_idx: np.ndarray) -> np.ndarray:
-        counts = np.zeros(len(bin_centers))
-        at_risk = np.zeros(len(bin_centers))
-        for i in trial_idx:
-            f = go_frame[i]
-            dur = durations[i]
-            # a bin is "observed" for this trial if it is pre-target or falls
-            # before the trial ended
-            observed = (bin_centers < 0) | (bin_centers < dur)
-            at_risk += observed
-            rel = saccade_times - f / ttl_freq
-            in_window = rel[(rel >= window[0]) & (rel < window[1])]
-            in_window = in_window[(in_window < 0) | (in_window < dur)]
-            counts += np.histogram(in_window, bins=edges)[0]
-        with np.errstate(divide="ignore", invalid="ignore"):
-            return np.where(at_risk > 0, counts / (at_risk * bin_width), np.nan)
-
-    all_idx = np.arange(n_trials)
-    rate = _rate_for(all_idx)
-
-    if n_trials and n_boot:
-        rng = np.random.default_rng()
-        boot_rates = np.empty((n_boot, len(bin_centers)))
-        for b in range(n_boot):
-            resampled = rng.choice(all_idx, size=n_trials, replace=True)
-            boot_rates[b] = _rate_for(resampled)
-        ci = np.nanpercentile(boot_rates, [2.5, 97.5], axis=0)
-    else:
-        ci = np.tile(rate, (2, 1))
-
-    return bin_centers, rate, ci, n_trials
 
 def session_reward_window(
     data: SessionData,
@@ -1060,7 +1159,8 @@ def calculate_trial_success(
 
 def plot_latency_by_outcome(
     result: Dict[str, np.ndarray],
-    config,
+    title: str,
+    save_path,
     bins: int = 20,
     show_plots: bool = True,
     reward_window: Optional[float] = None,
@@ -1074,7 +1174,14 @@ def plot_latency_by_outcome(
 
     ``reward_window`` (seconds), if given, is drawn as a shaded region /
     dashed line marking the rewarded epoch, and the fraction of first
-    saccades that fell within it is reported in the title."""
+    saccades that fell within it is reported in the title.
+
+    ``title`` is used as-is, prefixed onto the trial-count summary this
+    function builds itself; ``save_path`` is the exact file the figure is
+    saved to. Taking these explicitly (instead of a per-session ``config``)
+    is what lets the same function draw both a single session's figure and
+    a population figure pooling many sessions."""
+
     latencies = result["latencies"]
     congruent = result["congruent"]
     n_no_saccade = result["n_no_saccade"]
@@ -1125,13 +1232,13 @@ def plot_latency_by_outcome(
         reward_txt = f"  —  {within:.0%} of first saccades within reward window (≤{reward_window:g}s)"
 
     fig.suptitle(
-        f"{config.animal_name or ''} {config.session_name}  —  "
+        f"{title}  —  "
         f"{result['n_total']} trials, {len(latencies)} with a saccade, "
         f"{n_no_saccade} excluded (no saccade){reward_txt}"
     )
     fig.tight_layout()
-    fig.savefig(config.results_dir / f"{config.session_name}_latency_by_outcome.png",
-                dpi=300, bbox_inches="tight")
+    fig.savefig(save_path, dpi=300, bbox_inches="tight")
+    
     if show_plots:
         plt.show()
     plt.close(fig)
@@ -1229,15 +1336,22 @@ def plot_psth_and_congruency(
     ci_hi: float,
     precue_frac: float,
     precue_n: int,
-    config,
+    title: str,
+    save_path,
     window: Tuple[float, float],
     show_plots: bool = True,
     reward_window: Optional[float] = None,
 ) -> plt.Figure:
+    
     """Three-panel figure: target-aligned rate PSTH, accuracy-by-latency, and windowed congruency vs. pre-cue control.
 
     ``reward_window`` (seconds), if given, is shaded on the time-resolved
-    panels (PSTH and accuracy-vs-latency) to mark the rewarded epoch."""
+    panels (PSTH and accuracy-vs-latency) to mark the rewarded epoch.
+
+    ``title`` is used verbatim as the figure's suptitle and ``save_path`` is
+    the exact file the figure is saved to. Taking these explicitly (instead
+    of a per-session ``config``) is what lets the same function draw both a
+    single session's figure and a population figure pooling many sessions."""
     fig, (ax_rate, ax_frac, ax_summary) = plt.subplots(1, 3, figsize=(14, 4))
 
     def _mark_reward(ax):
@@ -1295,10 +1409,9 @@ def plot_psth_and_congruency(
     ax_summary.set_title("Congruency vs. pre-cue control")
     
 
-    fig.suptitle(f"{config.animal_name or ''} {config.session_name}".strip())
+    fig.suptitle(title)
     fig.tight_layout()
-    fig.savefig(config.results_dir / f"{config.session_name}_psth_congruency.png",
-                dpi=300, bbox_inches="tight")
+    fig.savefig(save_path, dpi=300, bbox_inches="tight")
     if show_plots:
         plt.show()
     plt.close(fig)
@@ -1366,7 +1479,6 @@ def main(session_id: str) -> pd.DataFrame:
             "session_date": [date_str] * len(indices),
             "saccade_frame_xy": saccade_frames,
             "saccade_index_xy": indices,
-
         }
     )
     #disregard Up/Down target trials if they exist
@@ -1433,10 +1545,18 @@ def main(session_id: str) -> pd.DataFrame:
     if fig_sorted is not None:
         plt.close(fig_sorted)
 
-    psth_centers, psth_rate, psth_ci, n_trials_psth = compute_saccade_psth(
-        data, saccades, config, window=(-max_trial_time, max_trial_time),
-        mask=mask_horizontal,
+    # Split into the raw per-trial ingredients (collect_psth_trials) and the
+    # rate-curve computation (psth_rate_from_trials) rather than calling
+    # compute_saccade_psth directly, so the per-trial ingredients can also be
+    # returned below for the population script to pool across sessions.
+    psth_window = (-max_trial_time, max_trial_time)
+    psth_trial_rel_times, psth_trial_durations = collect_psth_trials(
+        data, saccades, config, psth_window, mask=mask_horizontal,
     )
+    psth_centers, psth_rate, psth_ci, n_trials_psth = psth_rate_from_trials(
+        psth_trial_rel_times, psth_trial_durations, psth_window,
+    )
+
     latencies, congruent = find_first_saccade_per_trial(
         data, saccades, config, acceptance_angle_deg=acceptance_angle,
         max_latency=max_trial_time, mask=mask_horizontal, scoring_mode=scoring_mode,
@@ -1465,18 +1585,28 @@ def main(session_id: str) -> pd.DataFrame:
     precue_frac = float(np.mean(precue_congruent)) if len(precue_congruent) else np.nan
     precue_n = len(precue_congruent)
 
+
+    session_title = f"{config.animal_name or ''} {config.session_name}".strip()
+
     plot_psth_and_congruency(
         psth_centers, psth_rate, psth_ci, n_trials_psth,
         latency_centers, fraction_toward, n_per_window,
         frac, n_window, ci_lo, ci_hi, precue_frac, precue_n,
-        config, window=window, reward_window=reward_window,
+        title=session_title,
+        save_path=config.results_dir / f"{config.session_name}_psth_congruency.png",
+        window=window, reward_window=reward_window,
     )
 
     latency_outcome = analyze_latency_by_outcome(
         data, saccades, config, acceptance_angle_deg=acceptance_angle,
         mask=mask_horizontal, max_latency=max_trial_time, scoring_mode=scoring_mode)
-    
-    plot_latency_by_outcome(latency_outcome, config, reward_window=reward_window)
+
+    plot_latency_by_outcome(
+        latency_outcome,
+        title=session_title,
+        save_path=config.results_dir / f"{config.session_name}_latency_by_outcome.png",
+        reward_window=reward_window,
+    )
 
     #plot calculated trial success vs what the task produced    
     if data.trial_success is not None:
@@ -1507,7 +1637,18 @@ def main(session_id: str) -> pd.DataFrame:
 
         }
     )
-    return df,left_angle,right_angle
+    return {
+        "df": df,
+        "left_angle": left_angle,
+        "right_angle": right_angle,
+        "latency_outcome": latency_outcome,
+        "precue_latencies": precue_latencies,
+        "precue_congruent": precue_congruent,
+        "congruency_window": window,
+        "reward_window": reward_window,
+        "psth_trial_rel_times": psth_trial_rel_times,
+        "psth_trial_durations": psth_trial_durations,
+    }
 
 
 # Usage: python Python/analysis/prosaccade_session.py SESSION_ID_OR_PATH
