@@ -1419,7 +1419,7 @@ def plot_psth_and_congruency(
     return fig
 
 
-def main(session_id: str) -> pd.DataFrame:
+def main(session_id: str, show_plots: bool = True) -> pd.DataFrame:
     """Run the full analysis pipeline for ``session_id``.
 
     Parameters
@@ -1427,6 +1427,13 @@ def main(session_id: str) -> pd.DataFrame:
     session_id:
         Identifier of the session to analyse, either a manifest session ID
         or a direct path to a session folder.
+    show_plots : bool, optional
+        When ``True`` (default), every figure this session's pipeline
+        generates is also displayed via ``plt.show()``. Set to ``False`` to
+        still generate and save every figure as normal (nothing about the
+        analysis itself changes) but skip the interactive pop-up — e.g. when
+        batch-processing many sessions from :mod:`prosaccade_population`,
+        where only the population-level figures should pop up.
     """
     config = load_session_or_path(session_id)
     session_id = config.session_id
@@ -1532,7 +1539,7 @@ def main(session_id: str) -> pd.DataFrame:
         config, saccade_cfg, saccades, stim_type=stim_type,
         first_saccade_indices=first_saccades,
         first_saccade_congruent=first_saccades_congruent,
-        plot=True,
+        plot=True, show_plots=show_plots,
     )
 
     if fig_sorted is not None:
@@ -1581,13 +1588,14 @@ def main(session_id: str) -> pd.DataFrame:
 
     session_title = f"{config.animal_name or ''} {config.session_name}".strip()
 
+
     plot_psth_and_congruency(
         psth_centers, psth_rate, psth_ci, n_trials_psth,
         latency_centers, fraction_toward, n_per_window,
         frac, n_window, ci_lo, ci_hi, precue_frac, precue_n,
         title=session_title,
         save_path=config.results_dir / f"{config.session_name}_psth_congruency.png",
-        window=window, reward_window=reward_window,
+        window=window, reward_window=reward_window, show_plots=show_plots,
     )
 
     latency_outcome = analyze_latency_by_outcome(
@@ -1598,10 +1606,10 @@ def main(session_id: str) -> pd.DataFrame:
         latency_outcome,
         title=session_title,
         save_path=config.results_dir / f"{config.session_name}_latency_by_outcome.png",
-        reward_window=reward_window,
+        reward_window=reward_window, show_plots=show_plots,
     )
 
-    #plot calculated trial success vs what the task produced    
+    #plot calculated trial success vs what the task produced
     if data.trial_success is not None:
         trial_success_masked = np.asarray(data.trial_success)[mask_horizontal]
         if data.trial_outcome_encoding == "code012":
@@ -1613,7 +1621,9 @@ def main(session_id: str) -> pd.DataFrame:
             data, saccades, config, acceptance_angle_deg=acceptance_angle,
             max_latency=max_trial_time, scoring_mode=scoring_mode, mask=mask_horizontal,
         )
-        plot_trial_success_agreement(calculated_success, rig_success, has_saccade, config)
+        plot_trial_success_agreement(
+            calculated_success, rig_success, has_saccade, config, show_plots=show_plots,
+        )
     else:
         warnings.warn(
             "No trial_success data available; skipping calculated-vs-rig "

@@ -213,6 +213,7 @@ def pool_animal_sessions(results: list[dict]) -> dict:
 def analyze_all_sessions(
     experiment_type: str | None = "prosaccade",
     animal_name: str | None = None,
+    show_session_plots: bool = True,
 ):
     """Run prosaccade analysis on sessions that match the provided filters.
 
@@ -223,6 +224,14 @@ def analyze_all_sessions(
         all experiment types are considered.
     animal_name:
         Optional animal name used to further restrict the manifest lookup.
+    show_session_plots:
+        Passed straight through to :func:`prosaccade_session.main` as
+        ``show_plots`` for every session. Defaults to ``True`` (unchanged
+        behaviour — every session's figures pop up as before). Set to
+        ``False`` to still generate and save every per-session figure as
+        normal but skip the interactive pop-up for all of them, e.g. when
+        batch-processing many sessions and only the population-level
+        figures should actually be shown.
 
     Returns
     -------
@@ -246,7 +255,7 @@ def analyze_all_sessions(
         match_prefix=True,
         animal_name=animal_name,
     ):
-        result = prosaccade_session.main(session_id)
+        result = prosaccade_session.main(session_id, show_plots=show_session_plots)
         session_cfg = load_session(session_id)
 
         session_df = result["df"].copy()
@@ -409,7 +418,8 @@ def run_population_summary_plots(
         )
 
 
-# Usage: python Python/analysis/prosaccade_population.py --animal-name Paris
+# Usage: python Python/analysis/prosaccade_population.py --animal-name Paris will print all session figures too
+# Usage: python Python/analysis/prosaccade_population.py --animal-name Paris --quiet-session-plots will print only population
 if __name__ == "__main__":
     
     parser = argparse.ArgumentParser(
@@ -420,14 +430,36 @@ if __name__ == "__main__":
         default="prosaccade",
         help="Experiment type to process",
     )
+
     parser.add_argument(
         "--animal-name",
         default=None,
         help="Optional animal name to filter sessions",
     )
+    parser.add_argument(
+        "--quiet-session-plots",
+        action="store_true",
+        help=(
+            "Still generate and save every per-session figure as normal, "
+            "but don't pop them up interactively (no windows to close "
+            "while batch-processing many sessions). Population-level "
+            "figures always pop up regardless. Default: session plots do "
+            "pop up, same as before."
+        ),
+    )
     args = parser.parse_args()
+    (
+        aggregated,
+        left_angle_all,
+        right_angle_all,
+        processed_animals,
+        animal_pooled,
+    ) = analyze_all_sessions(
+        args.experiment_type,
+        animal_name=args.animal_name,
+        show_session_plots=not args.quiet_session_plots,
+    )
 
-    (aggregated, _,_,_,animal_pooled) = analyze_all_sessions(args.experiment_type,animal_name=args.animal_name,)
     root_dir = Path(__file__).resolve().parents[2]
         
     manifest_path = root_dir / "session_manifest.yml"

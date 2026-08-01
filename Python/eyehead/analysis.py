@@ -296,8 +296,10 @@ def organize_stims(
     return stim_frames, stim_type
 
 
-#### Dirty fixes TODO
-def plot_left_right_angle(left_angle,right_angle,reward_angle=35,sessionname=None,resultdir=None,experiment_type="prosaccade",animal_name=None):
+#### Dirty fixes 
+def plot_left_right_angle(left_angle,right_angle,reward_angle=35,sessionname=None,resultdir=None,
+                          experiment_type="prosaccade",animal_name=None,show_plots=True):
+        
         fig, (ax_polar_left, ax_polar_right) = plt.subplots(1, 2, subplot_kw={'projection': 'polar'}, figsize=(15, 6))
         context_parts = []
         if sessionname:
@@ -340,8 +342,6 @@ def plot_left_right_angle(left_angle,right_angle,reward_angle=35,sessionname=Non
             label='Right Trials'
         )
 ## Plot the von mises fit for both left and right angles
-
-        
 
         ax_polar_left.set_yticklabels([])
         ax_polar_right.set_yticklabels([])
@@ -497,32 +497,6 @@ def plot_left_right_angle(left_angle,right_angle,reward_angle=35,sessionname=Non
             label="Von Mises KDE"
         )
 
-
-        # bin_centers_left = (bins_left[:-1] + bins_left[1:]) / 2
-        # theta_left_closed = np.append(bin_centers_left, bin_centers_left[0])
-        # counts_left_closed = np.append(counts_left, counts_left[0])
-        # ax_polar_left.plot(
-        #     theta_left_closed,
-        #     counts_left_closed,
-        #     color='darkgreen',
-        #     linewidth=2,
-        #     label='Histogram Curve'
-        # )
-
-        # # For RIGHT angles: Plot line connecting histogram bins (with wrap around)
-        # bin_centers_right = (bins_right[:-1] + bins_right[1:]) / 2
-        # theta_right_closed = np.append(bin_centers_right, bin_centers_right[0])
-        # counts_right_closed = np.append(counts_right, counts_right[0])
-        # ax_polar_right.plot(
-        #     theta_right_closed,
-        #     counts_right_closed,
-        #     color='purple',
-        #     linewidth=2,
-        #     label='Histogram Curve'
-        # )
-        # ax_polar_left.set_ylim(0, np.max([np.max(counts_left), 0.4]))
-        # ax_polar_right.set_ylim(0, np.max([np.max(counts_right), 0.4]))
-
         fig.tight_layout(rect=[0, 0.03, 1, 0.95])
         if resultdir is None:
             raise ValueError("resultdir must be provided to save the plot")
@@ -550,7 +524,9 @@ def plot_left_right_angle(left_angle,right_angle,reward_angle=35,sessionname=Non
         cond_fname_svg = _filename_with_animal(f"{base_stem}.svg", animal_name)
         fig.savefig(resultdir_path / cond_fname_png, dpi=300, bbox_inches="tight")
         fig.savefig(resultdir_path / cond_fname_svg, dpi=300, bbox_inches="tight")
-        plt.show()
+
+        if show_plots:
+            plt.show()
         plt.close(fig)
 
 
@@ -563,6 +539,7 @@ def sort_saccades(
     first_saccade_indices_theta: Optional[Dict[str, np.ndarray]] = None,
     first_saccade_congruent: Optional[Dict[str, np.ndarray]] = None,
     plot: bool = False,
+    show_plots: bool = True,
 ) -> Dict[str, np.ndarray] | Tuple[Dict[str, np.ndarray], plt.Figure, Tuple[plt.Axes, plt.Axes, plt.Axes]]:
     
     """Sort saccades by stimulus and optionally plot summaries.
@@ -594,6 +571,12 @@ def sort_saccades(
     plot : bool, optional
         When ``True`` the function generates the same diagnostic plots as
         before and returns them alongside the sorted saccade indices.
+    show_plots : bool, optional
+        When ``True`` (default), each generated figure is also displayed via
+        ``plt.show()``. Set to ``False`` to still generate/save every
+        figure (unaffected — including ``left_angle``/``right_angle``,
+        which are computed regardless of this flag) but skip the
+        interactive pop-up, e.g. when batch-processing many sessions.
 
     Returns
     -------
@@ -714,7 +697,8 @@ def sort_saccades(
         base_all_fname = f"{session_name}_{eye_name}_ALL_{stim_type}.png"
         all_fname = _filename_with_animal(base_all_fname, config.animal_name)
         fig_all.savefig(config.results_dir / all_fname, dpi=300, bbox_inches="tight")
-        plt.show()
+        if show_plots:
+            plt.show()
     else:
         fig_all = None
         ax_quiver = ax_polar = ax_linear = None
@@ -811,7 +795,9 @@ def sort_saccades(
             base_cond_fname = f"{config.session_name}_{eye_name}_{label}_{stim_type}.png"
             cond_fname = _filename_with_animal(base_cond_fname, config.animal_name)
             fig.savefig(config.results_dir / cond_fname, dpi=300, bbox_inches="tight")
-            plt.show()
+
+            if show_plots:
+                plt.show()
             plt.close(fig)
 
     if plot:
@@ -834,6 +820,7 @@ def sort_saccades(
                 sessionname=session_name_with_animal,
                 resultdir=config.results_dir,
                 experiment_type=getattr(config, "experiment_type", None) or "prosaccade",
+                show_plots=show_plots,
             )
 
         return sorted_data, left_angle, right_angle, fig_all, (ax_quiver, ax_polar, ax_linear)
