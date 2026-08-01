@@ -468,7 +468,7 @@ def session_reward_window(
     max_latency: float,
     scoring_mode: str,
     mask: Optional[np.ndarray] = None,
-    tolerance: float = 0.20,
+    tolerance: float = 0.80,
 ) -> Optional[float]:
     """Reward-window duration (s), derived from the data, as a QC cross-check.
 

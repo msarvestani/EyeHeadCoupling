@@ -403,7 +403,8 @@ def plot_session_validity_summary(
 ) -> None:
     """Two-panel dot plot: fraction of valid trials, and fraction of those
     valid trials that were correct, one dot per session grouped by animal,
-    with each animal's trial-weighted pooled average overlaid.
+    with each animal's trial-weighted pooled average (+ 95% Wilson CI)
+    overlaid.
 
     "Valid" means a first saccade was detected in the reward window at all;
     "correct" means, of valid trials, the fraction whose saccade was
@@ -413,7 +414,10 @@ def plot_session_validity_summary(
     Each animal's average is the trial-weighted pooled fraction computed
     from ``animal_pooled[animal]["latency_outcome"]`` — consistent with how
     the rest of this script pools trials — not a simple mean of per-session
-    fractions, so a session with more trials counts for more.
+    fractions, so a session with more trials counts for more; its error bar
+    is the 95% Wilson score interval (:func:`prosaccade_session.wilson_ci`)
+    on that pooled fraction, same CI method used elsewhere in this codebase
+    for fraction-with-CI summaries.
     """
     animals_sorted = sorted(animal_pooled.keys())
     if not animals_sorted:
@@ -434,24 +438,40 @@ def plot_session_validity_summary(
         valid_ys = [r["fraction_valid"] for r in sessions]
         correct_ys = [r["fraction_correct"] for r in sessions]
 
-        ax_valid.scatter(xs, valid_ys, color="tab:blue", alpha=0.6, s=40, zorder=2,
+        ax_valid.scatter(xs, valid_ys, color="tab:green", alpha=0.6, s=40, zorder=2,
                           label="session" if i == 0 else None)
-        ax_correct.scatter(xs, correct_ys, color="tab:blue", alpha=0.6, s=40, zorder=2,
+        ax_correct.scatter(xs, correct_ys, color="tab:green", alpha=0.6, s=40, zorder=2,
                             label="session" if i == 0 else None)
 
         pooled_lo = animal_pooled[animal]["latency_outcome"]
-        pooled_n_valid = pooled_lo["n_total"] - pooled_lo["n_no_saccade"]
-        pooled_frac_valid = (
-            pooled_n_valid / pooled_lo["n_total"] if pooled_lo["n_total"] else np.nan
-        )
+        pooled_n_total = pooled_lo["n_total"]
+        pooled_n_valid = pooled_n_total - pooled_lo["n_no_saccade"]
+        pooled_congruent = pooled_lo["congruent"]
+        pooled_n_correct = int(np.sum(pooled_congruent))
+        pooled_frac_valid = pooled_n_valid / pooled_n_total if pooled_n_total else np.nan
         pooled_frac_correct = (
-            float(np.mean(pooled_lo["congruent"])) if len(pooled_lo["congruent"]) else np.nan
+            float(np.mean(pooled_congruent)) if len(pooled_congruent) else np.nan
         )
 
-        ax_valid.scatter([i], [pooled_frac_valid], color="tab:red", marker="D", s=90, zorder=3,
-                          label="animal average (trial-weighted)" if i == 0 else None)
-        ax_correct.scatter([i], [pooled_frac_correct], color="tab:red", marker="D", s=90, zorder=3,
-                            label="animal average (trial-weighted)" if i == 0 else None)
+        valid_ci_lo, valid_ci_hi = prosaccade_session.wilson_ci(pooled_n_valid, pooled_n_total)
+        correct_ci_lo, correct_ci_hi = prosaccade_session.wilson_ci(
+            pooled_n_correct, len(pooled_congruent)
+        )
+
+        ax_valid.errorbar(
+            [i], [pooled_frac_valid],
+            yerr=[[max(0.0, pooled_frac_valid - valid_ci_lo)],
+                  [max(0.0, valid_ci_hi - pooled_frac_valid)]],
+            fmt="o", color="black", ecolor="black", capsize=4, ms=10, zorder=3,
+            label="animal average (trial-weighted, 95% CI)" if i == 0 else None,
+        )
+        ax_correct.errorbar(
+            [i], [pooled_frac_correct],
+            yerr=[[max(0.0, pooled_frac_correct - correct_ci_lo)],
+                  [max(0.0, correct_ci_hi - pooled_frac_correct)]],
+            fmt="o", color="black", ecolor="black", capsize=4, ms=10, zorder=3,
+            label="animal average (trial-weighted, 95% CI)" if i == 0 else None,
+        )
 
     for ax, ylabel, title in (
         (ax_valid, "Fraction of trials with a detected saccade", "Trial validity"),
