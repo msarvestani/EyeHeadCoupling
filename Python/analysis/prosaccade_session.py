@@ -110,7 +110,9 @@ from typing import Dict, Optional, Tuple
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 import warnings
+
 
 # Put the repo's “Python” folder on sys.path so `import eyehead` works
 sys.path.append(str(Path(__file__).resolve().parents[1]))
@@ -862,7 +864,7 @@ def calculate_trial_success(
     max_latency: float,
     scoring_mode: str,
     mask: Optional[np.ndarray] = None,
-) -> np.ndarray:
+) -> Tuple[np.ndarray, np.ndarray]:
     """Per-trial calculated success/failure, using the same scoring rule as
     the rest of this file (:func:`_find_scored_saccade`).
 
@@ -871,6 +873,16 @@ def calculate_trial_success(
     calculated failure (``False``) rather than omitted, so the result has
     exactly one entry per trial and can be compared 1:1 against the rig's
     own ``data.trial_success`` log.
+
+    Returns
+    -------
+    calculated_success : ndarray of bool
+        Per-trial calculated outcome.
+    has_saccade : ndarray of bool
+        Whether any saccade was detected in the window at all. A trial
+        with ``has_saccade=False`` is always ``calculated_success=False``
+        too, but returned separately so callers can distinguish "no
+        saccade detected" from "a saccade was detected but incongruent".
     """
     ttl_freq = config.ttl_freq
     go_frame = data.go_frame
@@ -894,22 +906,24 @@ def calculate_trial_success(
     dy = saccades["eye_vel"][:, 1]
 
     calculated_success = np.zeros(len(go_frame), dtype=bool)
+    has_saccade = np.zeros(len(go_frame), dtype=bool)
     for i, (f, gdx, gdy, end_f) in enumerate(zip(go_frame, go_dir_x, go_dir_y, end_frame)):
         valid = (saccade_frames > f) & (saccade_frames < end_f)
         if not np.any(valid):
-            continue  # no saccade at all -> calculated failure
+            continue  # no saccade at all -> calculated failure, has_saccade stays False
         rel_valid = (saccade_frames[valid] - f) / ttl_freq
         idx_valid = saccade_indices[valid]
         in_latency = rel_valid <= max_latency
         if not np.any(in_latency):
             continue
+        has_saccade[i] = True
         _, _, is_congruent = _find_scored_saccade(
             rel_valid[in_latency], idx_valid[in_latency], dx, dy, gdx, gdy,
             acceptance_angle_deg, scoring_mode,
         )
         calculated_success[i] = is_congruent
 
-    return calculated_success
+    return calculated_success, has_saccade
 
 
 def plot_latency_by_outcome(
@@ -995,15 +1009,17 @@ def plot_latency_by_outcome(
 def plot_trial_success_agreement(
     calculated_success: np.ndarray,
     rig_success: np.ndarray,
+    has_saccade: np.ndarray,
     config,
     show_plots: bool = True,
 ) -> plt.Figure:
     """Per-trial comparison of calculated vs. rig-logged trial outcomes.
 
     Two rows of colored ticks over trial index (rig outcome, calculated
-    outcome; green = success, red = failure), plus a third strip marking
-    per-trial agreement (light gray = agree, black = disagree). Overall
-    agreement percentage is reported in the title.
+    outcome; green = success, red = failure, black = no saccade detected
+    in the window at all), plus a third strip marking per-trial agreement
+    (light gray = agree, orange = disagree). Overall agreement percentage
+    and each side's %correct are reported in the title.
     """
     agree = calculated_success == rig_success
     n = len(calculated_success)
@@ -1011,15 +1027,21 @@ def plot_trial_success_agreement(
 
     fig, ax = plt.subplots(figsize=(max(8, n * 0.02), 3))
 
-    def _row(y, values, label):
+    def _outcome_colors(values):
         colors = np.where(values, "tab:green", "tab:red")
+        return np.where(has_saccade, colors, "black")
+
+    def _row(y, values, label, use_has_saccade):
+        colors = np.where(values, "tab:green", "tab:red")
+        if use_has_saccade:
+            colors = np.where(has_saccade, colors, "black")
         ax.scatter(trial_idx, np.full(n, y), c=colors, marker="|", s=200, linewidths=1.5)
         ax.text(-n * 0.02, y, label, ha="right", va="center", fontsize=9)
 
-    _row(2, rig_success, "Rig")
-    _row(1, calculated_success, "Calculated")
+    _row(2, rig_success, "Rig", use_has_saccade=False)
+    _row(1, calculated_success, "Calculated", use_has_saccade=True)
 
-    disagree_colors = np.where(agree, "lightgray", "black")
+    disagree_colors = np.where(agree, "lightgray", "tab:orange")
     ax.scatter(trial_idx, np.full(n, 0), c=disagree_colors, marker="|", s=200, linewidths=1.5)
     ax.text(-n * 0.02, 0, "Agreement", ha="right", va="center", fontsize=9)
 
@@ -1030,12 +1052,28 @@ def plot_trial_success_agreement(
     pct_agree = 100 * np.mean(agree) if n else float("nan")
     pct_rig = 100 * np.mean(rig_success) if n else float("nan")
     pct_calc = 100 * np.mean(calculated_success) if n else float("nan")
-
     ax.set_title(
         f"{config.animal_name or ''} {config.session_name} — calculated vs. rig trial outcome "
         f"({pct_agree:.1f}% agreement, {int(np.sum(~agree))}/{n} disagree)\n"
         f"% correct — rig: {pct_rig:.1f}%, calculated: {pct_calc:.1f}%",
-        fontsize=10, wrap=True)
+        fontsize=10, wrap=True,
+    )
+
+    legend_handles = [
+        Line2D([0], [0], marker="|", color="tab:green", linestyle="none",
+               markersize=12, markeredgewidth=2, label="Rewarded"),
+        Line2D([0], [0], marker="|", color="tab:red", linestyle="none",
+               markersize=12, markeredgewidth=2, label="Not rewarded"),
+        Line2D([0], [0], marker="|", color="black", linestyle="none",
+               markersize=12, markeredgewidth=2, label="No saccade detected"),
+        Line2D([0], [0], marker="|", color="lightgray", linestyle="none",
+               markersize=12, markeredgewidth=2, label="Agree "),
+        Line2D([0], [0], marker="|", color="tab:orange", linestyle="none",
+               markersize=12, markeredgewidth=2, label="Disagree "),
+    ]
+    ax.legend(handles=legend_handles, loc="upper center", bbox_to_anchor=(0.5, -0.2),
+              ncol=2, fontsize=8, frameon=False)
+
     fig.tight_layout()
     fig.savefig(config.results_dir / f"{config.session_name}_trial_success_agreement.png",
                 dpi=300, bbox_inches="tight")
@@ -1361,11 +1399,11 @@ def main(session_id: str) -> pd.DataFrame:
         else:
             rig_success = trial_success_masked > 0
 
-        calculated_success = calculate_trial_success(
+        calculated_success, has_saccade = calculate_trial_success(
             data, saccades, config, acceptance_angle_deg=acceptance_angle,
             max_latency=max_trial_time, scoring_mode=scoring_mode, mask=mask_horizontal,
         )
-        plot_trial_success_agreement(calculated_success, rig_success, config)
+        plot_trial_success_agreement(calculated_success, rig_success, has_saccade, config)
     else:
         warnings.warn(
             "No trial_success data available; skipping calculated-vs-rig "
