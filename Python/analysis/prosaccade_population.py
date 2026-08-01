@@ -210,6 +210,8 @@ def pool_animal_sessions(results: list[dict]) -> dict:
         "n_sessions": len(results),
     }
 
+
+
 def analyze_all_sessions(
     experiment_type: str | None = "prosaccade",
     animal_name: str | None = None,
@@ -237,11 +239,18 @@ def analyze_all_sessions(
     -------
     tuple
         ``(aggregated, left_angle_all, right_angle_all, processed_animals,
-        animal_pooled)`` — the aggregated per-saccade session table, lists
-        of left/right eye angles, the set of unique animal names processed,
-        and ``animal_pooled``: a dict mapping each animal name to that
-        animal's sessions pooled via :func:`pool_animal_sessions`, ready for
-        the population plots.
+        animal_pooled, session_validity)`` — the aggregated per-saccade
+        session table, lists of left/right eye angles, the set of unique
+        animal names processed, ``animal_pooled`` (a dict mapping each
+        animal name to that animal's sessions pooled via
+        :func:`pool_animal_sessions`, ready for the population plots), and
+        ``session_validity``: a list with one dict per session —
+        ``{"animal_name", "session_id", "n_total", "n_valid",
+        "fraction_valid", "fraction_correct"}`` — where ``fraction_valid``
+        is the fraction of trials with a detected first saccade in the
+        window at all, and ``fraction_correct`` is, of those valid trials,
+        the fraction that were congruent (within ``reward_angle`` and
+        ``reward_window`` — see :func:`prosaccade_session.analyze_latency_by_outcome`).
     """
 
     tables: list[pd.DataFrame] = []
@@ -249,6 +258,7 @@ def analyze_all_sessions(
     right_angle_all = []
     processed_animals: set[str] = set()
     animal_session_results: dict[str, list[dict]] = defaultdict(list)
+    session_validity: list[dict] = []
 
     for session_id in list_sessions_from_manifest(
         experiment_type,
@@ -263,6 +273,21 @@ def analyze_all_sessions(
         if session_cfg.animal_name:
             processed_animals.add(session_cfg.animal_name)
             animal_session_results[session_cfg.animal_name].append(result)
+
+            lo = result["latency_outcome"]
+            n_valid = lo["n_total"] - lo["n_no_saccade"]
+            fraction_valid = n_valid / lo["n_total"] if lo["n_total"] else float("nan")
+            fraction_correct = (
+                float(np.mean(lo["congruent"])) if len(lo["congruent"]) else float("nan")
+            )
+            session_validity.append({
+                "animal_name": session_cfg.animal_name,
+                "session_id": session_id,
+                "n_total": lo["n_total"],
+                "n_valid": n_valid,
+                "fraction_valid": fraction_valid,
+                "fraction_correct": fraction_correct,
+            })
 
         tables.append(session_df)
         left_angle_all.append(result["left_angle"])
@@ -280,6 +305,7 @@ def analyze_all_sessions(
             right_angle_all,
             processed_animals,
             animal_pooled,
+            session_validity,
         )
 
     return (
@@ -288,7 +314,10 @@ def analyze_all_sessions(
         right_angle_all,
         processed_animals,
         animal_pooled,
+        session_validity,
     )
+
+
 
 def plot_population_summary(
     pooled: dict,
@@ -349,7 +378,6 @@ def plot_population_summary(
     animal_name=animal_name,
     )
 
-
     prosaccade_session.plot_psth_and_congruency(
         psth_centers, psth_rate, psth_ci, n_trials_psth,
         latency_centers, fraction_toward, n_per_window,
@@ -365,6 +393,90 @@ def plot_population_summary(
         save_path=results_dir / f"{save_stem}_latency_by_outcome.png",
         reward_window=reward_window,
     )
+
+
+def plot_session_validity_summary(
+    session_validity: list[dict],
+    animal_pooled: dict[str, dict],
+    results_dir: Path,
+    experiment_type: str = "prosaccade",
+) -> None:
+    """Two-panel dot plot: fraction of valid trials, and fraction of those
+    valid trials that were correct, one dot per session grouped by animal,
+    with each animal's trial-weighted pooled average overlaid.
+
+    "Valid" means a first saccade was detected in the reward window at all;
+    "correct" means, of valid trials, the fraction whose saccade was
+    congruent (within ``reward_angle`` and ``reward_window`` — see
+    :func:`prosaccade_session.analyze_latency_by_outcome`). Both are taken
+    directly from ``session_validity`` (see :func:`analyze_all_sessions`).
+    Each animal's average is the trial-weighted pooled fraction computed
+    from ``animal_pooled[animal]["latency_outcome"]`` — consistent with how
+    the rest of this script pools trials — not a simple mean of per-session
+    fractions, so a session with more trials counts for more.
+    """
+    animals_sorted = sorted(animal_pooled.keys())
+    if not animals_sorted:
+        warnings.warn(
+            "No animals to plot in plot_session_validity_summary; skipping."
+        )
+        return
+
+    fig, (ax_valid, ax_correct) = plt.subplots(
+        1, 2, figsize=(max(6, 2.2 * len(animals_sorted)), 5)
+    )
+    rng = np.random.default_rng(0)
+
+    for i, animal in enumerate(animals_sorted):
+        sessions = [r for r in session_validity if r["animal_name"] == animal]
+        jitter = rng.uniform(-0.15, 0.15, size=len(sessions))
+        xs = np.full(len(sessions), i, dtype=float) + jitter
+        valid_ys = [r["fraction_valid"] for r in sessions]
+        correct_ys = [r["fraction_correct"] for r in sessions]
+
+        ax_valid.scatter(xs, valid_ys, color="tab:blue", alpha=0.6, s=40, zorder=2,
+                          label="session" if i == 0 else None)
+        ax_correct.scatter(xs, correct_ys, color="tab:blue", alpha=0.6, s=40, zorder=2,
+                            label="session" if i == 0 else None)
+
+        pooled_lo = animal_pooled[animal]["latency_outcome"]
+        pooled_n_valid = pooled_lo["n_total"] - pooled_lo["n_no_saccade"]
+        pooled_frac_valid = (
+            pooled_n_valid / pooled_lo["n_total"] if pooled_lo["n_total"] else np.nan
+        )
+        pooled_frac_correct = (
+            float(np.mean(pooled_lo["congruent"])) if len(pooled_lo["congruent"]) else np.nan
+        )
+
+        ax_valid.scatter([i], [pooled_frac_valid], color="tab:red", marker="D", s=90, zorder=3,
+                          label="animal average (trial-weighted)" if i == 0 else None)
+        ax_correct.scatter([i], [pooled_frac_correct], color="tab:red", marker="D", s=90, zorder=3,
+                            label="animal average (trial-weighted)" if i == 0 else None)
+
+    for ax, ylabel, title in (
+        (ax_valid, "Fraction of trials with a detected saccade", "Trial validity"),
+        (ax_correct, "Fraction of valid trials that were correct", "Trial accuracy (of valid trials)"),
+    ):
+        ax.set_xticks(range(len(animals_sorted)))
+        ax.set_xticklabels(animals_sorted, rotation=30, ha="right")
+        ax.set_ylim(0, 1.05)
+        ax.set_ylabel(ylabel)
+        ax.set_title(title)
+        ax.legend(fontsize=8)
+
+    fig.suptitle(f"{experiment_type} — session validity/accuracy by animal", fontsize=12, wrap=True)
+    fig.tight_layout()
+    fig.savefig(
+        results_dir / f"{experiment_type}_session_validity_summary.png",
+        dpi=300, bbox_inches="tight",
+    )
+    fig.savefig(
+        results_dir / f"{experiment_type}_session_validity_summary.svg",
+        dpi=300, bbox_inches="tight",
+    )
+    plt.show()
+    plt.close(fig)
+
 
 def run_population_summary_plots(
     animal_pooled: dict[str, dict],
@@ -456,14 +568,14 @@ if __name__ == "__main__":
         right_angle_all,
         processed_animals,
         animal_pooled,
+        session_validity,
     ) = analyze_all_sessions(
         args.experiment_type,
         animal_name=args.animal_name,
         show_session_plots=not args.quiet_session_plots,
     )
-
     root_dir = Path(__file__).resolve().parents[2]
-        
+
     manifest_path = root_dir / "session_manifest.yml"
     with manifest_path.open("r", encoding="utf-8") as fh:
         manifest = yaml.safe_load(fh) or {}
@@ -479,4 +591,10 @@ if __name__ == "__main__":
     ### and left/right polar population plots.
     run_population_summary_plots(
         animal_pooled, results_root, experiment_type=args.experiment_type,
+    )
+
+    ### Per-session trial validity/accuracy, grouped by animal, with each
+    ### animal's trial-weighted average overlaid.
+    plot_session_validity_summary(
+        session_validity, animal_pooled, results_root, experiment_type=args.experiment_type,
     )
