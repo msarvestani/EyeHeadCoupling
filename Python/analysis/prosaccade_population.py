@@ -21,10 +21,10 @@ import yaml
 
 import matplotlib.pyplot as plt
 
-
 from analysis import prosaccade_session
 from analysis.prosaccade_session import main
 from utils.session_loader import load_session, list_sessions_from_manifest
+from eyehead.analysis import plot_left_right_angle
 
 assert main is prosaccade_session.main
 
@@ -201,9 +201,6 @@ def plot_population_summary(
     title: str,
     save_stem: str,
     results_dir: Path,
-    experiment_type: str = "prosaccade",
-    animal_name: str | None = None,
-    reward_angle: float = 35.0,
 ) -> None:
     """Draw the three population plots for one pooled trial set.
 
@@ -224,7 +221,7 @@ def plot_population_summary(
     filename prefix (e.g. the animal name, or ``"all_animals"``) under
     ``results_dir``.
     """
-    
+
     reward_window = pooled["reward_window"]
     congruency_window = pooled["congruency_window"]
     latency_outcome = pooled["latency_outcome"]
@@ -244,6 +241,17 @@ def plot_population_summary(
     precue_congruent = pooled["precue_congruent"]
     precue_frac = float(np.mean(precue_congruent)) if len(precue_congruent) else np.nan
     precue_n = len(precue_congruent)
+
+    plot_left_right_angle(
+    pooled["left_angle"],
+    pooled["right_angle"],
+    reward_angle,
+    sessionname=save_stem,
+    resultdir=results_dir,
+    experiment_type=experiment_type,
+    animal_name=animal_name,
+    )
+
 
     prosaccade_session.plot_psth_and_congruency(
         psth_centers, psth_rate, psth_ci, n_trials_psth,
@@ -428,15 +436,6 @@ if __name__ == "__main__":
             unique_animals = list(dict.fromkeys(animal_names))
             animal_label = ", ".join(unique_animals)
 
-    plot_left_right_angle(
-        left_angle_all,
-        right_angle_all,
-        35,
-        sessionname="population",
-        resultdir=results_root,
-        experiment_type=args.experiment_type,
-        animal_name=animal_label,
-    )
     plot_prosaccade_trends_from_dictionary(
         left_angle_all_with_dates,
         right_angle_all_with_dates,
