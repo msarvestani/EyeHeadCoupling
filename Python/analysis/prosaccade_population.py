@@ -61,8 +61,8 @@ Function reference
     Runs :func:`prosaccade_session.main` on every session matching
     ``experiment_type``/``animal_name`` from the manifest, grouping results
     by animal along the way. Returns the original per-saccade-table /
-    angle-lists / date-dict outputs (used by the pre-existing
-    pooled-everything polar plot, trend plot, and CSV export in
+    angle-lists / date-dict outputs (the date-dict pair feeds the
+    pre-existing trend plot and ``aggregated`` feeds the CSV export in
     ``__main__``) plus ``animal_pooled``: a dict mapping each animal name to
     that animal's sessions pooled via :func:`pool_animal_sessions`.
 
@@ -89,12 +89,13 @@ Function reference
 
 ``__main__``
     Parses ``--experiment-type``/``--animal-name``, calls
-    :func:`analyze_all_sessions`, then draws the original pooled-everything
-    left/right polar plot and the saccade-percentage-over-time trend plot
-    (both pool every matched session regardless of animal — unrelated to
-    the per-animal grouping below), writes the aggregated per-saccade table
-    to CSV, and finally calls :func:`run_population_summary_plots` for the
-    per-animal (+ all-animals) summary figures.
+    :func:`analyze_all_sessions`, then draws the saccade-percentage-over-time
+    trend plot (pools every matched session regardless of animal —
+    unrelated to the per-animal grouping below), writes the aggregated
+    per-saccade table to CSV, and finally calls
+    :func:`run_population_summary_plots` for the per-animal (+ all-animals)
+    summary figures (PSTH/congruency, latency-by-outcome, and left/right
+    polar).
 """
 from __future__ import annotations
 
@@ -293,6 +294,9 @@ def plot_population_summary(
     title: str,
     save_stem: str,
     results_dir: Path,
+    reward_angle: float,
+    experiment_type: str = "prosaccade",
+    animal_name: str | None = None,
 ) -> None:
     """Draw the three population plots for one pooled trial set.
 
@@ -508,10 +512,6 @@ if __name__ == "__main__":
     results_root = Path(manifest.get("results_root") or root_dir)
     results_root.mkdir(parents=True, exist_ok=True)
 
-    ### Plot the left right angle results
-    from eyehead.analysis import plot_left_right_angle
-    left_angle_all = np.concatenate(left_angle_all)
-    right_angle_all = np.concatenate(right_angle_all)
     animal_label = None
     if isinstance(aggregated, pd.DataFrame) and not aggregated.empty and "session_id" in aggregated:
         session_ids = aggregated["session_id"].dropna().unique()
