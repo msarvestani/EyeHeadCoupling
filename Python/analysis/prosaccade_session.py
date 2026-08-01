@@ -233,13 +233,14 @@ Function reference
     :func:`analyze_latency_by_outcome` and draws
     :func:`plot_latency_by_outcome`; and, if the rig's ``trial_success`` is
     available, recomputes success via :func:`calculate_trial_success` and
-    draws :func:`plot_trial_success_agreement`. Returns a dict with the
+        draws :func:`plot_trial_success_agreement`. Returns a dict with the
     per-saccade DataFrame (``df``), ``left_angle``/``right_angle``, and
     everything a population script needs to pool this session with others:
     ``latency_outcome``, ``precue_latencies``/``precue_congruent``, the
-    ``congruency_window``/``reward_window`` actually used, and
-    ``psth_trial_rel_times``/``psth_trial_durations`` (see
-    :func:`collect_psth_trials`).
+    ``congruency_window``/``reward_window``/``reward_angle`` actually used
+    (the manifest's ``reward_contingency`` values for this session, not
+    hardcoded defaults), and ``psth_trial_rel_times``/``psth_trial_durations``
+    (see :func:`collect_psth_trials`).
 """
 
 from __future__ import annotations
@@ -1638,6 +1639,7 @@ def main(session_id: str) -> pd.DataFrame:
         "precue_congruent": precue_congruent,
         "congruency_window": window,
         "reward_window": reward_window,
+         "reward_angle": acceptance_angle,
         "psth_trial_rel_times": psth_trial_rel_times,
         "psth_trial_durations": psth_trial_durations,
     }

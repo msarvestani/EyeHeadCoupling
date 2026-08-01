@@ -32,8 +32,8 @@ right back into itself. That's how the all-animals-combined figure is
 built: by pooling the already-pooled per-animal dicts (see
 :func:`run_population_summary_plots`), with no separate combining logic.
 
-Reward-window / congruency-window disagreement
--------------------------------------------------
+Reward-window / congruency-window / reward-angle disagreement
+-----------------------------------------------------------------
 Sessions being pooled don't always share the same
 ``reward_contingency.reward_window`` (this does happen — see
 ``session_manifest.yml``; Apollo alone has both 1.0s- and 1.5s-window
@@ -44,9 +44,11 @@ bounds what it contributes to the at-risk normalisation regardless of the
 axis, so a shorter-window session's trials aren't corrupted by the wider
 axis — they just correctly show zero at-risk past their own window.
 ``congruency_window`` (the fixed post-target latency band for the
-single-number "fraction toward target" summary) is a single window applied
-once to the pooled latencies, so it can't be resolved the same way; the
-first session's value is used, and a mismatch also warns.
+single-number "fraction toward target" summary) and ``reward_angle`` (the
+acceptance-zone half-width shading the polar plot's reward zone — read from
+each session's manifest, never a hardcoded default) are each a single value
+applied once, not something a "widest across sessions" choice makes sense
+for; the first session's value is used for both, and a mismatch warns.
 
 Function reference
 -------------------
@@ -54,17 +56,18 @@ Function reference
     Pools a list of per-session :func:`prosaccade_session.main` result
     dicts (typically one animal's sessions) into a single dict of the same
     shape: concatenates per-trial latency/congruency, pre-cue, PSTH, and
-    polar-angle data, and resolves ``reward_window``/``congruency_window``
-    per the rules above.
+    polar-angle data, and resolves
+    ``reward_window``/``congruency_window``/``reward_angle`` per the rules
+    above.
 
 :func:`analyze_all_sessions`
     Runs :func:`prosaccade_session.main` on every session matching
     ``experiment_type``/``animal_name`` from the manifest, grouping results
-    by animal along the way. Returns the original per-saccade-table /
-    angle-lists / date-dict outputs (the date-dict pair feeds the
-    pre-existing trend plot and ``aggregated`` feeds the CSV export in
-    ``__main__``) plus ``animal_pooled``: a dict mapping each animal name to
-    that animal's sessions pooled via :func:`pool_animal_sessions`.
+    by animal along the way. Returns the aggregated per-saccade table
+    (``aggregated``, which feeds the CSV export in ``__main__``) plus
+    ``animal_pooled``: a dict mapping each animal name to that animal's
+    sessions pooled via :func:`pool_animal_sessions`, ready for the
+    population plots.
 
 :func:`plot_population_summary`
     Draws the three population plots — target-aligned PSTH/congruency,
@@ -73,7 +76,9 @@ Function reference
     pooled again for the all-animals-combined figure), by recomputing the
     session-level summary statistics from the pooled per-trial data and
     calling the same plotting functions :func:`prosaccade_session.main`
-    uses per session, plus :func:`eyehead.analysis.plot_left_right_angle`.
+    uses per session, plus :func:`eyehead.analysis.plot_left_right_angle`
+    (shaded using ``pooled``'s resolved ``reward_angle``, not a hardcoded
+    default).
 
 :func:`run_population_summary_plots`
     Driver: calls :func:`plot_population_summary` once per animal in
@@ -81,21 +86,12 @@ Function reference
     avoid a redundant duplicate of a single animal's own plots — once more
     for every animal pooled together via :func:`pool_animal_sessions`.
 
-:func:`plot_prosaccade_trends_from_dictionary`
-    Unrelated to the per-animal pooling above (pre-existing): plots the
-    percentage of saccades landing in the rewarded direction (left/right
-    eye separately) across session dates, from the ``date -> angle array``
-    dictionaries :func:`analyze_all_sessions` also returns.
-
 ``__main__``
     Parses ``--experiment-type``/``--animal-name``, calls
-    :func:`analyze_all_sessions`, then draws the saccade-percentage-over-time
-    trend plot (pools every matched session regardless of animal —
-    unrelated to the per-animal grouping below), writes the aggregated
-    per-saccade table to CSV, and finally calls
-    :func:`run_population_summary_plots` for the per-animal (+ all-animals)
-    summary figures (PSTH/congruency, latency-by-outcome, and left/right
-    polar).
+    :func:`analyze_all_sessions`, writes the aggregated per-saccade table to
+    CSV, then calls :func:`run_population_summary_plots` for the per-animal
+    (+ all-animals) summary figures (PSTH/congruency, latency-by-outcome,
+    and left/right polar).
 """
 from __future__ import annotations
 
@@ -185,6 +181,16 @@ def pool_animal_sessions(results: list[dict]) -> dict:
             f"({congruency_window}) for the pooled congruency summary."
         )
 
+    reward_angles = [r["reward_angle"] for r in results]
+    reward_angle = reward_angles[0]
+    if len(set(reward_angles)) > 1:
+        warnings.warn(
+            f"Pooling sessions with different reward_angle values "
+            f"{sorted(set(reward_angles))}; using the first session's "
+            f"({reward_angle}) for the pooled polar reward-zone shading."
+        )
+
+
     return {
         "latency_outcome": {
             "latencies": latencies,
@@ -200,6 +206,7 @@ def pool_animal_sessions(results: list[dict]) -> dict:
         "psth_trial_durations": psth_trial_durations,
         "reward_window": reward_window,
         "congruency_window": congruency_window,
+        "reward_angle": reward_angle,
         "n_sessions": len(results),
     }
 
@@ -220,21 +227,17 @@ def analyze_all_sessions(
     Returns
     -------
     tuple
-        ``(aggregated, left_angle_all, right_angle_all,
-        left_angle_all_with_dates, right_angle_all_with_dates,
-        processed_animals, animal_pooled)`` — the aggregated per-saccade
-        session table, lists of left/right eye angles, dictionaries keyed by
-        session date, the set of unique animal names processed, and
-        ``animal_pooled``: a dict mapping each animal name to that animal's
-        sessions pooled via :func:`pool_animal_sessions`, ready for the
-        population plots.
+        ``(aggregated, left_angle_all, right_angle_all, processed_animals,
+        animal_pooled)`` — the aggregated per-saccade session table, lists
+        of left/right eye angles, the set of unique animal names processed,
+        and ``animal_pooled``: a dict mapping each animal name to that
+        animal's sessions pooled via :func:`pool_animal_sessions`, ready for
+        the population plots.
     """
 
     tables: list[pd.DataFrame] = []
     left_angle_all = []
     right_angle_all = []
-    left_angle_all_with_dates = {}
-    right_angle_all_with_dates = {}
     processed_animals: set[str] = set()
     animal_session_results: dict[str, list[dict]] = defaultdict(list)
 
@@ -255,13 +258,6 @@ def analyze_all_sessions(
         tables.append(session_df)
         left_angle_all.append(result["left_angle"])
         right_angle_all.append(result["right_angle"])
-        date_str = (
-            session_df["session_date"].iloc[0]
-            if "session_date" in session_df.columns
-            else "unknown_date"
-        )
-        left_angle_all_with_dates[date_str] = result["left_angle"]
-        right_angle_all_with_dates[date_str] = result["right_angle"]
 
     animal_pooled = {
         animal: pool_animal_sessions(results)
@@ -273,8 +269,6 @@ def analyze_all_sessions(
             pd.DataFrame(),
             left_angle_all,
             right_angle_all,
-            left_angle_all_with_dates,
-            right_angle_all_with_dates,
             processed_animals,
             animal_pooled,
         )
@@ -283,8 +277,6 @@ def analyze_all_sessions(
         pd.concat(tables, ignore_index=True),
         left_angle_all,
         right_angle_all,
-        left_angle_all_with_dates,
-        right_angle_all_with_dates,
         processed_animals,
         animal_pooled,
     )
@@ -294,7 +286,6 @@ def plot_population_summary(
     title: str,
     save_stem: str,
     results_dir: Path,
-    reward_angle: float,
     experiment_type: str = "prosaccade",
     animal_name: str | None = None,
 ) -> None:
@@ -319,6 +310,7 @@ def plot_population_summary(
     """
 
     reward_window = pooled["reward_window"]
+    reward_angle = pooled["reward_angle"]
     congruency_window = pooled["congruency_window"]
     latency_outcome = pooled["latency_outcome"]
     latencies = latency_outcome["latencies"]
@@ -417,62 +409,6 @@ def run_population_summary_plots(
         )
 
 
-def plot_prosaccade_trends_from_dictionary(
-    left_angle_dict: dict,
-    right_angle_dict: dict,
-    experiment_type: str = "prosaccade",
-    animal_label: str | None = None,
-) -> None:
-
-    # Create a figure and axis
-    fig, ax = plt.subplots(figsize=(10, 6))
-
-    # First sort the dictionary by date
-    sorted_dates = sorted(left_angle_dict.keys())
-    left_angles_sorted = [left_angle_dict[date] for date in sorted_dates]
-    right_angles_sorted = [right_angle_dict[date] for date in sorted_dates]
-    saccade_percentage_left_list = []
-    saccade_percentage_right_list = []
-    reward_angle = 35  # degrees
-    for i, date in enumerate(sorted_dates):
-        left_angles = left_angle_dict[date]
-        right_angles = right_angle_dict[date]
-        if experiment_type == "prosaccade":
-            saccade_percentage_left = np.sum(np.abs(left_angles) <= np.deg2rad(reward_angle)) / len(left_angles) * 100
-            saccade_percentage_right = np.sum(np.abs(right_angles) >= np.deg2rad(180-reward_angle)) / len(right_angles) * 100
-        elif experiment_type == "antisaccade":
-            saccade_percentage_left = np.sum(np.abs(left_angles) >= np.deg2rad(180-reward_angle)) / len(left_angles) * 100
-            saccade_percentage_right = np.sum(np.abs(right_angles) <= np.deg2rad(reward_angle)) / len(right_angles) * 100
-
-       # Plot the saccade percentages
-        saccade_percentage_left_list.append(saccade_percentage_left)
-        saccade_percentage_right_list.append(saccade_percentage_right)
-
-    # Plot the sacccade percentage across sessions
-    ax.plot(range(len(sorted_dates)), saccade_percentage_left_list, marker='o', color='b', label='Left Eye')
-    ax.plot(range(len(sorted_dates)), saccade_percentage_right_list, marker='o', color='r', label='Right Eye')
-    # Set plot labels and title
-    ax.set_xlabel("Date")
-    ax.set_ylabel("Saccade Percentage (%)")
-    title = f"{experiment_type} Saccade Percentages Over Time"
-    label_text = (str(animal_label).strip() if animal_label is not None else "")
-    animal_suffix = ""
-    if label_text:
-        title = f"{title} – {label_text}"
-        safe_label = re.sub(r"[^A-Za-z0-9_-]+", "_", label_text).strip("_")
-        if safe_label:
-            animal_suffix = f"_{safe_label}"
-    ax.set_xticks(range(len(sorted_dates)))
-    ax.set_xticklabels(sorted_dates, rotation=45)
-    ax.set_title(title)
-    ax.legend()
-    plt.tight_layout()
-    plt.show()
-    # Save the plot
-    fig.savefig(results_root / f"{experiment_type}_saccade_percentage_trends{animal_suffix}.png")
-    fig.savefig(results_root / f"{experiment_type}_saccade_percentage_trends{animal_suffix}.svg")
-
-
 # Usage: python Python/analysis/prosaccade_population.py --animal-name Paris
 if __name__ == "__main__":
     
@@ -491,18 +427,7 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    (
-        aggregated,
-        left_angle_all,
-        right_angle_all,
-        left_angle_all_with_dates,
-        right_angle_all_with_dates,
-        processed_animals,
-        animal_pooled,
-    ) = analyze_all_sessions(
-        args.experiment_type,
-        animal_name=args.animal_name,
-    )
+    (aggregated, _,_,_,animal_pooled) = analyze_all_sessions(args.experiment_type,animal_name=args.animal_name,)
     root_dir = Path(__file__).resolve().parents[2]
         
     manifest_path = root_dir / "session_manifest.yml"
@@ -512,28 +437,6 @@ if __name__ == "__main__":
     results_root = Path(manifest.get("results_root") or root_dir)
     results_root.mkdir(parents=True, exist_ok=True)
 
-    animal_label = None
-    if isinstance(aggregated, pd.DataFrame) and not aggregated.empty and "session_id" in aggregated:
-        session_ids = aggregated["session_id"].dropna().unique()
-        animal_names: list[str] = []
-        for session_id in session_ids:
-            try:
-                session_cfg = load_session(session_id)
-            except KeyError:
-                continue
-            if session_cfg.animal_name:
-                animal_names.append(session_cfg.animal_name)
-        if animal_names:
-            # Preserve manifest order while removing duplicates
-            unique_animals = list(dict.fromkeys(animal_names))
-            animal_label = ", ".join(unique_animals)
-
-    plot_prosaccade_trends_from_dictionary(
-        left_angle_all_with_dates,
-        right_angle_all_with_dates,
-        experiment_type=args.experiment_type,
-        animal_label=animal_label,
-    )
     aggregated.to_csv(
         results_root / f"{args.experiment_type}_population_results.csv", index=False
     )
