@@ -1,8 +1,100 @@
-"""Run prosaccade analysis across multiple sessions.
+"""Population-level (multi-session) analysis for the head-fixed prosaccade task.
 
-This script selects sessions from ``session_manifest.yml`` based on the
-requested experiment type and executes the full prosaccade analysis pipeline
-for each one.
+This script selects sessions from ``session_manifest.yml`` (via
+:func:`utils.session_loader.list_sessions_from_manifest`), filtered by
+experiment type and, optionally, one animal; runs the full per-session
+pipeline (:func:`prosaccade_session.main`) on each; and pools the results
+per animal to produce the same three summary figures
+:func:`prosaccade_session.main` draws per session — latency-by-outcome,
+target-aligned PSTH/congruency, and left/right polar saccade distributions
+— but computed over every trial from every one of that animal's sessions at
+once, plus one more set pooling every animal together.
+
+Pooling
+-------
+Two different pooling strategies are used, matching how each underlying
+statistic is computed in :mod:`prosaccade_session`:
+
+- Per-trial arrays (latency/congruency, pre-cue latency/congruency, PSTH
+  relative-saccade-time lists and durations, and the left/right polar
+  angles) are concatenated directly across sessions —
+  :func:`pool_animal_sessions` does this. This is exact: the same
+  at-risk/duration-based normalisation
+  :func:`prosaccade_session.psth_rate_from_trials` uses within one session
+  works identically over trials pooled from several, since each trial still
+  carries its own duration regardless of which session it came from.
+- ``reward_window``/``congruency_window`` are single per-session values,
+  not per-trial, so they can't be concatenated the same way — see below.
+
+``pool_animal_sessions``'s return dict is deliberately the same shape as
+one raw session's :func:`prosaccade_session.main` result, so it can be fed
+right back into itself. That's how the all-animals-combined figure is
+built: by pooling the already-pooled per-animal dicts (see
+:func:`run_population_summary_plots`), with no separate combining logic.
+
+Reward-window / congruency-window disagreement
+-------------------------------------------------
+Sessions being pooled don't always share the same
+``reward_contingency.reward_window`` (this does happen — see
+``session_manifest.yml``; Apollo alone has both 1.0s- and 1.5s-window
+sessions). :func:`pool_animal_sessions` uses the **max** across sessions for
+the pooled PSTH's axis extent/shading, and warns on mismatch. This is safe:
+each trial's own real duration (baked into ``psth_trial_durations``) still
+bounds what it contributes to the at-risk normalisation regardless of the
+axis, so a shorter-window session's trials aren't corrupted by the wider
+axis — they just correctly show zero at-risk past their own window.
+``congruency_window`` (the fixed post-target latency band for the
+single-number "fraction toward target" summary) is a single window applied
+once to the pooled latencies, so it can't be resolved the same way; the
+first session's value is used, and a mismatch also warns.
+
+Function reference
+-------------------
+:func:`pool_animal_sessions`
+    Pools a list of per-session :func:`prosaccade_session.main` result
+    dicts (typically one animal's sessions) into a single dict of the same
+    shape: concatenates per-trial latency/congruency, pre-cue, PSTH, and
+    polar-angle data, and resolves ``reward_window``/``congruency_window``
+    per the rules above.
+
+:func:`analyze_all_sessions`
+    Runs :func:`prosaccade_session.main` on every session matching
+    ``experiment_type``/``animal_name`` from the manifest, grouping results
+    by animal along the way. Returns the original per-saccade-table /
+    angle-lists / date-dict outputs (used by the pre-existing
+    pooled-everything polar plot, trend plot, and CSV export in
+    ``__main__``) plus ``animal_pooled``: a dict mapping each animal name to
+    that animal's sessions pooled via :func:`pool_animal_sessions`.
+
+:func:`plot_population_summary`
+    Draws the three population plots — target-aligned PSTH/congruency,
+    latency-by-outcome, and left/right polar — for one pooled trial set
+    (either one animal's pooled sessions, or several animals' pooled dicts
+    pooled again for the all-animals-combined figure), by recomputing the
+    session-level summary statistics from the pooled per-trial data and
+    calling the same plotting functions :func:`prosaccade_session.main`
+    uses per session, plus :func:`eyehead.analysis.plot_left_right_angle`.
+
+:func:`run_population_summary_plots`
+    Driver: calls :func:`plot_population_summary` once per animal in
+    ``animal_pooled``, then — only when more than one animal is present, to
+    avoid a redundant duplicate of a single animal's own plots — once more
+    for every animal pooled together via :func:`pool_animal_sessions`.
+
+:func:`plot_prosaccade_trends_from_dictionary`
+    Unrelated to the per-animal pooling above (pre-existing): plots the
+    percentage of saccades landing in the rewarded direction (left/right
+    eye separately) across session dates, from the ``date -> angle array``
+    dictionaries :func:`analyze_all_sessions` also returns.
+
+``__main__``
+    Parses ``--experiment-type``/``--animal-name``, calls
+    :func:`analyze_all_sessions`, then draws the original pooled-everything
+    left/right polar plot and the saccade-percentage-over-time trend plot
+    (both pool every matched session regardless of animal — unrelated to
+    the per-animal grouping below), writes the aggregated per-saccade table
+    to CSV, and finally calls :func:`run_population_summary_plots` for the
+    per-animal (+ all-animals) summary figures.
 """
 from __future__ import annotations
 
