@@ -383,6 +383,7 @@ def plot_prosaccade_trends_from_dictionary(
 
 # Usage: python Python/analysis/prosaccade_population.py --experiment-type prosaccade [--animal-name ANIMAL_NAME]
 if __name__ == "__main__":
+    
     parser = argparse.ArgumentParser(
         description="Run analysis across sessions filtered by experiment type",
     )
@@ -396,6 +397,8 @@ if __name__ == "__main__":
         default=None,
         help="Optional animal name to filter sessions",
     )
+    args = parser.parse_args()
+
     (
         aggregated,
         left_angle_all,
