@@ -134,10 +134,10 @@ Function reference
     disagree by more than ``tolerance``.
 
 :func:`find_first_saccade_per_trial`
-    For every trial, finds the saccade the rig actually scored (via
-    :func:`_find_scored_saccade`) and returns its latency and whether it was
-    congruent with the target direction. Trials with no detectable saccade
-    in the window are omitted.
+    For every trial, finds the saccade that would be scored (via
+    :func:`_find_scored_saccade`, either first or first correct) and returns 
+    its latency and whether it was congruent with the target direction. 
+    Trials with no detectable saccade in the window are omitted.
 
 :func:`first_saccade_indices_by_direction`
     Same per-trial scored-saccade lookup as
