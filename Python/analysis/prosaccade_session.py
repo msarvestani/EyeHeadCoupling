@@ -1473,14 +1473,6 @@ def main(session_id: str) -> pd.DataFrame:
         go_dir_y=data.go_direction_y,
     )
 
-    df = pd.DataFrame(
-        {
-            "session_id": [session_id] * len(indices),
-            "session_date": [date_str] * len(indices),
-            "saccade_frame_xy": saccade_frames,
-            "saccade_index_xy": indices,
-        }
-    )
     #disregard Up/Down target trials if they exist
     mask_horizontal = data.go_direction_x != 0
 

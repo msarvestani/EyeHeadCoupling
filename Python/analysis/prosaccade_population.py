@@ -224,8 +224,7 @@ def plot_population_summary(
     filename prefix (e.g. the animal name, or ``"all_animals"``) under
     ``results_dir``.
     """
-    from eyehead.analysis import plot_left_right_angle
-
+    
     reward_window = pooled["reward_window"]
     congruency_window = pooled["congruency_window"]
     latency_outcome = pooled["latency_outcome"]
@@ -261,17 +260,6 @@ def plot_population_summary(
         save_path=results_dir / f"{save_stem}_latency_by_outcome.png",
         reward_window=reward_window,
     )
-
-    plot_left_right_angle(
-        pooled["left_angle"],
-        pooled["right_angle"],
-        reward_angle,
-        sessionname=save_stem,
-        resultdir=results_dir,
-        experiment_type=experiment_type,
-        animal_name=animal_name,
-    )
-
 
 def run_population_summary_plots(
     animal_pooled: dict[str, dict],
@@ -381,7 +369,7 @@ def plot_prosaccade_trends_from_dictionary(
     fig.savefig(results_root / f"{experiment_type}_saccade_percentage_trends{animal_suffix}.svg")
 
 
-# Usage: python Python/analysis/prosaccade_population.py --experiment-type prosaccade [--animal-name ANIMAL_NAME]
+# Usage: python Python/analysis/prosaccade_population.py --animal-name Paris
 if __name__ == "__main__":
     
     parser = argparse.ArgumentParser(
