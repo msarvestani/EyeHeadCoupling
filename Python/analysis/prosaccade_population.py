@@ -418,8 +418,10 @@ def run_population_summary_plots(
         )
 
 
-# Usage: python Python/analysis/prosaccade_population.py --animal-name Paris will print all session figures too
+# Usage: python Python/analysis/prosaccade_population.py --animal-name Paris will print all Paris session figures too
 # Usage: python Python/analysis/prosaccade_population.py --animal-name Paris --quiet-session-plots will print only population
+# Usage: python Python/analysis/prosaccade_population.py --animal-name --quiet-session-plots will run each session, for each animal, and for all
+
 if __name__ == "__main__":
     
     parser = argparse.ArgumentParser(

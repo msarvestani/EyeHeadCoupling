@@ -1235,7 +1235,8 @@ def plot_latency_by_outcome(
     fig.suptitle(
         f"{title}  —  "
         f"{result['n_total']} trials, {len(latencies)} with a saccade, "
-        f"{n_no_saccade} excluded (no saccade){reward_txt}"
+        f"{n_no_saccade} excluded (no saccade){reward_txt}",
+        fontsize=11, wrap=True,
     )
     fig.tight_layout()
     fig.savefig(save_path, dpi=300, bbox_inches="tight")
@@ -1410,7 +1411,7 @@ def plot_psth_and_congruency(
     ax_summary.set_title("Congruency vs. pre-cue control")
     
 
-    fig.suptitle(title)
+    fig.suptitle(title,fontsize=11, wrap=True)
     fig.tight_layout()
     fig.savefig(save_path, dpi=300, bbox_inches="tight")
     if show_plots:
