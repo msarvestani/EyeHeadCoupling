@@ -244,13 +244,20 @@ def analyze_all_sessions(
         animal names processed, ``animal_pooled`` (a dict mapping each
         animal name to that animal's sessions pooled via
         :func:`pool_animal_sessions`, ready for the population plots), and
-        ``session_validity``: a list with one dict per session —
+               ``session_validity``: a list with one dict per session —
         ``{"animal_name", "session_id", "n_total", "n_valid",
-        "fraction_valid", "fraction_correct"}`` — where ``fraction_valid``
-        is the fraction of trials with a detected first saccade in the
-        window at all, and ``fraction_correct`` is, of those valid trials,
-        the fraction that were congruent (within ``reward_angle`` and
-        ``reward_window`` — see :func:`prosaccade_session.analyze_latency_by_outcome`).
+        "fraction_valid", "fraction_correct", "window_frac", "window_n",
+        "precue_frac", "precue_n"}`` — where ``fraction_valid`` is the
+        fraction of trials with a detected first saccade in the window at
+        all, ``fraction_correct`` is, of those valid trials, the fraction
+        that were congruent (within ``reward_angle`` and ``reward_window``
+        — see :func:`prosaccade_session.analyze_latency_by_outcome`), and
+        ``window_frac``/``window_n`` are that session's own
+        :func:`prosaccade_session.congruency_in_window` result (fraction
+        congruent restricted to that session's configured
+        ``congruency_window``) with ``precue_frac``/``precue_n`` the
+        matching pre-cue control fraction — the same numbers plotted in the
+        third panel of the per-session PSTH/congruency figure.
     """
 
     tables: list[pd.DataFrame] = []
@@ -280,6 +287,15 @@ def analyze_all_sessions(
             fraction_correct = (
                 float(np.mean(lo["congruent"])) if len(lo["congruent"]) else float("nan")
             )
+            window_frac, window_n, _, _ = prosaccade_session.congruency_in_window(
+                lo["latencies"], lo["congruent"], window=result["congruency_window"]
+            )
+            session_precue_congruent = result["precue_congruent"]
+            precue_frac = (
+                float(np.mean(session_precue_congruent))
+                if len(session_precue_congruent) else float("nan")
+            )
+            precue_n = len(session_precue_congruent)
             session_validity.append({
                 "animal_name": session_cfg.animal_name,
                 "session_id": session_id,
@@ -287,6 +303,10 @@ def analyze_all_sessions(
                 "n_valid": n_valid,
                 "fraction_valid": fraction_valid,
                 "fraction_correct": fraction_correct,
+                "window_frac": window_frac,
+                "window_n": window_n,
+                "precue_frac": precue_frac,
+                "precue_n": precue_n,
             })
 
         tables.append(session_df)
@@ -401,23 +421,34 @@ def plot_session_validity_summary(
     results_dir: Path,
     experiment_type: str = "prosaccade",
 ) -> None:
-    """Two-panel dot plot: fraction of valid trials, and fraction of those
-    valid trials that were correct, one dot per session grouped by animal,
-    with each animal's trial-weighted pooled average (+ 95% Wilson CI)
-    overlaid.
+    """Three-panel dot plot: fraction of valid trials, fraction of those
+    valid trials that were correct, and windowed congruency vs. pre-cue
+    control — one dot per session grouped by animal, with each animal's
+    trial-weighted pooled average (+ 95% Wilson CI) overlaid.
 
     "Valid" means a first saccade was detected in the reward window at all;
     "correct" means, of valid trials, the fraction whose saccade was
     congruent (within ``reward_angle`` and ``reward_window`` — see
-    :func:`prosaccade_session.analyze_latency_by_outcome`). Both are taken
-    directly from ``session_validity`` (see :func:`analyze_all_sessions`).
-    Each animal's average is the trial-weighted pooled fraction computed
-    from ``animal_pooled[animal]["latency_outcome"]`` — consistent with how
-    the rest of this script pools trials — not a simple mean of per-session
-    fractions, so a session with more trials counts for more; its error bar
-    is the 95% Wilson score interval (:func:`prosaccade_session.wilson_ci`)
-    on that pooled fraction, same CI method used elsewhere in this codebase
-    for fraction-with-CI summaries.
+    :func:`prosaccade_session.analyze_latency_by_outcome`). The third panel
+    reuses the same numbers as the third panel of the per-session
+    PSTH/congruency figure (:func:`prosaccade_session.congruency_in_window`
+    restricted to each session's/animal's configured ``congruency_window``,
+    plus the pre-cue control fraction) rather than recomputing anything new
+    — it is NOT the same quantity as the second panel, since it further
+    restricts to the (typically narrower) ``congruency_window`` instead of
+    every valid trial regardless of latency. All three are taken directly
+    from ``session_validity`` (see :func:`analyze_all_sessions`). Each
+    animal's average is the trial-weighted pooled fraction computed from
+    ``animal_pooled[animal]`` — consistent with how the rest of this script
+    pools trials — not a simple mean of per-session fractions, so a session
+    with more trials counts for more; its error bar is the 95% Wilson score
+    interval, same CI method used elsewhere in this codebase for
+    fraction-with-CI summaries.
+
+    The saved filename includes the animal(s) actually plotted (the single
+    animal's name when ``animal_pooled`` has one entry, e.g. from a
+    ``--animal-name``-filtered run, or ``all_animals`` otherwise) so that
+    per-animal and combined runs don't overwrite each other's output.
     """
     animals_sorted = sorted(animal_pooled.keys())
     if not animals_sorted:
@@ -426,8 +457,8 @@ def plot_session_validity_summary(
         )
         return
 
-    fig, (ax_valid, ax_correct) = plt.subplots(
-        1, 2, figsize=(max(6, 2.2 * len(animals_sorted)), 5)
+    fig, (ax_valid, ax_correct, ax_window) = plt.subplots(
+        1, 3, figsize=(max(9, 3.3 * len(animals_sorted)), 5)
     )
     rng = np.random.default_rng(0)
 
@@ -437,13 +468,17 @@ def plot_session_validity_summary(
         xs = np.full(len(sessions), i, dtype=float) + jitter
         valid_ys = [r["fraction_valid"] for r in sessions]
         correct_ys = [r["fraction_correct"] for r in sessions]
+        window_ys = [r["window_frac"] for r in sessions]
 
         ax_valid.scatter(xs, valid_ys, color="tab:green", alpha=0.6, s=40, zorder=2,
                           label="session" if i == 0 else None)
         ax_correct.scatter(xs, correct_ys, color="tab:green", alpha=0.6, s=40, zorder=2,
                             label="session" if i == 0 else None)
+        ax_window.scatter(xs, window_ys, color="tab:green", alpha=0.6, s=40, zorder=2,
+                           label="session" if i == 0 else None)
 
-        pooled_lo = animal_pooled[animal]["latency_outcome"]
+        pooled = animal_pooled[animal]
+        pooled_lo = pooled["latency_outcome"]
         pooled_n_total = pooled_lo["n_total"]
         pooled_n_valid = pooled_n_total - pooled_lo["n_no_saccade"]
         pooled_congruent = pooled_lo["congruent"]
@@ -456,6 +491,16 @@ def plot_session_validity_summary(
         valid_ci_lo, valid_ci_hi = prosaccade_session.wilson_ci(pooled_n_valid, pooled_n_total)
         correct_ci_lo, correct_ci_hi = prosaccade_session.wilson_ci(
             pooled_n_correct, len(pooled_congruent)
+        )
+
+        pooled_window_frac, pooled_window_n, window_ci_lo, window_ci_hi = (
+            prosaccade_session.congruency_in_window(
+                pooled_lo["latencies"], pooled_congruent, window=pooled["congruency_window"]
+            )
+        )
+        pooled_precue_congruent = pooled["precue_congruent"]
+        pooled_precue_frac = (
+            float(np.mean(pooled_precue_congruent)) if len(pooled_precue_congruent) else np.nan
         )
 
         ax_valid.errorbar(
@@ -472,10 +517,22 @@ def plot_session_validity_summary(
             fmt="o", color="black", ecolor="black", capsize=4, ms=10, zorder=3,
             label="animal average (trial-weighted, 95% CI)" if i == 0 else None,
         )
+        ax_window.errorbar(
+            [i], [pooled_window_frac],
+            yerr=[[max(0.0, pooled_window_frac - window_ci_lo)],
+                  [max(0.0, window_ci_hi - pooled_window_frac)]],
+            fmt="o", color="black", ecolor="black", capsize=4, ms=10, zorder=3,
+            label="animal average (trial-weighted, 95% CI)" if i == 0 else None,
+        )
+        ax_window.plot(
+            i, pooled_precue_frac, "o", mfc="none", mec="gray", ms=9, zorder=3,
+            label="pre-cue control (pooled)" if i == 0 else None,
+        )
 
     for ax, ylabel, title in (
         (ax_valid, "Fraction of trials with a detected saccade", "Trial validity"),
         (ax_correct, "Fraction of valid trials that were correct", "Trial accuracy (of valid trials)"),
+        (ax_window, "Fraction toward target (congruency window)", "Congruency vs. pre-cue control"),
     ):
         ax.set_xticks(range(len(animals_sorted)))
         ax.set_xticklabels(animals_sorted, rotation=30, ha="right")
@@ -486,17 +543,17 @@ def plot_session_validity_summary(
 
     fig.suptitle(f"{experiment_type} — session validity/accuracy by animal", fontsize=12, wrap=True)
     fig.tight_layout()
-    fig.savefig(
-        results_dir / f"{experiment_type}_session_validity_summary.png",
-        dpi=300, bbox_inches="tight",
-    )
-    fig.savefig(
-        results_dir / f"{experiment_type}_session_validity_summary.svg",
-        dpi=300, bbox_inches="tight",
-    )
+
+    if len(animals_sorted) == 1:
+        scope_tag = re.sub(r"[^A-Za-z0-9_-]+", "_", animals_sorted[0]).strip("_") or "unknown"
+    else:
+        scope_tag = "all_animals"
+    fname_stem = f"{experiment_type}_session_validity_summary_{scope_tag}"
+
+    fig.savefig(results_dir / f"{fname_stem}.png", dpi=300, bbox_inches="tight")
+    fig.savefig(results_dir / f"{fname_stem}.svg", dpi=300, bbox_inches="tight")
     plt.show()
     plt.close(fig)
-
 
 def run_population_summary_plots(
     animal_pooled: dict[str, dict],

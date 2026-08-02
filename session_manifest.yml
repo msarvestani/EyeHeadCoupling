@@ -1,5 +1,5 @@
 results_root: X:\Analysis\EyeHeadCoupling
-results_with_data: true #true => save each session's results inside <data_folder>/results; false => save under results_root
+results_with_data: false #true => save each session's results inside <data_folder>/results; false => save under results_root
 
 saccade_config:
   saccade_threshold: 3.0
@@ -11,7 +11,7 @@ saccade_config:
 #for prosaccade experiments
 reward_contingency:
   reward_angle: 35 #half-width, in degrees, of the rewarded zone around the target direction
-  congruency_window: [0.15, 0.45]  #fixed latency band (s, post target-onset) for the single-number "fraction toward target" congruency summary stat
+  congruency_window: [0.2, 0.5]  #fixed latency band (s, post target-onset) for the single-number "fraction toward target" congruency summary stat
 
 #for fixation experiments
 max_interval_fixations: 1.0 #this is how long we count a fixation of 0.7 sec valid after cue is presented.......
@@ -363,7 +363,7 @@ sessions:
     camera_side: L
     params:
       saccade_config:
-        saccade_threshold: 2.0
+        saccade_threshold: 1.5
       reward_contingency:
         reward_window: 1.0 #reward window in seconds
         scoring_mode: single_shot
@@ -383,7 +383,7 @@ sessions:
       saccade_config:
         saccade_threshold: 2.0
       reward_contingency:
-          reward_window: 0.71 #reward window in seconds
+          reward_window: 0.75 #reward window in seconds
           scoring_mode: multi_attempt
 
  #great
