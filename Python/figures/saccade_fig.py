@@ -81,6 +81,10 @@ import yaml
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 from scipy.stats import circmean, vonmises
+import pickle
+import sys
+from datetime import datetime
+from pathlib import Path
 
 from analysis import prosaccade_session
 from analysis import prosaccade_population as pp
@@ -146,6 +150,39 @@ def _strip_box(ax, keep=("left", "bottom")):
 # ---------------------------------------------------------------------------
 # Data preparation
 # ---------------------------------------------------------------------------
+
+def _load_population_cache(experiment_type: str) -> dict:
+    """Load the ``{"session_results", "animal_pooled", "session_validity"}``
+    cache written by :func:`prosaccade_population.save_population_cache`,
+    instead of re-analyzing every session in the manifest.
+
+    Always loads the ``all_animals``-scoped cache (i.e. from a full,
+    unfiltered ``prosaccade_population.py`` run) since panel D needs every
+    animal pooled together — a ``--animal-name``-filtered run's cache is a
+    different file and is never picked up here by mistake.
+
+    Raises a clear error, not a cryptic one, if the cache file doesn't
+    exist yet.
+    """
+    root_dir = Path(__file__).resolve().parents[2]
+    manifest_path = root_dir / "session_manifest.yml"
+    with manifest_path.open("r", encoding="utf-8") as fh:
+        manifest = yaml.safe_load(fh) or {}
+    results_root = Path(manifest.get("results_root") or root_dir)
+
+    cache_path = results_root / f"{experiment_type}_population_cache_all_animals.pkl"
+    if not cache_path.exists():
+        raise FileNotFoundError(
+            f"No population cache found at {cache_path}. Run "
+            f"prosaccade_population.py (without --animal-name, so every "
+            f"animal is included) first to generate it."
+        )
+
+    mtime = datetime.fromtimestamp(cache_path.stat().st_mtime)
+    print(f"Loading population cache from {cache_path} (saved {mtime:%Y-%m-%d %H:%M})")
+    with cache_path.open("rb") as fh:
+        return pickle.load(fh)
+
 def _load_session_quiver_data(session_id: str) -> dict:
     """Per-trial Left/Right arrow-plot ingredients for one session.
 
@@ -219,7 +256,7 @@ def _draw_quiver_panel(ax, qd, label):
     _draw_quiver_arrows(
         ax, eye_pos, idx_use, qd["dx"], qd["dy"],
         congruent_use=qd["congruent"],
-        xlim=(-extent, extent), ylim=(-extent, extent),
+        xlim=(-10, 10), ylim=(-5, 5),
         title=f"{label} target",
     )
     ax.set_aspect("equal")
@@ -301,7 +338,7 @@ def _draw_latency_cdf(ax, latencies, congruent, reward_window, congruency_window
 
 def _draw_accuracy_vs_latency(ax, latencies, congruent, reward_window, congruency_window):
     centers, frac, n_per_window = prosaccade_session.fraction_toward_target_by_latency(
-        latencies, congruent, window_span=(0.2, reward_window),
+        latencies, congruent, window_span=(0, reward_window),
     )
     valid = n_per_window > 0
     ax.axhline(0.5, color="gray", ls="--", lw=0.8)
@@ -388,22 +425,38 @@ def build_figure(session_id: str, experiment_type: str):
     plt.rcParams["font.sans-serif"] = FONT_SANS_SERIF
     plt.rcParams["font.size"] = FONT_SIZE_BASE
 
-    print(f"Running single-session pipeline for {session_id!r} (panels B/C)...")
-    session_result = prosaccade_session.main(session_id, show_plots=False)
-    quiver = _load_session_quiver_data(session_id)
+
+    cache = _load_population_cache(experiment_type)
+    session_results = cache["session_results"]
+    animal_pooled = cache["animal_pooled"]
+    session_validity = cache["session_validity"]
+
+    if session_id not in session_results:
+        raise KeyError(
+            f"Session {session_id!r} isn't in the cached population run "
+            f"({len(session_results)} sessions cached: "
+            f"{sorted(session_results.keys())}). Either pick a cached "
+            f"session or re-run prosaccade_population.py to refresh the "
+            f"cache."
+        )
+    session_result = session_results[session_id]
     lo = session_result["latency_outcome"]
 
-    print(f"Running population pipeline for experiment_type={experiment_type!r} (panel D)...")
-    _, _, _, _, animal_pooled, session_validity = pp.analyze_all_sessions(
-        experiment_type, animal_name=None, show_session_plots=False,
-    )
+    # Not cached -- cheap (one session's detection, not the whole
+    # manifest), so just computed directly each time. See
+    # _load_session_quiver_data's docstring for why this can't be read from
+    # session_result instead.
+    quiver = _load_session_quiver_data(session_id)
+
     if not animal_pooled:
-        raise ValueError(f"No animals found for experiment_type={experiment_type!r}.")
+        raise ValueError(f"No animals found in the cached population run for experiment_type={experiment_type!r}.")
     if len(animal_pooled) > 1:
         pooled_all = pp.pool_animal_sessions(list(animal_pooled.values()))
     else:
         pooled_all = next(iter(animal_pooled.values()))
     pooled_lo = pooled_all["latency_outcome"]
+
+
 
     fig = plt.figure(figsize=(11, 9.5))
     gs_main = fig.add_gridspec(3, 1, height_ratios=[1.15, 0.9, 0.9], hspace=0.6)

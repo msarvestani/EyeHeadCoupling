@@ -96,6 +96,7 @@ Function reference
 from __future__ import annotations
 
 import argparse
+import pickle
 import re
 import sys
 import warnings
@@ -210,8 +211,6 @@ def pool_animal_sessions(results: list[dict]) -> dict:
         "n_sessions": len(results),
     }
 
-
-
 def analyze_all_sessions(
     experiment_type: str | None = "prosaccade",
     animal_name: str | None = None,
@@ -239,12 +238,12 @@ def analyze_all_sessions(
     -------
     tuple
         ``(aggregated, left_angle_all, right_angle_all, processed_animals,
-        animal_pooled, session_validity)`` — the aggregated per-saccade
-        session table, lists of left/right eye angles, the set of unique
-        animal names processed, ``animal_pooled`` (a dict mapping each
-        animal name to that animal's sessions pooled via
-        :func:`pool_animal_sessions`, ready for the population plots), and
-               ``session_validity``: a list with one dict per session —
+        animal_pooled, session_validity, session_results)`` — the aggregated
+        per-saccade session table, lists of left/right eye angles, the set
+        of unique animal names processed, ``animal_pooled`` (a dict mapping
+        each animal name to that animal's sessions pooled via
+        :func:`pool_animal_sessions`, ready for the population plots),
+        ``session_validity``: a list with one dict per session —
         ``{"animal_name", "session_id", "n_total", "n_valid",
         "fraction_valid", "fraction_correct", "window_frac", "window_n",
         "precue_frac", "precue_n"}`` — where ``fraction_valid`` is the
@@ -257,7 +256,11 @@ def analyze_all_sessions(
         congruent restricted to that session's configured
         ``congruency_window``) with ``precue_frac``/``precue_n`` the
         matching pre-cue control fraction — the same numbers plotted in the
-        third panel of the per-session PSTH/congruency figure.
+        third panel of the per-session PSTH/congruency figure; and
+        ``session_results``: a dict mapping every processed session's ID to
+        its full :func:`prosaccade_session.main` result dict, so callers
+        (e.g. :func:`save_population_cache`) can reuse any one session's
+        already-computed data without re-running it.
     """
 
     tables: list[pd.DataFrame] = []
@@ -266,6 +269,7 @@ def analyze_all_sessions(
     processed_animals: set[str] = set()
     animal_session_results: dict[str, list[dict]] = defaultdict(list)
     session_validity: list[dict] = []
+    session_results: dict[str, dict] = {}
 
     for session_id in list_sessions_from_manifest(
         experiment_type,
@@ -273,6 +277,7 @@ def analyze_all_sessions(
         animal_name=animal_name,
     ):
         result = prosaccade_session.main(session_id, show_plots=show_session_plots)
+        session_results[session_id] = result
         session_cfg = load_session(session_id)
 
         session_df = result["df"].copy()
@@ -326,6 +331,7 @@ def analyze_all_sessions(
             processed_animals,
             animal_pooled,
             session_validity,
+            session_results,
         )
 
     return (
@@ -335,9 +341,44 @@ def analyze_all_sessions(
         processed_animals,
         animal_pooled,
         session_validity,
+        session_results,
     )
 
+def save_population_cache(
+    session_results: dict[str, dict],
+    animal_pooled: dict[str, dict],
+    session_validity: list[dict],
+    results_dir: Path,
+    experiment_type: str = "prosaccade",
+) -> Path:
+    """Pickle everything :func:`analyze_all_sessions` computed for this run,
+    so other scripts (e.g. a composite figure script) can build plots from
+    it without re-analyzing every session in the manifest.
 
+    Saves ``{"session_results", "animal_pooled", "session_validity"}`` to
+    ``<results_dir>/<experiment_type>_population_cache_<scope>.pkl``, where
+    ``<scope>`` is the single animal's name when ``animal_pooled`` has one
+    entry (e.g. a ``--animal-name``-filtered run), or ``all_animals``
+    otherwise — mirroring :func:`plot_session_validity_summary`'s filename
+    convention, so a filtered run's cache can never be silently mistaken
+    for (or overwrite) a full, all-animals run's cache. Returns the path
+    written.
+    """
+    animals_sorted = sorted(animal_pooled.keys())
+    if len(animals_sorted) == 1:
+        scope_tag = re.sub(r"[^A-Za-z0-9_-]+", "_", animals_sorted[0]).strip("_") or "unknown"
+    else:
+        scope_tag = "all_animals"
+
+    cache_path = results_dir / f"{experiment_type}_population_cache_{scope_tag}.pkl"
+    payload = {
+        "session_results": session_results,
+        "animal_pooled": animal_pooled,
+        "session_validity": session_validity,
+    }
+    with cache_path.open("wb") as fh:
+        pickle.dump(payload, fh)
+    return cache_path
 
 def plot_population_summary(
     pooled: dict,
@@ -646,6 +687,7 @@ if __name__ == "__main__":
         processed_animals,
         animal_pooled,
         session_validity,
+        session_results,
     ) = analyze_all_sessions(
         args.experiment_type,
         animal_name=args.animal_name,
@@ -663,6 +705,16 @@ if __name__ == "__main__":
     aggregated.to_csv(
         results_root / f"{args.experiment_type}_population_results.csv", index=False
     )
+
+    ### Cache everything this run computed (per-session results, per-animal
+    ### pooled data, session validity) so other scripts (e.g. a composite
+    ### figure script) can build plots from it without re-analyzing every
+    ### session in the manifest.
+    cache_path = save_population_cache(
+        session_results, animal_pooled, session_validity, results_root,
+        experiment_type=args.experiment_type,
+    )
+    print(f"Saved population cache to {cache_path}")
 
     ### Per-animal (+ all-animals-combined) latency-by-outcome, psth/congruency,
     ### and left/right polar population plots.

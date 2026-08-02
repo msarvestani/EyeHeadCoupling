@@ -529,6 +529,41 @@ def plot_left_right_angle(left_angle,right_angle,reward_angle=35,sessionname=Non
             plt.show()
         plt.close(fig)
 
+def _draw_quiver_arrows(ax, eye_pos, idx_use, dx, dy, congruent_use=None,
+                         xlim=None, ylim=None, title=None):
+    """Draw one condition's first-saccade quiver arrows onto ``ax``.
+
+    Colors by congruent (green) / incongruent (red) when ``congruent_use``
+    is given, else by saccade angle (:func:`vector_to_rgb`). Factored out of
+    :func:`sort_saccades`'s per-condition loop so external composite figures
+    can draw the same arrow panel without duplicating this logic.
+    """
+    ang = np.arctan2(dy[idx_use], dx[idx_use])
+    if congruent_use is not None:
+        cols = np.where(congruent_use, "tab:green", "tab:red")
+    else:
+        cols = np.array([vector_to_rgb(a) for a in ang])
+
+    ax.quiver(
+        eye_pos[idx_use, 0],
+        eye_pos[idx_use, 1],
+        dx[idx_use],
+        dy[idx_use],
+        angles="xy",
+        scale_units="xy",
+        scale=1,
+        color=cols,
+        alpha=0.5,
+    )
+    if xlim is not None:
+        ax.set_xlim(*xlim)
+    if ylim is not None:
+        ax.set_ylim(*ylim)
+    ax.set_xlabel("X (°)")
+    ax.set_ylabel("Y (°)")
+    if title is not None:
+        ax.set_title(title)
+
 
 def sort_saccades(
     config: SessionConfig,
@@ -733,34 +768,15 @@ def sort_saccades(
             ax_l = fig.add_subplot(gs[1, 1])
             ax_t = fig.add_subplot(gs[2, 1]) if torsion_present else None
 
-            ax_q.set_xlim(*X_LIM)
-            ax_q.set_ylim(*Y_LIM)
-            ax_q.set_xlabel("X (°)")
-            ax_q.set_ylabel("Y (°)")
             _win_note = "first saccade per trial, target onset → end-of-trial"
-            ax_q.set_title(
-                f"{session_name}\n{eye_name} — {label} (n={n_cond})\n{_win_note}"
-            )
-
-            #color code isc orrect (green) vs incorrect (red)
-            if congruent_use is not None:
-                cols = np.where(congruent_use, "tab:green", "tab:red")
-            else:
-                cols = np.array([vector_to_rgb(a) for a in ang])
-
-            ax_q.quiver(
-                eye_pos[idx_use, 0],
-                eye_pos[idx_use, 1],
-                dx[idx_use],
-                dy[idx_use],
-                angles="xy",
-                scale_units="xy",
-                scale=1,
-                color=cols,
-                alpha=0.5,
+            _draw_quiver_arrows(
+                ax_q, eye_pos, idx_use, dx, dy, congruent_use=congruent_use,
+                xlim=X_LIM, ylim=Y_LIM,
+                title=f"{session_name}\n{eye_name} — {label} (n={n_cond})\n{_win_note}",
             )
 
             plot_angle_distribution(ang, ax_p)
+            
             plot_linear_histogram(ang, ax_l)
 
             if torsion_present and saccade_indices_theta is not None and first_saccade_indices_theta is not None:
