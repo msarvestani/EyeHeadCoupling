@@ -812,7 +812,7 @@ def sort_saccades(
         )
         if has_left_right:
             reward_contingency = getattr(config, "reward_contingency", None) or {}
-            reward_angle = reward_contingency.get("reward_angle", 35)
+            reward_angle = reward_contingency.get("reward_angle")
             plot_left_right_angle(
                 left_angle,
                 right_angle,

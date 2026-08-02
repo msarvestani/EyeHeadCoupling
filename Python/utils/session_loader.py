@@ -118,11 +118,11 @@ def load_session(session_id: str) -> SessionConfig:
     results = data.get("results_dir")
     if results is None and folder:
         if results_with_data:
-            results = Path(folder) / "results"
+            results = Path(folder) / "Results2"
         elif results_root:
             session_folder = Path(folder).name
             results = Path(results_root) / session_folder
-            
+
     known_keys = {
         "session_name",
         "results_dir",
