@@ -379,7 +379,7 @@ def plot_population_summary(
         window=(-reward_window, reward_window),
     )
     latency_centers, fraction_toward, n_per_window = prosaccade_session.fraction_toward_target_by_latency(
-        latencies, congruent, window_span=(0.2, reward_window)
+        latencies, congruent, window_span=(0, reward_window)
     )
     frac, n_window, ci_lo, ci_hi = prosaccade_session.congruency_in_window(
         latencies, congruent, window=congruency_window

@@ -1347,13 +1347,18 @@ def plot_psth_and_congruency(
     
     """Three-panel figure: target-aligned rate PSTH, accuracy-by-latency, and windowed congruency vs. pre-cue control.
 
-    ``reward_window`` (seconds), if given, is shaded on the time-resolved
-    panels (PSTH and accuracy-vs-latency) to mark the rewarded epoch.
+    ``reward_window`` (seconds), if given, is shaded gold on the
+    time-resolved panels (PSTH and accuracy-vs-latency) to mark the
+    rewarded epoch. ``window`` (the congruency window used for the third
+    panel's summary number) is shaded purple on the accuracy-vs-latency
+    panel, so the latency band that number actually summarizes is visible
+    directly on the accuracy-vs-latency curve.
 
     ``title`` is used verbatim as the figure's suptitle and ``save_path`` is
     the exact file the figure is saved to. Taking these explicitly (instead
     of a per-session ``config``) is what lets the same function draw both a
     single session's figure and a population figure pooling many sessions."""
+
     fig, (ax_rate, ax_frac, ax_summary) = plt.subplots(1, 3, figsize=(14, 4))
 
     def _mark_reward(ax):
@@ -1362,6 +1367,12 @@ def plot_psth_and_congruency(
         ax.axvspan(0, reward_window, color="gold", alpha=0.12, lw=0)
         ax.axvline(reward_window, color="goldenrod", ls=":", lw=1.2,
                    label=f"reward window ({reward_window:g}s)")
+
+    def _mark_congruency_window(ax):
+        ax.axvspan(window[0], window[1], color="tab:purple", alpha=0.10, lw=0)
+        ax.axvline(window[0], color="purple", ls=":", lw=1.0)
+        ax.axvline(window[1], color="purple", ls=":", lw=1.0,
+                   label=f"congruency window ({window[0]:.2f}–{window[1]:.2f}s)")
 
     ax_rate.fill_between(psth_centers, psth_ci[0], psth_ci[1], color="tab:blue", alpha=0.25, lw=0)
     ax_rate.plot(psth_centers, psth_rate, color="tab:blue", lw=1.4)
@@ -1377,10 +1388,14 @@ def plot_psth_and_congruency(
     ax_frac.axhline(0.5, color="gray", ls="--", lw=0.8)
     ax_frac.plot(latency_centers[valid], fraction_toward[valid], "-o", color="tab:green", ms=3)
     _mark_reward(ax_frac)
+    _mark_congruency_window(ax_frac)
     ax_frac.set_ylim(0, 1)
     ax_frac.set_xlabel("Window centre, time from target (s)")
     ax_frac.set_ylabel("Fraction of first saccades toward target")
     ax_frac.set_title("Saccade accuracy vs. latency")
+    ax_frac.legend(fontsize=8)
+
+
 
     if n_window > 0:
         ax_summary.errorbar(
@@ -1563,7 +1578,7 @@ def main(session_id: str, show_plots: bool = True) -> pd.DataFrame:
         max_latency=max_trial_time, mask=mask_horizontal, scoring_mode=scoring_mode,
     )
     latency_centers, fraction_toward, n_per_window = fraction_toward_target_by_latency(
-        latencies, congruent, window_span=(0.2, max_trial_time)
+        latencies, congruent, window_span=(0, max_trial_time)
     )
 
     #get the early congruency window from manifest
