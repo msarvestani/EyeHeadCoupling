@@ -67,6 +67,13 @@ def extract_session_info(config):
         'trial_outcome': data.trial_success,
     })
 
+    # Fixed task parameters (medians, in frames), derived from trial timing:
+    #   reward_window : max time the target stayed on for failed trials —
+    #       trial_success == 0 marks a miss/timeout, so target_duration on
+    #       those trials approximates the response window the animal was given.
+    #   cue_duration  : time from cue onset to go/target onset.
+    #   iti           : inter-trial interval — gap between one trial's end
+    #       and the next trial's cue onset.
     fixed_parameters = {
         'reward_window': np.median(trial_duration[data.trial_success == 0]),
         'cue_duration': np.median(data.go_frame - data.cue_frame),

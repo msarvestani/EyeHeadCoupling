@@ -365,7 +365,7 @@ sessions:
       saccade_config:
         saccade_threshold: 1.5
       reward_contingency:
-        reward_window: 1.0 #reward window in seconds
+        reward_window: 1.5 #reward window in seconds
         scoring_mode: single_shot
       
 
@@ -383,7 +383,7 @@ sessions:
       saccade_config:
         saccade_threshold: 2.0
       reward_contingency:
-          reward_window: 0.75 #reward window in seconds
+          reward_window: 0.8 #reward window in seconds
           scoring_mode: multi_attempt
 
  #great
@@ -397,7 +397,7 @@ sessions:
       saccade_config:
         saccade_threshold: 2.0
       reward_contingency:
-          reward_window: 0.75 #reward window in seconds
+          reward_window: 0.8 #reward window in seconds
           scoring_mode: multi_attempt
 
 #great!
@@ -469,7 +469,7 @@ sessions:
       saccade_config:
         saccade_threshold: 2.0
       reward_contingency:
-          reward_window: 0.6 #reward window in seconds
+          reward_window: 0.8 #reward window in seconds
           scoring_mode: multi_attempt
 
  #this has L/R & U/D targets, good
@@ -483,7 +483,7 @@ sessions:
       saccade_config:
         saccade_threshold: 1.0
       reward_contingency:
-          reward_window: 0.75 #reward window in seconds
+          reward_window: 0.8 #reward window in seconds
           scoring_mode: multi_attempt
 
  #this has L/R & U/D targets, great
@@ -497,7 +497,7 @@ sessions:
       saccade_config:
         saccade_threshold: 1.0
       reward_contingency:
-          reward_window: 0.75 #reward window in seconds
+          reward_window: 0.8 #reward window in seconds
           scoring_mode: multi_attempt
 
 #Targets are L/R, randomly presented
