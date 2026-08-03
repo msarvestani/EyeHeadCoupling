@@ -1,98 +1,71 @@
+"""Pre-analysis cleanup: derive per-trial timing and fixed task parameters from a raw session folder.
+
+Loads a session's go/end_of_trial/cue data using the shared session-loading
+utilities (`load_session_or_path` + `load_session_data`, the same loaders
+used by the other analysis scripts), then derives a per-trial timing table
+and three fixed task parameters: reward_window, cue_duration, and iti
+(inter-trial interval), all in frames. Writes two outputs into the session
+folder: `session_info.csv` (the per-trial table) and `fixed_parameters.png`
+(a rendered table of the fixed parameters).
+
+How to run:
+    conda env create -f Python/EyeHeadCoupling.yml   # first time only
+    conda activate EyeHeadCoupling
+    python Python/analysis/preanalysis_cleanup.py /path/to/session_folder
+
+The folder argument may be a session ID already present in
+`session_manifest.yml`, or a direct path to a raw Bonsai session folder.
+Note: for a folder not yet in the manifest, `load_session_or_path` still
+needs to infer `ttl_freq`/`calibration_factor` by looking up another
+manifest entry for the same animal_id — if no such entry exists yet (e.g.
+this is the very first session recorded for a new animal), it raises a
+clear ValueError asking you to add a manifest entry first.
+"""
 from __future__ import annotations
-import sys
-import os
+
 import argparse
+import os
+import sys
 from pathlib import Path
+
 import numpy as np
 import pandas as pd
-from pandas.plotting import table 
+from pandas.plotting import table
 import matplotlib.pyplot as plt
 
-# Put the repo's “Python” folder on sys.path so `import eyehead` works
+# Put the repo's "Python" folder on sys.path so `import eyehead` works
 sys.path.append(str(Path(__file__).resolve().parents[1]))
-from utils.session_loader import load_session
-from eyehead.io import clean_csv
-
+from utils.session_loader import load_session_or_path
+from eyehead import load_session_data
 
 
 def extract_session_info(folder_path):
+    """Load a session and compute its per-trial timing table and fixed parameters.
+
+    Returns
+    -------
+    df : pandas.DataFrame
+        Columns: trial_start, trial_end, target_duration, trial_outcome.
+    fixed_parameters : dict
+        Median reward_window, cue_duration, and iti, all in frames.
     """
-    Extract session information from the folder path.
-    """
+    print(f"Loading session data from: {folder_path}")
+    config = load_session_or_path(str(folder_path))
+    data = load_session_data(config)
 
-    print(f"Scanning folder: {folder_path}")
-    print(f"Found {len(os.listdir(folder_path))} files")
+    trial_duration = data.end_of_trial_frame - data.go_frame
+    df = pd.DataFrame({
+        'trial_start': data.cue_frame,
+        'trial_end': data.end_of_trial_frame,
+        'target_duration': trial_duration,
+        'trial_outcome': data.trial_success,
+    })
 
-    fixed_parameters = {}
-    df = pd.DataFrame(columns=['trial_start', 'trial_end', 'target_duration', 'trial_outcome'])
-
-    # Scan the folder for specific files
-    for f in os.listdir(folder_path):
-        f_lower = f.lower()
-        full_path = os.path.join(folder_path, f)
-        if 'go' in f_lower:
-            go_file = full_path
-        if 'endoftrial' in f_lower:
-            end_of_trial_file = full_path
-        if 'cue' in f_lower:
-            cue_file = full_path
-
-    ## The go file contains the start frame of the target and the direction of the target. 
-    go_data = np.genfromtxt(clean_csv(go_file), delimiter=',', skip_header=1, dtype=np.float64)
-    [go_frame, go_time, go_direction_x,go_direction_y] = go_data[:, 0], go_data[:, 1], go_data[:, 2], go_data[:,3]
-    go_frame = go_frame.astype(int)  # Convert go_frame to integer type
-
-    ## The end of trial file contains the frame number marking the end of the trial. This can be two different things: i) For successful trials,
-    ## it means when the animal has made first correct saccade to the target ii) For unsuccessful trials, it means the maximum time allowed for the target has elapsed.
-    ## Additionally, the file contains time of the end of trial, the direction of the target, the direction of the eye movement, and the result of the trial (true=success)
-    end_of_trial_data = np.genfromtxt(clean_csv(end_of_trial_file), delimiter=',', skip_header=1, dtype=np.float64)
-    [end_of_trial_frame, end_of_trial_ts, trial_stim_direction, trial_eye_movement_direction,trial_success] = end_of_trial_data[:, 0], end_of_trial_data[:, 1], end_of_trial_data[:, 2], end_of_trial_data[:, 3], end_of_trial_data[:, 4]
-    end_of_trial_frame = end_of_trial_frame.astype(int)  # Convert end_of_trial_frame to integer type
-
-    ## the cue file contains all frame numbers when the visual cue was present. (Redundant just use the first frame of the cue for each trial) 
-    cue_data = np.genfromtxt(clean_csv(cue_file), delimiter=',', skip_header=1, dtype=np.float64)
-    [cue_frame,cue_time] = cue_data[:, 0], cue_data[:, 1]
-    cue_frame = cue_frame.astype(int)  # Convert cue_frame to integer type
-    diff = np.diff(cue_frame)
-    threshold = 10  # Define a threshold for detecting gaps
-    start_indices = np.concatenate(([0], np.where(diff > threshold)[0] + 1))
-    cue_frame = cue_frame[start_indices]  
-    cue_time = cue_time[start_indices]
-
-    ## If the length of the go_frame, end_of_trial_frame, and cue_frame are not equal, then we need to trim them to the same length (min of the three)
-    min_length = min(len(go_frame), len(end_of_trial_frame), len(cue_frame))
-    go_frame = go_frame[:min_length]
-    end_of_trial_frame = end_of_trial_frame[:min_length]
-    cue_frame = cue_frame[:min_length]
-
-    
-    ## Create the dataframe with trial start, trial end, target duration, and trial outcome
-    trial_duration = end_of_trial_frame - go_frame
-    df['trial_start'] = cue_frame
-    df['trial_end'] = end_of_trial_frame
-    df['target_duration'] = trial_duration
-    df['trial_outcome'] = trial_success
-
-    # Extract fixed parameters 
-    reward_window = []
-    for dur, out in zip(trial_duration, trial_success):
-        if out == 0:
-            reward_window.append(dur)
-    reward_window = np.array(reward_window)
-    fixed_parameters['reward_window'] = np.median(reward_window)
-    
-
-    cue_durations = go_frame - cue_frame
-    fixed_parameters['cue_duration'] = np.median(cue_durations)
-
-    iti = []
-    for prev_end, next_start in zip(end_of_trial_frame[:-1], cue_frame[1:]):
-        iti.append(next_start - prev_end)
-
-    iti = np.array(iti)
-    fixed_parameters['iti'] = np.median(iti)
-
-
+    fixed_parameters = {
+        'reward_window': np.median(trial_duration[data.trial_success == 0]),
+        'cue_duration': np.median(data.go_frame - data.cue_frame),
+        'iti': np.median(data.cue_frame[1:] - data.end_of_trial_frame[:-1]),
+    }
 
     return df, fixed_parameters
 
@@ -103,24 +76,22 @@ def main():
     args = parser.parse_args()
 
     df, fixed_parameters = extract_session_info(args.folder)
-    ## Create a csv in the same folder from the df
     output_csv_path = os.path.join(args.folder, "session_info.csv")
     df.to_csv(output_csv_path, index=False)
 
-    ## Create a png in the same folder from the fixed parameters
-    output_png_path = os.path.join(args.folder, "fixed_parameters.png")
-    df = pd.DataFrame(
-    list(fixed_parameters.items()),
-    columns=["Parameter", "Value(frames)"]
-)
-    df["Value(frames)"] = df["Value(frames)"].astype(float)
+    params_df = pd.DataFrame(
+        list(fixed_parameters.items()),
+        columns=["Parameter", "Value(frames)"],
+    )
+    params_df["Value(frames)"] = params_df["Value(frames)"].astype(float)
     fig, ax = plt.subplots(figsize=(4, 2))
     ax.axis("off")
 
-    tbl = table(ax, df, loc="center", cellLoc="center", colWidths=[0.6, 0.4])
+    tbl = table(ax, params_df, loc="center", cellLoc="center", colWidths=[0.6, 0.4])
     tbl.auto_set_font_size(False)
     tbl.set_fontsize(10)
 
+    output_png_path = os.path.join(args.folder, "fixed_parameters.png")
     plt.savefig(output_png_path, bbox_inches="tight", dpi=300)
     plt.close()
 
