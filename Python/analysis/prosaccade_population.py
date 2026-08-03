@@ -64,10 +64,24 @@ Function reference
     Runs :func:`prosaccade_session.main` on every session matching
     ``experiment_type``/``animal_name`` from the manifest, grouping results
     by animal along the way. Returns the aggregated per-saccade table
-    (``aggregated``, which feeds the CSV export in ``__main__``) plus
-    ``animal_pooled``: a dict mapping each animal name to that animal's
+    (``aggregated``, which feeds the CSV export in ``__main__``);
+    ``animal_pooled``, a dict mapping each animal name to that animal's
     sessions pooled via :func:`pool_animal_sessions`, ready for the
-    population plots.
+    population plots; ``session_validity``, a list of per-session
+    validity/accuracy/congruency stats (see :func:`plot_session_validity_summary`);
+    and ``session_results``, a dict mapping every processed session's ID to
+    its full :func:`prosaccade_session.main` result, so that data doesn't
+    need to be recomputed by anything downstream (see
+    :func:`save_population_cache`).
+
+:func:`save_population_cache`
+    Pickles ``session_results``/``animal_pooled``/``session_validity`` to
+    ``<results_dir>/<experiment_type>_population_cache_<scope>.pkl``
+    (``<scope>`` is the single animal's name for a filtered run, or
+    ``all_animals`` otherwise), so other scripts — e.g. a composite figure
+    script pulling one session's data plus the population summary — can
+    build plots from this run without re-analyzing every session in the
+    manifest themselves.
 
 :func:`plot_population_summary`
     Draws the three population plots — target-aligned PSTH/congruency,
@@ -86,12 +100,23 @@ Function reference
     avoid a redundant duplicate of a single animal's own plots — once more
     for every animal pooled together via :func:`pool_animal_sessions`.
 
+:func:`plot_session_validity_summary`
+    Three-panel dot plot, grouped by animal: fraction of trials with a
+    detected saccade, fraction of those that were correct, and windowed
+    congruency vs. pre-cue control (reusing
+    :func:`prosaccade_session.congruency_in_window`) — one green dot per
+    session plus each animal's trial-weighted pooled average ± 95% Wilson
+    CI in black. Filename includes the animal(s) plotted (single animal
+    name, or ``all_animals``) so filtered and full runs never overwrite
+    each other's output.
+
 ``__main__``
-    Parses ``--experiment-type``/``--animal-name``, calls
-    :func:`analyze_all_sessions`, writes the aggregated per-saccade table to
-    CSV, then calls :func:`run_population_summary_plots` for the per-animal
-    (+ all-animals) summary figures (PSTH/congruency, latency-by-outcome,
-    and left/right polar).
+    Parses ``--experiment-type``/``--animal-name``/``--quiet-session-plots``,
+    calls :func:`analyze_all_sessions`, writes the aggregated per-saccade
+    table to CSV, calls :func:`save_population_cache`, then calls
+    :func:`run_population_summary_plots` and
+    :func:`plot_session_validity_summary` for the per-animal (+
+    all-animals) summary figures.
 """
 from __future__ import annotations
 

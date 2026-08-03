@@ -249,14 +249,14 @@ def _draw_quiver_panel(ax, qd, label):
     composite figure."""
     extent = 1.0
     if qd["x"].size:
-        extent = max(np.nanmax(np.abs(qd["x"])), np.nanmax(np.abs(qd["y"]))) * 1.15
+        extent = max(np.nanmax(np.abs(qd["x"])), np.nanmax(np.abs(qd["y"]))) * 1.5
 
     eye_pos = np.column_stack([qd["x"], qd["y"]])
     idx_use = np.arange(len(qd["x"]))
     _draw_quiver_arrows(
         ax, eye_pos, idx_use, qd["dx"], qd["dy"],
         congruent_use=qd["congruent"],
-        xlim=(-10, 10), ylim=(-5, 5),
+        xlim=(-13, 13), ylim=(-7, 7),
         title=f"{label} target",
     )
     ax.set_aspect("equal")
@@ -298,7 +298,7 @@ def _draw_polar_panel(ax, angle, reward_angle_deg, zone_center_deg, color, kappa
     ax.yaxis.grid(False)
     ax.set_thetagrids([0, 90, 180, 270], labels=["0°", "90°", "180°", "270°"],
                        fontsize=FONT_SIZE_TICK)
-
+    ax.spines["polar"].set_visible(False) #get rid of visible circle outline
 
 def _draw_latency_hist(ax, latencies, congruent, reward_window, congruency_window):
     correct = latencies[congruent]
@@ -308,8 +308,9 @@ def _draw_latency_hist(ax, latencies, congruent, reward_window, congruency_windo
     ax.hist(correct, bins=bins, alpha=0.6, color=CORRECT_COLOR)
     ax.hist(incorrect, bins=bins, alpha=0.6, color=INCORRECT_COLOR)
     ax.axvspan(0, reward_window, color=REWARD_COLOR, alpha=0.10, lw=0)
-    ax.axvspan(congruency_window[0], congruency_window[1],
-               color=CONGRUENCY_WINDOW_COLOR, alpha=0.10, lw=0)
+    if congruency_window is not None:
+        ax.axvspan(congruency_window[0], congruency_window[1], color=CONGRUENCY_WINDOW_COLOR, alpha=0.10, lw=0)
+    
     ax.set_xlabel("Latency (s)", fontsize=FONT_SIZE_LABEL)
     ax.set_ylabel("Trial count", fontsize=FONT_SIZE_LABEL)
     _limit_ticks(ax)
@@ -326,8 +327,9 @@ def _draw_latency_cdf(ax, latencies, congruent, reward_window, congruency_window
         ax.step(incorrect, np.arange(1, incorrect.size + 1) / incorrect.size,
                 where="post", color=INCORRECT_COLOR)
     ax.axvspan(0, reward_window, color=REWARD_COLOR, alpha=0.10, lw=0)
-    ax.axvspan(congruency_window[0], congruency_window[1],
-               color=CONGRUENCY_WINDOW_COLOR, alpha=0.10, lw=0)
+    if congruency_window is not None:
+        ax.axvspan(congruency_window[0], congruency_window[1],
+                   color=CONGRUENCY_WINDOW_COLOR, alpha=0.10, lw=0)
     ax.set_ylim(0, 1)
     ax.set_yticks([0, 0.5, 1])
     ax.set_xlabel("Latency (s)", fontsize=FONT_SIZE_LABEL)
@@ -344,8 +346,9 @@ def _draw_accuracy_vs_latency(ax, latencies, congruent, reward_window, congruenc
     ax.axhline(0.5, color="gray", ls="--", lw=0.8)
     ax.plot(centers[valid], frac[valid], "-o", color=CORRECT_COLOR, ms=3)
     ax.axvspan(0, reward_window, color=REWARD_COLOR, alpha=0.10, lw=0)
-    ax.axvspan(congruency_window[0], congruency_window[1],
-               color=CONGRUENCY_WINDOW_COLOR, alpha=0.10, lw=0)
+    if congruency_window is not None:
+        ax.axvspan(congruency_window[0], congruency_window[1],
+                   color=CONGRUENCY_WINDOW_COLOR, alpha=0.10, lw=0)
     ax.set_ylim(0, 1)
     ax.set_yticks([0, 0.5, 1])
     ax.set_xlabel("Latency (s)", fontsize=FONT_SIZE_LABEL)
@@ -418,13 +421,19 @@ def _draw_validity_columns(axes, session_validity, animal_pooled):
 
 
 # ---------------------------------------------------------------------------
-# Figure assembly
+# This section puts the actual figure together
 # ---------------------------------------------------------------------------
 def build_figure(session_id: str, experiment_type: str):
     plt.rcParams["font.family"] = "sans-serif"
     plt.rcParams["font.sans-serif"] = FONT_SANS_SERIF
     plt.rcParams["font.size"] = FONT_SIZE_BASE
-
+    # Matplotlib's SVG default ("path") outlines every glyph into vector
+    # paths -- editable in Illustrator, but no longer real text (can't
+    # select/retype it, change font, etc). "none" keeps actual <text>
+    # elements referencing the font by name instead, so Illustrator imports
+    # it as real, editable text -- as long as that font (Arial here) is
+    # installed on whatever machine opens the SVG.
+    plt.rcParams["svg.fonttype"] = "none"
 
     cache = _load_population_cache(experiment_type)
     session_results = cache["session_results"]
@@ -457,12 +466,12 @@ def build_figure(session_id: str, experiment_type: str):
     pooled_lo = pooled_all["latency_outcome"]
 
 
-
-    fig = plt.figure(figsize=(11, 9.5))
-    gs_main = fig.add_gridspec(3, 1, height_ratios=[1.15, 0.9, 0.9], hspace=0.6)
+    #setup the main figure size and layout
+    fig = plt.figure(figsize=(11, 8.5))
+    gs_main = fig.add_gridspec(3, 1, height_ratios=[0.9, 0.9, 0.9], hspace=0.4)
 
     # --- Row 1: Panel A (schematic placeholder) + Panel B (arrows/polar) ---
-    gs_top = gs_main[0].subgridspec(1, 2, width_ratios=[1.0, 1.8], wspace=0.3)
+    gs_top = gs_main[0].subgridspec(1, 2, width_ratios=[0.2, 2.5], wspace=0.2)
 
     ax_a = fig.add_subplot(gs_top[0, 0])
     ax_a.axis("off")
@@ -474,11 +483,16 @@ def build_figure(session_id: str, experiment_type: str):
               fontsize=FONT_SIZE_LABEL, color="0.5", transform=ax_a.transAxes)
     _panel_letter(ax_a, "A")
 
-    gs_b = gs_top[0, 1].subgridspec(2, 2, hspace=0.55, wspace=0.4)
+    # Arrow + polar side by side per condition (Left arrow, Left polar,
+    # Right arrow, Right polar) instead of stacked -- a 2x2 stack left a lot
+    # of empty vertical space since quiver panels are wide-but-short and
+    # polar panels are compact, so GridSpec was giving both rows equal
+    # height regardless.
+    gs_b = gs_top[0, 1].subgridspec(1, 4, wspace=0.5)
     ax_b_arrow_l = fig.add_subplot(gs_b[0, 0])
-    ax_b_arrow_r = fig.add_subplot(gs_b[0, 1])
-    ax_b_polar_l = fig.add_subplot(gs_b[1, 0], polar=True)
-    ax_b_polar_r = fig.add_subplot(gs_b[1, 1], polar=True)
+    ax_b_polar_l = fig.add_subplot(gs_b[0, 1], polar=True)
+    ax_b_arrow_r = fig.add_subplot(gs_b[0, 2])
+    ax_b_polar_r = fig.add_subplot(gs_b[0, 3], polar=True)
 
     _draw_quiver_panel(ax_b_arrow_l, quiver["Left"], "Left")
     _draw_quiver_panel(ax_b_arrow_r, quiver["Right"], "Right")
@@ -501,9 +515,9 @@ def build_figure(session_id: str, experiment_type: str):
     ax_c_acc = fig.add_subplot(gs_c[0, 2])
 
     _draw_latency_hist(ax_c_hist, lo["latencies"], lo["congruent"],
-                        session_result["reward_window"], session_result["congruency_window"])
+                        session_result["reward_window"], None)
     _draw_latency_cdf(ax_c_cdf, lo["latencies"], lo["congruent"],
-                       session_result["reward_window"], session_result["congruency_window"])
+                       session_result["reward_window"], None)
     _draw_accuracy_vs_latency(ax_c_acc, lo["latencies"], lo["congruent"],
                                session_result["reward_window"], session_result["congruency_window"])
     _panel_letter(ax_c_hist, "C")
@@ -523,9 +537,9 @@ def build_figure(session_id: str, experiment_type: str):
     ax_d_window = fig.add_subplot(gs_d_validity[0, 2])
 
     _draw_latency_hist(ax_d_hist, pooled_lo["latencies"], pooled_lo["congruent"],
-                        pooled_all["reward_window"], pooled_all["congruency_window"])
+                        pooled_all["reward_window"], None)
     _draw_accuracy_vs_latency(ax_d_acc, pooled_lo["latencies"], pooled_lo["congruent"],
-                               pooled_all["reward_window"], pooled_all["congruency_window"])
+                               pooled_all["reward_window"], None)
     _draw_validity_columns((ax_d_valid, ax_d_correct, ax_d_window), session_validity, animal_pooled)
     _panel_letter(ax_d_hist, "D")
 
@@ -543,7 +557,7 @@ def build_figure(session_id: str, experiment_type: str):
     return fig
 
 
-################################################### main plotting calls
+################################################### main call to build the figure and save it in the right place/format
 
 fig = build_figure(SESSION_ID, EXPERIMENT_TYPE)
 
@@ -558,7 +572,7 @@ else:
     results_root.mkdir(parents=True, exist_ok=True)
     out_stem = results_root / f"{EXPERIMENT_TYPE}_summary_figure"
 
-for ext in ("png", "svg", "pdf"):
+for ext in ("png", "svg"):
     path = out_stem.with_suffix(f".{ext}")
     fig.savefig(path, dpi=300, bbox_inches="tight")
     print(f"Saved {path}")
