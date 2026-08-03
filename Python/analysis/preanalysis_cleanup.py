@@ -1,3 +1,20 @@
+"""Pre-analysis cleanup: derive per-trial timing and fixed task parameters from a raw session folder.
+
+Scans a single Bonsai session folder for its "go", "endoftrial", and "cue" log
+files, aligns them into a per-trial table (trial start/end frame, target
+duration, outcome), and estimates session-level constants (reward window,
+cue duration, inter-trial interval). Writes two outputs into that same
+folder: `session_info.csv` (the per-trial table) and `fixed_parameters.png`
+(a rendered table of the fixed parameters).
+
+How to run:
+    conda env create -f Python/EyeHeadCoupling.yml   # first time only
+    conda activate EyeHeadCoupling
+    python Python/analysis/preanalysis_cleanup.py /path/to/session_folder
+
+The session folder must contain exactly one file whose name (case-insensitive)
+contains each of "go", "endoftrial", and "cue".
+"""
 from __future__ import annotations
 import sys
 import os
