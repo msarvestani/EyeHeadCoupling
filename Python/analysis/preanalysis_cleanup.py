@@ -13,6 +13,9 @@ How to run:
     conda activate EyeHeadCoupling
     python Python/analysis/preanalysis_cleanup.py /path/to/session_folder
 
+    python Python/analysis/preanalysis_cleanup.py Tsh001_2025-07-23T16_20_03   # manifest session ID
+    python Python/analysis/preanalysis_cleanup.py /path/to/session_folder       # or a direct path
+
 The folder argument may be a session ID already present in
 `session_manifest.yml`, or a direct path to a raw Bonsai session folder.
 Note: for a folder not yet in the manifest, `load_session_or_path` still
@@ -39,8 +42,13 @@ from utils.session_loader import load_session_or_path
 from eyehead import load_session_data
 
 
-def extract_session_info(folder_path):
-    """Load a session and compute its per-trial timing table and fixed parameters.
+def extract_session_info(config):
+    """Compute the per-trial timing table and fixed parameters for an already-loaded session.
+
+    Parameters
+    ----------
+    config : utils.session_loader.SessionConfig
+        Resolved session configuration (from `load_session_or_path`).
 
     Returns
     -------
@@ -49,8 +57,6 @@ def extract_session_info(folder_path):
     fixed_parameters : dict
         Median reward_window, cue_duration, and iti, all in frames.
     """
-    print(f"Loading session data from: {folder_path}")
-    config = load_session_or_path(str(folder_path))
     data = load_session_data(config)
 
     trial_duration = data.end_of_trial_frame - data.go_frame
@@ -72,28 +78,35 @@ def extract_session_info(folder_path):
 
 def main():
     parser = argparse.ArgumentParser(description="Extract session information from a folder.")
-    parser.add_argument("folder", type=str, help="Path to the folder containing session files.")
+    parser.add_argument("folder", type=str, help="Session ID (from session_manifest.yml) or a direct path to a session folder.")
     args = parser.parse_args()
 
-    df, fixed_parameters = extract_session_info(args.folder)
-    output_csv_path = os.path.join(args.folder, "session_info.csv")
+    config = load_session_or_path(args.folder)
+    output_dir = Path(config.folder_path)
+    print(f"Loading session data from: {output_dir}")
+
+    df, fixed_parameters = extract_session_info(config)
+    output_csv_path = output_dir / "session_info.csv"
     df.to_csv(output_csv_path, index=False)
 
     params_df = pd.DataFrame(
         list(fixed_parameters.items()),
         columns=["Parameter", "Value(frames)"],
     )
-    params_df["Value(frames)"] = params_df["Value(frames)"].astype(float)
-    fig, ax = plt.subplots(figsize=(4, 2))
+    params_df["Value(frames)"] = params_df["Value(frames)"].round(2)
+    params_df["Value(seconds)"] = (params_df["Value(frames)"] / config.ttl_freq).round(2)
+
+    fig, ax = plt.subplots(figsize=(5, 2))
     ax.axis("off")
 
-    tbl = table(ax, params_df, loc="center", cellLoc="center", colWidths=[0.6, 0.4])
+    tbl = table(ax, params_df, loc="center", cellLoc="center", colWidths=[0.4, 0.3, 0.3])
     tbl.auto_set_font_size(False)
     tbl.set_fontsize(10)
 
-    output_png_path = os.path.join(args.folder, "fixed_parameters.png")
+    output_png_path = output_dir / "fixed_parameters.png"
     plt.savefig(output_png_path, bbox_inches="tight", dpi=300)
-    plt.close()
+    plt.show()
+    #plt.close()
 
 
 if __name__ == "__main__":
