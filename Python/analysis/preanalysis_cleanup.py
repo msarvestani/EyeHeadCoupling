@@ -103,6 +103,11 @@ def main():
     params_df["Value(frames)"] = params_df["Value(frames)"].round(2)
     params_df["Value(seconds)"] = (params_df["Value(frames)"] / config.ttl_freq).round(2)
 
+    outcome_summary = { 'Total': len(df), 'Correct':df[df['trial_outcome']==2].shape[0], 'Incorrect':df[df['trial_outcome']==1].shape[0], 
+                       'Invalid':df[df['trial_outcome']==0].shape[0],'%valid': df[df['trial_outcome']!=0].shape[0]/len(df)*100,'%correct': df[df['trial_outcome']==2].shape[0]/len(df)*100,
+                       '%correct of valid': df[df['trial_outcome']==2].shape[0]/df[df['trial_outcome']!=0].shape[0]*100}
+    outcome_df = pd.DataFrame(list(outcome_summary.items()), columns=["Metric", "Value"])
+    outcome_df["Value"] = outcome_df["Value"].round(2)
     fig, ax = plt.subplots(figsize=(5, 2))
     ax.axis("off")
 
@@ -111,6 +116,18 @@ def main():
     tbl.set_fontsize(10)
 
     output_png_path = output_dir / "fixed_parameters.png"
+    plt.savefig(output_png_path, bbox_inches="tight", dpi=300)
+    plt.show()
+    #plt.close()
+
+    fig, ax = plt.subplots(figsize=(5, 4))
+    ax.axis("off")
+
+    tbl = table(ax, outcome_df, loc="center", cellLoc="center", colWidths=[0.4, 0.3])
+    tbl.auto_set_font_size(False)
+    tbl.set_fontsize(10)
+
+    output_png_path = output_dir / "outcome_summary.png"
     plt.savefig(output_png_path, bbox_inches="tight", dpi=300)
     plt.show()
     #plt.close()
