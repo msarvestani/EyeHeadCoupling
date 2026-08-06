@@ -252,7 +252,7 @@ def _build_config_from_folder(folder: Path) -> SessionConfig:
     animal_name = _parse_animal_name_from_path(str(folder))
     date_str = _parse_date_from_path(str(folder))
     if results_with_data or not results_root:
-        results_dir = folder / "results"
+        results_dir = folder / "Results2"
     else:
         results_dir = Path(results_root) / folder_name
 
