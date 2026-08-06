@@ -52,7 +52,7 @@ SESSION_FOLDERS = [
 # Other run settings
 # ---------------------------------------------------------------------------
 ANIMAL_ID = "Tsh001"
-RESULTS_DIR: Optional[Path] = None  # e.g. Path("results") to save the figure to disk
+RESULTS_DIR: Optional[Path] = Path(r"X:\Analysis\EyeHeadCoupling\Fig4S_fixation_heatmap")  # e.g. Path("results") to save the figure to disk
 SHOW_PLOT = True
 
 def plot_session_heatmap(ax, trials: list[dict], title: Optional[str] = None, show_xlabel: bool = False, show_ylabel: bool = True):
