@@ -1,5 +1,5 @@
 results_root: X:\Analysis\EyeHeadCoupling
-results_with_data: true #true => save each session's results inside <data_folder>/results; false => save under results_root
+results_with_data: true # true => save each session's results inside <data_folder>/Results2; false => save under results_root
 
 saccade_config:
   saccade_threshold: 3.0
