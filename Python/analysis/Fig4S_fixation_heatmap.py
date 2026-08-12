@@ -1,18 +1,39 @@
-"""Plot eye-cursor heatmaps from multiple sessions in vertical subplots for comparison.
+"""Draw one session's eye-position density heatmap on a single axis.
 
-This script creates a single figure with one heatmap subplot per session
-(stacked vertically), to allow easy comparison of eye position density
-across sessions run on the same day.
+Pools the eye-position samples from every trial in ``trials`` into a
+2D histogram over the monitor's stimulus-unit coordinate space, then
+overlays a single circle at the mean target position, sized to the
+mean target diameter across those same trials.
 
-Which sessions are plotted is controlled by the ``SESSION_FOLDERS`` constant
-below rather than by command-line arguments. To plot a different set of
-sessions, either edit ``SESSION_FOLDERS`` directly or uncomment one of the
-alternative session sets already listed there.
+Parameters
+----------
+ax : matplotlib.axes.Axes
+    Axis to draw on. Modified in place; nothing is returned.
+trials : list of dict
+    Trial dictionaries as produced by
+    ``analysis.prosaccade_feedback_session.extract_trial_trajectories``.
+    Each trial must provide ``eye_x``/``eye_y`` (arrays of eye
+    position samples for that trial) and
+    ``target_x``/``target_y``/``target_diameter`` (that trial's
+    target). May be empty — the histogram is then all zero and the
+    target circle is skipped.
+title : str, optional
+    Subplot title (e.g. "Successful Trials"). Omit to leave the
+    subplot untitled — used so only the top row of the multi-session
+    grid gets a column header.
+show_xlabel : bool
+    Whether to draw the x-axis label ("Monitor x"). Typically set
+    only for the bottom row of the grid.
+show_ylabel : bool
+    Whether to draw the y-axis label ("Monitor y"). Typically set for
+    only one subplot (the middle row's left column) to avoid
+    repeating it on every panel.
 
-Usage
------
-    python Fig4S_heatmap_v_target_session.py
-
+Returns
+-------
+None
+    The heatmap, colorbar, target circle, and axis labels/limits are
+    all drawn directly onto ``ax``.
 """
 
 from __future__ import annotations
@@ -55,21 +76,50 @@ ANIMAL_ID = "Tsh001"
 RESULTS_DIR: Optional[Path] = Path(r"X:\Analysis\EyeHeadCoupling\Fig4S_fixation_heatmap")  # e.g. Path("results") to save the figure to disk
 SHOW_PLOT = True
 
-def plot_session_heatmap(ax, trials: list[dict], title: Optional[str] = None, show_xlabel: bool = False, show_ylabel: bool = True):
-    """Plot a single heatmap on the given axis.
+def plot_session_heatmap(ax, trials: list[dict], title: Optional[str] = None, show_xlabel: bool = False, show_ylabel: bool = True,
+                          target_x: Optional[float] = None, target_y: Optional[float] = None, target_diameter: Optional[float] = None):
+    """Draw one session's eye-position density heatmap on a single axis.
+
+    Pools the eye-position samples from every trial in ``trials`` into a
+    2D histogram over the monitor's stimulus-unit coordinate space, then
+    overlays a single circle at ``(target_x, target_y)`` sized to
+    ``target_diameter``.
 
     Parameters
     ----------
     ax : matplotlib.axes.Axes
-        The axis to plot on
+        Axis to draw on. Modified in place; nothing is returned.
     trials : list of dict
-        List of trial data dictionaries
+        Trial dictionaries as produced by
+        ``analysis.prosaccade_feedback_session.extract_trial_trajectories``.
+        Each trial must provide ``eye_x``/``eye_y`` (arrays of eye
+        position samples for that trial). May be empty — the histogram is
+        then all zero.
     title : str, optional
-        Title for this subplot (omit to leave the subplot untitled)
+        Subplot title (e.g. "Successful Trials"). Omit to leave the
+        subplot untitled — used so only the top row of the multi-session
+        grid gets a column header.
     show_xlabel : bool
-        Whether to show the x-axis label (typically only for bottom subplot)
+        Whether to draw the x-axis label ("Monitor x"). Typically set
+        only for the bottom row of the grid.
     show_ylabel : bool
-        Whether to show the y-axis label (typically only for the middle subplot)
+        Whether to draw the y-axis label ("Monitor y"). Typically set for
+        only one subplot (the middle row's left column) to avoid
+        repeating it on every panel.
+    target_x, target_y, target_diameter : float, optional
+        Center and diameter of the single target circle to overlay.
+        Passed in by the caller (see :func:`plot_multi_session_heatmaps`)
+        as the mean across *all* of a session's trials, so the successful
+        and failed columns for the same session show the identical
+        target circle rather than each computing its own average from
+        just its own trial subset. Omit any of the three to skip drawing
+        the circle.
+
+    Returns
+    -------
+    None
+        The heatmap, colorbar, target circle, and axis labels/limits are
+        all drawn directly onto ``ax``.
     """
     # Collect all eye positions from all trials
     all_x = []
@@ -92,13 +142,11 @@ def plot_session_heatmap(ax, trials: list[dict], title: Optional[str] = None, sh
     # Add colorbar
     cbar = plt.colorbar(im, ax=ax, label='Number of Samples')
 
-        # Overlay target positions
-    for trial in trials:
-        target_x = trial['target_x']
-        target_y = trial['target_y']
-        target_radius = trial['target_diameter'] / 2.0
-        target_circle = Circle((target_x, target_y), radius=target_radius, fill=False,
-                              edgecolor='cyan', linewidth=0.5, linestyle='-', alpha=0.1)
+    # Overlay the shared target circle (same for both the successful and
+    # failed columns of this session)
+    if target_x is not None and target_y is not None and target_diameter is not None:
+        target_circle = Circle((target_x, target_y), radius=target_diameter / 2.0, fill=False,
+                              edgecolor='cyan', linewidth=1.0, linestyle='-', alpha=1.0)
         ax.add_patch(target_circle)
 
     if show_xlabel:
@@ -116,28 +164,49 @@ def plot_session_heatmap(ax, trials: list[dict], title: Optional[str] = None, sh
 
 def plot_multi_session_heatmaps(session_folders: list[Path], animal_ids: list[str],
                                 results_dir: Optional[Path] = None) -> plt.Figure:
-    """Plot heatmaps for multiple sessions in a grid: one row per session,
-    two columns comparing all trials (left) against successful trials only
-    (right).
+    """Build the full session-by-outcome grid of fixation heatmaps.
+
+    For each session folder, loads the feedback-task CSVs and splits
+    trials into successful vs. failed (via each trial's ``trial_failed``/
+    ``has_eye_data`` flags — see
+    ``analysis.prosaccade_feedback_session.extract_trial_trajectories``),
+    then plots each subset as its own heatmap panel (see
+    :func:`plot_session_heatmap`). The resulting figure has one row per
+    session and two columns: successful trials (left) and failed trials
+    (right), so behavior can be compared both across sessions (down a
+    column) and against itself within a session (across a row). Both
+    columns of a given row overlay the *same* target circle — the mean
+    target position/diameter across that session's trials, regardless of
+    outcome — so any difference between the two panels reflects eye
+    behavior, not a shifted reference target.
 
     Parameters
     ----------
     session_folders : list of Path
-        List of paths to session folders
+        Session folders to load, in top-to-bottom row order. Each is
+        passed to
+        ``analysis.prosaccade_feedback_session.load_feedback_data``.
     animal_ids : list of str
-        List of animal IDs for each session
+        Animal ID for each session, same length/order as
+        ``session_folders``.
     results_dir : Path, optional
-        Directory to save the figure
+        If given, the figure is saved here as both
+        ``multi_session_heatmap_comparison.png`` (raster, 150 dpi) and
+        ``multi_session_heatmap_comparison.svg`` (vector, with editable
+        text — see the ``svg.fonttype``/``font.family`` rcParams set at
+        the top of this file). The directory is created if it doesn't
+        exist. If omitted, the figure is only returned, not saved.
 
     Returns
     -------
     matplotlib.figure.Figure
-        The generated figure
+        The assembled figure, not yet shown or closed — the caller
+        (:func:`main`) is responsible for ``plt.show()``/``plt.close()``.
     """
     n_sessions = len(session_folders)
     middle_row = n_sessions // 2
 
-    # Create figure with one row per session, two columns (all / successful trials)
+    # Create figure with one row per session, two columns (successful / failed trials)
     fig, axes = plt.subplots(n_sessions, 2, figsize=(10, 3 * n_sessions))
     axes = np.atleast_2d(axes)
 
@@ -157,16 +226,26 @@ def plot_multi_session_heatmaps(session_folders: list[Path], animal_ids: list[st
         trials_all = extract_trial_trajectories(eot_df, eye_df, target_df_all,
                                                 successful_indices=successful_indices)
         trials_successful = [t for t in trials_all if not t.get('trial_failed', False) and t.get('has_eye_data', True)]
+        trials_failed = [t for t in trials_all if t.get('trial_failed', False)]
 
-        print(f"  {len(trials_all)} total trials ({len(failed_indices)} failed), "
-              f"{len(trials_successful)} successful trials")
+        print(f"  {len(trials_all)} total trials: {len(trials_successful)} successful, "
+              f"{len(trials_failed)} failed")
+
+        # Shared target circle for this session — same mean position/size
+        # is drawn on both the successful and failed columns
+        if trials_all:
+            mean_target_x = np.mean([t['target_x'] for t in trials_all])
+            mean_target_y = np.mean([t['target_y'] for t in trials_all])
+            mean_target_diameter = np.mean([t['target_diameter'] for t in trials_all])
+        else:
+            mean_target_x = mean_target_y = mean_target_diameter = None
 
         show_xlabel = (idx == n_sessions - 1)  # Only show x-label on bottom row
         show_ylabel = (idx == middle_row)  # Only show y-label on middle row, left column
 
         for col, (trials_for_plot, column_title) in enumerate([
-            (trials_all, "All Trials"),
             (trials_successful, "Successful Trials"),
+            (trials_failed, "Failed Trials"),
         ]):
             ax = axes[idx, col]
             title = column_title if idx == 0 else None
@@ -180,7 +259,9 @@ def plot_multi_session_heatmaps(session_folders: list[Path], animal_ids: list[st
 
             plot_session_heatmap(ax, trials_for_plot, title=title,
                                 show_xlabel=show_xlabel,
-                                show_ylabel=show_ylabel and col == 0)
+                                show_ylabel=show_ylabel and col == 0,
+                                target_x=mean_target_x, target_y=mean_target_y,
+                                target_diameter=mean_target_diameter)
 
     # Overall title
     fig.suptitle('Eye Position Heatmaps', fontsize=12, fontweight='bold', y=0.97)
