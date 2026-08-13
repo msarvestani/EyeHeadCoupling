@@ -102,6 +102,25 @@ def calibrate_eye_position(data: SessionData, config: SessionConfig) -> np.ndarr
     return eye_camera
 
 
+def _align_to_eye_frames(
+    source_frame: np.ndarray, values: np.ndarray, eye_frames: np.ndarray
+) -> np.ndarray:
+    """Resample ``values`` (sampled at ``source_frame``) onto ``eye_frames``.
+
+    ``torsion`` and ``vdaxis`` are logged by Bonsai as separate CSV streams
+    from ``ellipse_center_xy``, so they can be a frame or two shorter/longer
+    (e.g. one stream captures one extra/missing frame at the start or end of
+    the recording). Aligning by frame number rather than row position avoids
+    a length-mismatch crash and keeps samples correctly paired even when a
+    stream drops a frame in the middle.
+    """
+    source_frame = np.asarray(source_frame, dtype=np.float64)
+    order = np.argsort(source_frame)
+    source_frame = source_frame[order]
+    values = np.asarray(values, dtype=np.float64)[order]
+    return np.interp(np.asarray(eye_frames, dtype=np.float64), source_frame, values)
+
+
 def detect_saccades(
     eye_pos_cal: np.ndarray,
     eye_frames: np.ndarray,
@@ -143,10 +162,26 @@ def detect_saccades(
     vd_axis_lx = vd_axis_ly = vd_axis_rx = vd_axis_ry = None
     if data is not None:
         if data.torsion is not None:
+            torsion_frame = data.torsion[:, 0]
             torsion_angle = data.torsion[:, 2]
+            if torsion_angle.shape[0] != eye_frames.shape[0] or not np.array_equal(
+                torsion_frame, eye_frames
+            ):
+                torsion_angle = _align_to_eye_frames(
+                    torsion_frame, torsion_angle, eye_frames
+                )
         if data.vdaxis is not None:
-            vd_axis_lx, vd_axis_ly = data.vdaxis[:, 2], data.vdaxis[:, 3]
-            vd_axis_rx, vd_axis_ry = data.vdaxis[:, 4], data.vdaxis[:, 5]
+            vd_frame = data.vdaxis[:, 0]
+            if data.vdaxis.shape[0] != eye_frames.shape[0] or not np.array_equal(
+                vd_frame, eye_frames
+            ):
+                vd_axis_lx = _align_to_eye_frames(vd_frame, data.vdaxis[:, 2], eye_frames)
+                vd_axis_ly = _align_to_eye_frames(vd_frame, data.vdaxis[:, 3], eye_frames)
+                vd_axis_rx = _align_to_eye_frames(vd_frame, data.vdaxis[:, 4], eye_frames)
+                vd_axis_ry = _align_to_eye_frames(vd_frame, data.vdaxis[:, 5], eye_frames)
+            else:
+                vd_axis_lx, vd_axis_ly = data.vdaxis[:, 2], data.vdaxis[:, 3]
+                vd_axis_rx, vd_axis_ry = data.vdaxis[:, 4], data.vdaxis[:, 5]
 
     dx = np.ediff1d(eye_pos_cal[:, 0], to_begin=0)
     dy = np.ediff1d(eye_pos_cal[:, 1], to_begin=0)
