@@ -1,8 +1,8 @@
 results_root: X:\Analysis\EyeHeadCoupling
-results_with_data: true # true => save each session's results inside <data_folder>/Results2; false => save under results_root
+results_with_data: false # true => save each session's results inside <data_folder>/Results2; false => save under results_root
 
 saccade_config:
-  saccade_threshold: 3.0
+  saccade_threshold: 1.5
   saccade_threshold_torsion: 1.5
   blink_threshold: 10.0
   blink_detection: 1
@@ -13,7 +13,7 @@ reward_contingency:
   reward_angle: 50  # half-width, in degrees, of the rewarded zone around the target direction
   congruency_window: [0.1, 0.4]  #fixed latency band (s, post target-onset) for the single-number "fraction toward target" congruency summary stat
   reward_window: 0.75 #default reward window in seconds
-  scoring_mode: multi_attempt #scoring mode for prosaccade experiments
+  scoring_mode: single_shot #scoring mode for prosaccade experiments
 
 
 #for fixation experiments
