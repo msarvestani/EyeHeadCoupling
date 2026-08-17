@@ -521,7 +521,7 @@ def session_reward_window(
     for f, end_f, succ, gdx, gdy in zip(go_frame, end_frame, is_success, go_dir_x, go_dir_y):
         if not succ:
             continue
-        valid = (saccade_frames > f) & (saccade_frames < end_f)
+        valid = (saccade_frames > f) & (saccade_frames <= end_f)
         if not np.any(valid):
             continue
         rel_valid = (saccade_frames[valid] - f) / ttl_freq
@@ -623,7 +623,7 @@ def session_acceptance_angle(
     for f, end_f, succ, gdx, gdy in zip(go_frame, end_frame, is_success, go_dir_x, go_dir_y):
         if not succ:
             continue
-        valid = (saccade_frames > f) & (saccade_frames < end_f)
+        valid = (saccade_frames > f) & (saccade_frames <= end_f)
         if not np.any(valid):
             continue
         rel_valid = (saccade_frames[valid] - f) / ttl_freq
@@ -732,7 +732,7 @@ def find_first_saccade_per_trial(
 
     latencies, congruent = [], []
     for f, gdx, gdy, end_f in zip(go_frame, go_dir_x, go_dir_y, end_frame):
-        valid = (saccade_frames > f) & (saccade_frames < end_f)
+        valid = (saccade_frames > f) & (saccade_frames <= end_f)
         if not np.any(valid):
             continue
         rel_valid = (saccade_frames[valid] - f) / ttl_freq
@@ -811,7 +811,7 @@ def first_saccade_indices_by_direction(
     first_idx = np.full(len(go_frame), -1, dtype=int)
     first_congruent = np.zeros(len(go_frame), dtype=bool)
     for i, (f, end_f, gdx, gdy) in enumerate(zip(go_frame, end_frame, go_dir_x_f, go_dir_y_f)):
-        valid = (saccade_frames > f) & (saccade_frames < end_f)
+        valid = (saccade_frames > f) & (saccade_frames <= end_f)
         if not np.any(valid):
             continue
         rel_valid = (saccade_frames[valid] - f) / ttl_freq
@@ -1064,7 +1064,7 @@ def analyze_latency_by_outcome(
     latencies, congruent = [], []
     n_no_saccade = 0
     for f, gdx, gdy, end_f in zip(go_frame, go_dir_x, go_dir_y, end_frame):
-        valid = (saccade_frames > f) & (saccade_frames < end_f)
+        valid = (saccade_frames > f) & (saccade_frames <= end_f)
         if not np.any(valid):
             n_no_saccade += 1
             continue
@@ -1140,7 +1140,7 @@ def calculate_trial_success(
     calculated_success = np.zeros(len(go_frame), dtype=bool)
     has_saccade = np.zeros(len(go_frame), dtype=bool)
     for i, (f, gdx, gdy, end_f) in enumerate(zip(go_frame, go_dir_x, go_dir_y, end_frame)):
-        valid = (saccade_frames > f) & (saccade_frames < end_f)
+        valid = (saccade_frames > f) & (saccade_frames <= end_f)
         if not np.any(valid):
             continue  # no saccade at all -> calculated failure, has_saccade stays False
         rel_valid = (saccade_frames[valid] - f) / ttl_freq
