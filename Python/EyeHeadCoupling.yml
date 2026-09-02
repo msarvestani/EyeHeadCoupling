@@ -10,12 +10,18 @@ dependencies:
   - pandas
   - matplotlib
   - scikit-learn
+  # Required: session_manifest.yml loading, imported in 5 modules.
+  # Its absence meant an environment built from this file could not
+  # run the analysis at all.
+  - pyyaml
   - ipykernel
   - jupyterlab
   - ipympl
   - pyqt
   - openjpeg=2.5.2
   - libtiff>=4.5.0,<4.7.0
+  # Tests: Python/tests/
+  - pytest
   - pip
   - pip:
       - anyio
