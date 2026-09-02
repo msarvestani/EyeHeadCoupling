@@ -937,15 +937,20 @@ def _save(fig, out_stem):
         print(f"Saved {path}")
 
 
-fig = build_figure(SESSION_ID, EXPERIMENT_TYPE)
+### Guarded so this module can be imported (by tests, or by another
+### figure script wanting one of its helpers) without re-running the whole
+### analysis and writing files as a side effect of the import. Running the
+### script directly behaves exactly as before.
+if __name__ == "__main__":
+    fig = build_figure(SESSION_ID, EXPERIMENT_TYPE)
+    _save(fig, _resolve_out_stem(OUTPUT_STEM,
+                                 f"{EXPERIMENT_TYPE}_summary_figure"))
 
-_save(fig, _resolve_out_stem(OUTPUT_STEM, f"{EXPERIMENT_TYPE}_summary_figure"))
+    ### Supplementary figure: the same latency/accuracy panels, per animal.
+    fig_supp = build_supplement_figure(EXPERIMENT_TYPE)
+    _save(fig_supp, _resolve_out_stem(SUPPLEMENT_OUTPUT_STEM,
+                                      f"{EXPERIMENT_TYPE}_supplement_per_animal"))
 
-### Supplementary figure: the same latency/accuracy panels, per animal.
-fig_supp = build_supplement_figure(EXPERIMENT_TYPE)
-_save(fig_supp, _resolve_out_stem(SUPPLEMENT_OUTPUT_STEM,
-                                  f"{EXPERIMENT_TYPE}_supplement_per_animal"))
-
-plt.show()
+    plt.show()
 
 
