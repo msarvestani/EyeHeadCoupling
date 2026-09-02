@@ -468,7 +468,7 @@ def session_reward_window(
     max_latency: float,
     scoring_mode: str,
     mask: Optional[np.ndarray] = None,
-    tolerance: float = 0.80,
+    tolerance: float = 0.5,
 ) -> Optional[float]:
     """Reward-window duration (s), derived from the data, as a QC cross-check.
 
@@ -570,7 +570,7 @@ def session_acceptance_angle(
     scoring_mode: str,
     mask: Optional[np.ndarray] = None,
     percentile: float = 90.0,
-    tolerance: float = 0.80,
+    tolerance: float = 0.95,
 ) -> Optional[float]:
     """Acceptance angle (deg), derived from the data, as a QC cross-check.
 

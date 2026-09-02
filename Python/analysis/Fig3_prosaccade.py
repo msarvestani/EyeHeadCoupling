@@ -8,12 +8,12 @@ Layout
   separately, e.g. in Illustrator/PowerPoint).
 - Panel B: one session's Left/Right arrow (quiver) plots on top, Left/Right
   polar saccade-angle histograms below.
-- Panel C: that same session's latency-by-outcome histogram, latency CDF,
-  and saccade-accuracy-vs-latency curve.
+- Panel C: that same session's latency-by-outcome histogram and
+  saccade-accuracy-vs-latency curve (with pointwise Wilson intervals).
 - Panel D: the population (every animal in the manifest, pooled together)
   latency-by-outcome histogram, accuracy-vs-latency curve, and the
-  3-column session validity/accuracy summary (trial validity, trial
-  accuracy, congruency vs. pre-cue control), grouped by animal.
+  2-column session validity/accuracy summary (trial validity, and
+  windowed accuracy vs. pre-cue control), grouped by animal.
 
 Why this doesn't reuse the existing plotting functions wholesale
 ------------------------------------------------------------------
@@ -67,7 +67,7 @@ Usage
 No CLI arguments -- edit ``SESSION_ID``/``EXPERIMENT_TYPE``/``OUTPUT_STEM``
 near the top of this file directly, then run:
 
-    python Python/analysis/prosaccade_summary_figure.py
+    python Python/analysis/Fig3_prosaccade.py
 """
 from __future__ import annotations
 
@@ -101,7 +101,7 @@ from eyehead.analysis import _draw_quiver_arrows
 # ---------------------------------------------------------------------------
 # Run configuration — edit these directly rather than passing CLI args.
 # ---------------------------------------------------------------------------
-SESSION_ID = "Tsh001_2025-07-17T15_32_42"  # Paris, 2025-07-17 -- panels B/C
+SESSION_ID = "Tsh002_2026-08-19T12_49_59"  #Apollo sessions B/C
 EXPERIMENT_TYPE = "prosaccade"  # pooled across every animal in the manifest -- panel D
 OUTPUT_STEM = None  # None -> <results_root>/<EXPERIMENT_TYPE>_summary_figure; or set an explicit Path/str
 
@@ -116,10 +116,32 @@ FONT_SIZE_TICK = 7
 FONT_SIZE_PANEL_LETTER = 13
 N_TICKS = 3  # e.g. 0, 25, 50 instead of 0, 10, 20, 30, 40, 50
 
-REWARD_COLOR = "gold"
+### Fixed post-target latency band that Panel D's third column averages
+### accuracy over, and that the latency panels of C and D outline with a
+### dashed window. This replaces the manifest's congruency_window, which
+### was only meaningful while that window was narrow -- at its current
+### [0, 1] it spans essentially every saccade, so "congruency in the
+### window" and "overall accuracy" had become the same number. The 0.2 s
+### lower edge also excludes the sub-200 ms saccades that sit at chance
+### (too fast to be visually driven), which is what the accuracy-vs-latency
+### curves in C and D show directly.
+ACCURACY_WINDOW = (0.2, 1.0)
+ACCURACY_WINDOW_COLOR = "0.35"
+
+### Colorblind-safe palette. The previous green/red pair carried the
+### primary correct/incorrect contrast in five panels and is the one
+### combination red-green deficient readers (~8% of men) cannot separate;
+### blue/orange reads the same to them as to everyone else. Panel B's polar
+### histograms were a THIRD color language (Left=green, Right=pink) that
+### collided with correct/incorrect, so they are now a neutral gray -- the
+### panel titles and the shaded reward zone already say which side is which.
+REWARD_COLOR = "#D9D9D9"
 CONGRUENCY_WINDOW_COLOR = "tab:purple"
-CORRECT_COLOR = "tab:green"
-INCORRECT_COLOR = "tab:red"
+CORRECT_COLOR = "#0173B2"
+INCORRECT_COLOR = "#DE8F05"
+POLAR_HIST_COLOR = "0.45"
+PRECUE_COLOR = "0.45"      # open markers, Panel D's pre-cue control
+PRECUE_DX = 0.17           # x-offset of the pre-cue/post-target pair
 
 
 def _limit_ticks(ax, x=True, y=True, nbins=N_TICKS):
@@ -130,11 +152,17 @@ def _limit_ticks(ax, x=True, y=True, nbins=N_TICKS):
     ax.tick_params(labelsize=FONT_SIZE_TICK)
 
 
-def _panel_letter(ax, letter):
-    ax.text(
-        -0.22, 1.15, letter, transform=ax.transAxes,
+def _panel_letter(ax, letter, dx=-30, dy=8):
+    """Place the panel letter a fixed distance in *points* from the axes'
+    top-left corner rather than in axes-fraction coordinates. An
+    axes-fraction offset is a fraction of each panel's own width, so a
+    single hardcoded -0.22 put the letter far from a narrow panel and
+    almost inside a wide one."""
+    ax.annotate(
+        letter, xy=(0, 1), xycoords="axes fraction",
+        xytext=(dx, dy), textcoords="offset points",
         fontsize=FONT_SIZE_PANEL_LETTER, fontweight="bold",
-        va="bottom", ha="left",
+        va="bottom", ha="left", annotation_clip=False,
     )
 
 
@@ -145,6 +173,66 @@ def _strip_box(ax, keep=("left", "bottom")):
     decoration."""
     for side, spine in ax.spines.items():
         spine.set_visible(side in keep)
+
+
+def _annotate_n(ax, text, loc="upper right"):
+    """Small unobtrusive n annotation inside a corner of ``ax``. Every panel
+    reports its own n rather than leaving the reader to hunt for it in the
+    caption."""
+    x, ha = (0.98, "right") if "right" in loc else (0.02, "left")
+    y, va = (0.98, "top") if "upper" in loc else (0.02, "bottom")
+    ax.text(x, y, text, transform=ax.transAxes, ha=ha, va=va,
+            fontsize=FONT_SIZE_TICK, color="0.35",
+            bbox=dict(facecolor="white", edgecolor="none", alpha=0.65,
+                      boxstyle="square,pad=0.15"))
+
+
+def _window_is_informative(span, x_hi):
+    """True if shading ``span`` would actually delimit part of the panel.
+
+    A window running from <=0 to >=``x_hi`` covers the entire axes: it marks
+    nothing, but still tints every bar and line underneath it, and where two
+    such windows overlap the whole panel turns brown. That is exactly what
+    the current manifest produces (``reward_window`` 1.1 s and
+    ``congruency_window`` [0, 1] against latencies that stop around 0.9 s),
+    so those windows are simply not drawn. Narrow the windows in
+    ``session_manifest.yml`` and the shading comes back on its own."""
+    if span is None or x_hi is None or not np.isfinite(x_hi):
+        return False
+    return not (float(span[0]) <= 0.0 and float(span[1]) >= x_hi)
+
+
+def _mark_accuracy_window(ax, x_hi):
+    """Dashed outline of :data:`ACCURACY_WINDOW` -- the latency band whose
+    average accuracy Panel D's third column reports -- so the reader can see
+    exactly which saccades that number came from.
+
+    Each edge is drawn only where it actually falls inside the panel. When
+    the upper edge runs past the last saccade (as it does whenever the
+    reward window is shorter than 1.0 s) the band is left open-ended rather
+    than closed at a boundary no data reaches."""
+    lo_, hi_ = float(ACCURACY_WINDOW[0]), float(ACCURACY_WINDOW[1])
+    lo_v, hi_v = max(lo_, 0.0), min(hi_, float(x_hi))
+    if hi_v <= lo_v:
+        return
+    ax.axvspan(lo_v, hi_v, color=ACCURACY_WINDOW_COLOR, alpha=0.06, lw=0, zorder=0)
+    for edge in (lo_, hi_):
+        if 0.0 < edge < x_hi:
+            ax.axvline(edge, color=ACCURACY_WINDOW_COLOR, ls="--", lw=0.9,
+                       alpha=0.85, zorder=0)
+
+
+def _shade_window(ax, span, color, x_hi):
+    """Shade ``span`` when :func:`_window_is_informative`, marking whichever
+    edge falls inside the panel so the boundary is readable."""
+    if not _window_is_informative(span, x_hi):
+        return False
+    lo_, hi_ = float(span[0]), float(span[1])
+    ax.axvspan(lo_, hi_, color=color, alpha=0.10, lw=0)
+    for edge in (lo_, hi_):
+        if 0.0 < edge < x_hi:
+            ax.axvline(edge, color=color, ls=":", lw=0.8, alpha=0.9)
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -259,7 +347,20 @@ def _draw_quiver_panel(ax, qd, label):
         xlim=(-13, 13), ylim=(-7, 7),
         title=f"{label} target",
     )
+    ### eyehead.analysis._draw_quiver_arrows hardcodes tab:green/tab:red and
+    ### exposes no color argument. Rather than edit that shared helper (used
+    ### by sort_saccades throughout the pipeline, so a change there would
+    ### repaint every other figure), recolor only this figure's copy of the
+    ### arrows in place, so Panel B speaks the same colorblind-safe language
+    ### as Panels C/D. If that helper ever gains a color argument, drop this.
+    congruent = np.asarray(qd["congruent"], dtype=bool) if qd["congruent"] is not None else None
+    if ax.collections and congruent is not None and congruent.size:
+        ax.collections[-1].set_color(
+            np.where(congruent, CORRECT_COLOR, INCORRECT_COLOR)
+        )
+
     ax.set_aspect("equal")
+    _annotate_n(ax, f"n = {qd['x'].size}", loc="lower right")
     ax.title.set_fontsize(FONT_SIZE_TITLE)
     ax.xaxis.label.set_fontsize(FONT_SIZE_LABEL)
     ax.yaxis.label.set_fontsize(FONT_SIZE_LABEL)
@@ -294,130 +395,230 @@ def _draw_polar_panel(ax, angle, reward_angle_deg, zone_center_deg, color, kappa
         density_closed = np.append(density, density[0])
         ax.plot(theta_closed, density_closed, color="black", lw=1.1)
 
-    ax.set_yticklabels([])
+    ### The radial axis was entirely unlabelled, so the histogram had no
+    ### scale at all. One tick at the peak, as a percentage of trials, is
+    ### enough to make the bars quantitative without cluttering the panel.
+    if peak > 0:
+        ax.set_ylim(0, peak)
+        ax.set_yticks([peak])
+        ax.set_yticklabels([f"{peak * 100:.0f}%"], fontsize=FONT_SIZE_TICK - 1,
+                           color="0.35")
+        ax.set_rlabel_position(135)
+    else:
+        ax.set_yticklabels([])
     ax.yaxis.grid(False)
     ax.set_thetagrids([0, 90, 180, 270], labels=["0°", "90°", "180°", "270°"],
                        fontsize=FONT_SIZE_TICK)
     ax.spines["polar"].set_visible(False) #get rid of visible circle outline
+    ax.text(0.5, -0.30, f"n = {angle.size}", transform=ax.transAxes,
+            ha="center", va="top", fontsize=FONT_SIZE_TICK, color="0.35")
 
-def _draw_latency_hist(ax, latencies, congruent, reward_window, congruency_window):
+def _draw_latency_hist(ax, latencies, congruent, reward_window, x_hi):
     correct = latencies[congruent]
     incorrect = latencies[~congruent]
     hi = max(reward_window, float(latencies.max())) if latencies.size else reward_window
     bins = np.linspace(0, hi, 21)
-    ax.hist(correct, bins=bins, alpha=0.6, color=CORRECT_COLOR)
-    ax.hist(incorrect, bins=bins, alpha=0.6, color=INCORRECT_COLOR)
-    ax.axvspan(0, reward_window, color=REWARD_COLOR, alpha=0.10, lw=0)
-    if congruency_window is not None:
-        ax.axvspan(congruency_window[0], congruency_window[1], color=CONGRUENCY_WINDOW_COLOR, alpha=0.10, lw=0)
-    
+
+    ### A light fill plus a solid step outline, rather than two translucent
+    ### fills. At alpha=0.6 the green and red fills alpha-blended into a
+    ### third color wherever they overlapped, which read as its own
+    ### category; the outlines keep each distribution traceable through the
+    ### overlap.
+    ### Outlines only, no fills. A filled distribution hides whatever sits
+    ### behind it and, where two fills overlap, alpha-blends into a third
+    ### color that reads as its own category. Outlines keep both
+    ### distributions fully traceable through each other.
+    if correct.size:
+        ax.hist(correct, bins=bins, color=CORRECT_COLOR, histtype="step", lw=1.4)
+    if incorrect.size:
+        ax.hist(incorrect, bins=bins, color=INCORRECT_COLOR, histtype="step", lw=1.4)
+
+    _shade_window(ax, (0, reward_window), REWARD_COLOR, x_hi)
+    _mark_accuracy_window(ax, x_hi)
+
+    ax.set_xlim(0, x_hi)
     ax.set_xlabel("Latency (s)", fontsize=FONT_SIZE_LABEL)
     ax.set_ylabel("Trial count", fontsize=FONT_SIZE_LABEL)
+    _annotate_n(ax, f"n = {latencies.size} trials")
     _limit_ticks(ax)
+    ### Trial counts are integers -- MaxNLocator was free to tick at 2.5.
+    ax.yaxis.set_major_locator(MaxNLocator(nbins=N_TICKS, integer=True))
     _strip_box(ax)
 
 
-def _draw_latency_cdf(ax, latencies, congruent, reward_window, congruency_window):
-    correct = np.sort(latencies[congruent])
-    incorrect = np.sort(latencies[~congruent])
-    if correct.size:
-        ax.step(correct, np.arange(1, correct.size + 1) / correct.size,
-                where="post", color=CORRECT_COLOR)
-    if incorrect.size:
-        ax.step(incorrect, np.arange(1, incorrect.size + 1) / incorrect.size,
-                where="post", color=INCORRECT_COLOR)
-    ax.axvspan(0, reward_window, color=REWARD_COLOR, alpha=0.10, lw=0)
-    if congruency_window is not None:
-        ax.axvspan(congruency_window[0], congruency_window[1],
-                   color=CONGRUENCY_WINDOW_COLOR, alpha=0.10, lw=0)
-    ax.set_ylim(0, 1)
-    ax.set_yticks([0, 0.5, 1])
-    ax.set_xlabel("Latency (s)", fontsize=FONT_SIZE_LABEL)
-    ax.set_ylabel("Cumulative fraction", fontsize=FONT_SIZE_LABEL)
-    _limit_ticks(ax, y=False)
-    _strip_box(ax)
-
-
-def _draw_accuracy_vs_latency(ax, latencies, congruent, reward_window, congruency_window):
+def _draw_accuracy_vs_latency(ax, latencies, congruent, reward_window, x_hi):
     centers, frac, n_per_window = prosaccade_session.fraction_toward_target_by_latency(
         latencies, congruent, window_span=(0, reward_window),
     )
     valid = n_per_window > 0
+
+    ### Wilson intervals, the same estimator the Panel D validity columns
+    ### use, so the two agree. Caveat worth keeping in the caption:
+    ### fraction_toward_target_by_latency slides a 0.3 s window in 0.05 s
+    ### steps, so neighbouring points share most of their trials. This is a
+    ### pointwise interval on each window, NOT a simultaneous confidence
+    ### band, and adjacent points are not independent.
+    lo_arr = np.full(centers.shape, np.nan)
+    hi_arr = np.full(centers.shape, np.nan)
+    for i in np.flatnonzero(valid):
+        n_i = int(n_per_window[i])
+        k_i = int(round(frac[i] * n_i))
+        lo_arr[i], hi_arr[i] = prosaccade_session.wilson_ci(k_i, n_i)
+
     ax.axhline(0.5, color="gray", ls="--", lw=0.8)
+    ax.fill_between(centers[valid], lo_arr[valid], hi_arr[valid],
+                    color=CORRECT_COLOR, alpha=0.20, lw=0)
     ax.plot(centers[valid], frac[valid], "-o", color=CORRECT_COLOR, ms=3)
-    ax.axvspan(0, reward_window, color=REWARD_COLOR, alpha=0.10, lw=0)
-    if congruency_window is not None:
-        ax.axvspan(congruency_window[0], congruency_window[1],
-                   color=CONGRUENCY_WINDOW_COLOR, alpha=0.10, lw=0)
+
+    _shade_window(ax, (0, reward_window), REWARD_COLOR, x_hi)
+    _mark_accuracy_window(ax, x_hi)
+
     ax.set_ylim(0, 1)
     ax.set_yticks([0, 0.5, 1])
+    ax.set_xlim(0, x_hi)
     ax.set_xlabel("Latency (s)", fontsize=FONT_SIZE_LABEL)
     ax.set_ylabel("Fraction toward target", fontsize=FONT_SIZE_LABEL)
+    _annotate_n(ax, f"n = {latencies.size} trials", loc="lower right")
     _limit_ticks(ax, y=False)
     _strip_box(ax)
 
 
-def _draw_validity_columns(axes, session_validity, animal_pooled):
-    ax_valid, ax_correct, ax_window = axes
+def _draw_validity_columns(axes, session_validity, animal_pooled, session_results):
+    """Two per-animal summary columns: trial validity, and windowed accuracy
+    against its own pre-cue control.
+
+    The all-trials accuracy column that used to sit between them has been
+    dropped: it and the windowed column measured the same thing on
+    overlapping trials, differing only by whether the sub-200 ms
+    anticipatory saccades were included, and the windowed one is the
+    measure being reported. Panels C and D already show the full accuracy
+    -vs-latency profile, so nothing is lost by not also plotting its
+    unwindowed average here.
+
+    The second column reports accuracy averaged over
+    :data:`ACCURACY_WINDOW`, not congruency in the manifest's
+    ``congruency_window``. That window is currently [0, 1] s, which spans
+    essentially every saccade, so "congruency in the window" had collapsed
+    onto the plain accuracy already shown in column 2; a fixed 0.2-1.0 s
+    band instead excludes the sub-200 ms anticipatory saccades, and so
+    measures something column 2 does not. Because the per-session value has
+    to be recomputed over that band, this needs ``session_results`` (the
+    cached per-session dicts) rather than the pre-summarized ``window_frac``
+    already in ``session_validity``.
+
+    It stays a paired comparison against each session's own pre-cue control
+    (``precue_congruent``): one thin line per session joining its baseline
+    to its windowed accuracy, with the animal's pooled value and Wilson
+    interval in black over each. Without the baseline on the panel a reader
+    has no way to tell whether 0.8 is a task effect or just what the animal
+    does anyway.
+    """
+    ax_valid, ax_window = axes
     animals_sorted = sorted(animal_pooled.keys())
     rng = np.random.default_rng(0)
+    n_sessions_total = 0
 
     for i, animal in enumerate(animals_sorted):
         sessions = [r for r in session_validity if r["animal_name"] == animal]
+        n_sessions_total += len(sessions)
         jitter = rng.uniform(-0.15, 0.15, size=len(sessions))
         xs = np.full(len(sessions), i, dtype=float) + jitter
 
         ax_valid.scatter(xs, [r["fraction_valid"] for r in sessions],
                           color=CORRECT_COLOR, s=16, alpha=0.6, zorder=2)
-        ax_correct.scatter(xs, [r["fraction_correct"] for r in sessions],
-                            color=CORRECT_COLOR, s=16, alpha=0.6, zorder=2)
-        ax_window.scatter(xs, [r["window_frac"] for r in sessions],
-                           color=CORRECT_COLOR, s=16, alpha=0.6, zorder=2)
+
+        ### Paired pre-cue vs. post-target. No jitter here -- the two x
+        ### positions are fixed so each session's connecting line reads as a
+        ### slope rather than a random diagonal.
+        x_pre, x_post = i - PRECUE_DX, i + PRECUE_DX
+
+        ### Recomputed per session over ACCURACY_WINDOW rather than read from
+        ### session_validity["window_frac"], which was computed against the
+        ### manifest's congruency_window back at population-run time.
+        session_window_fracs = []
+        for r in sessions:
+            sr = session_results.get(r["session_id"])
+            if sr is None:
+                session_window_fracs.append(np.nan)
+                continue
+            s_lo = sr["latency_outcome"]
+            s_frac, _, _, _ = prosaccade_session.congruency_in_window(
+                s_lo["latencies"], s_lo["congruent"], window=ACCURACY_WINDOW,
+            )
+            session_window_fracs.append(s_frac)
+
+        for r, s_frac in zip(sessions, session_window_fracs):
+            ax_window.plot([x_pre, x_post], [r["precue_frac"], s_frac],
+                           color="0.8", lw=0.6, zorder=1)
+        ax_window.scatter(np.full(len(sessions), x_pre),
+                          [r["precue_frac"] for r in sessions],
+                          facecolors="none", edgecolors=PRECUE_COLOR,
+                          s=16, lw=0.8, zorder=2)
+        ax_window.scatter(np.full(len(sessions), x_post), session_window_fracs,
+                          color=CORRECT_COLOR, s=16, alpha=0.6, zorder=2)
 
         pooled = animal_pooled[animal]
         pooled_lo = pooled["latency_outcome"]
         n_total = pooled_lo["n_total"]
         n_valid = n_total - pooled_lo["n_no_saccade"]
         congruent = pooled_lo["congruent"]
-        n_correct = int(np.sum(congruent))
         frac_valid = n_valid / n_total if n_total else np.nan
-        frac_correct = float(np.mean(congruent)) if len(congruent) else np.nan
         valid_lo, valid_hi = prosaccade_session.wilson_ci(n_valid, n_total)
-        correct_lo, correct_hi = prosaccade_session.wilson_ci(n_correct, len(congruent))
         window_frac, _, window_lo, window_hi = prosaccade_session.congruency_in_window(
-            pooled_lo["latencies"], congruent, window=pooled["congruency_window"],
+            pooled_lo["latencies"], congruent, window=ACCURACY_WINDOW,
         )
 
-        for ax, val, lo_, hi_ in (
-            (ax_valid, frac_valid, valid_lo, valid_hi),
-            (ax_correct, frac_correct, correct_lo, correct_hi),
-            (ax_window, window_frac, window_lo, window_hi),
+        precue_congruent = pooled["precue_congruent"]
+        n_precue = len(precue_congruent)
+        precue_frac = float(np.mean(precue_congruent)) if n_precue else np.nan
+        precue_lo, precue_hi = prosaccade_session.wilson_ci(
+            int(np.sum(precue_congruent)), n_precue,
+        )
+
+        for ax, x, val, lo_, hi_ in (
+            (ax_valid, i, frac_valid, valid_lo, valid_hi),
+            (ax_window, x_pre, precue_frac, precue_lo, precue_hi),
+            (ax_window, x_post, window_frac, window_lo, window_hi),
         ):
+            if not np.isfinite(val):
+                continue
             ax.errorbar(
-                [i], [val],
+                [x], [val],
                 yerr=[[max(0.0, val - lo_)], [max(0.0, hi_ - val)]],
                 fmt="o", color="black", ecolor="black", capsize=3, ms=6, zorder=3,
             )
 
     for ax in axes:
         ax.set_xticks(range(len(animals_sorted)))
-        ax.set_xticklabels(animals_sorted, rotation=30, ha="right", fontsize=FONT_SIZE_TICK)
+        ### No rotation: with a handful of short animal names these fit
+        ### horizontally, and rotating them only cost vertical space.
+        ax.set_xticklabels(animals_sorted, fontsize=FONT_SIZE_TICK)
+        ax.set_xlim(-0.5, len(animals_sorted) - 0.5)
         ax.set_ylim(0, 1.05)
         ax.set_yticks([0, 0.5, 1])
         ax.tick_params(labelsize=FONT_SIZE_TICK)
+
+    ### Accuracy and congruency are both chance-0.5 measures, so they get
+    ### the same reference line the latency panels already carry. Validity
+    ### is a completion rate, not a two-alternative choice, so 0.5 means
+    ### nothing there and no line is drawn.
+    ax_window.axhline(0.5, color="gray", ls="--", lw=0.8, zorder=0)
 
     # Squished side by side: only the leftmost keeps a left spine/y-tick
     # labels (the shared 0-1 fraction scale); the other two drop theirs
     # entirely rather than repeat it three times in a cramped space.
     _strip_box(ax_valid, keep=("left", "bottom"))
-    for ax in (ax_correct, ax_window):
-        _strip_box(ax, keep=("bottom",))
-        ax.tick_params(left=False, labelleft=False)
+    _strip_box(ax_window, keep=("bottom",))
+    ax_window.tick_params(left=False, labelleft=False)
 
     ax_valid.set_ylabel("Fraction", fontsize=FONT_SIZE_LABEL)
     ax_valid.set_title("Validity", fontsize=FONT_SIZE_TITLE)
-    ax_correct.set_title("Accuracy", fontsize=FONT_SIZE_TITLE)
-    ax_window.set_title("Congruency vs.\npre-cue", fontsize=FONT_SIZE_TITLE)
+    ax_window.set_title(
+        f"Accuracy\n{ACCURACY_WINDOW[0]:.1f}-{ACCURACY_WINDOW[1]:.1f} s",
+        fontsize=FONT_SIZE_TITLE)
+    _annotate_n(ax_valid,
+                f"{n_sessions_total} sessions\n{len(animals_sorted)} animals",
+                loc="lower left")
 
 
 # ---------------------------------------------------------------------------
@@ -468,27 +669,33 @@ def build_figure(session_id: str, experiment_type: str):
 
     #setup the main figure size and layout
     fig = plt.figure(figsize=(11, 8.5))
-    gs_main = fig.add_gridspec(3, 1, height_ratios=[0.9, 0.9, 0.9], hspace=0.4)
 
-    # --- Row 1: Panel A (schematic placeholder) + Panel B (arrows/polar) ---
-    gs_top = gs_main[0].subgridspec(1, 2, width_ratios=[0.2, 2.5], wspace=0.2)
+    ### Four rows, not three. Panel A used to be a tall narrow column
+    ### squeezed beside Panel B, which is the wrong aspect for a task
+    ### schematic -- these are almost always wide trial timelines, and that
+    ### slot would have forced the artwork into portrait. It is now a
+    ### full-width banner; change its height_ratio alone to resize it.
+    gs_main = fig.add_gridspec(4, 1, height_ratios=[0.45, 1.0, 0.92, 0.92],
+                                hspace=0.65)
 
-    ax_a = fig.add_subplot(gs_top[0, 0])
+    # --- Row 1: Panel A (schematic placeholder, full-width banner) ---
+    ax_a = fig.add_subplot(gs_main[0])
     ax_a.axis("off")
     ax_a.add_patch(plt.Rectangle(
-        (0.02, 0.02), 0.96, 0.96, fill=False, ls="--", lw=1, color="0.6",
+        (0.0, 0.05), 1.0, 0.90, fill=False, ls="--", lw=1, color="0.6",
         transform=ax_a.transAxes,
     ))
-    ax_a.text(0.5, 0.5, "Panel A\n(task schematic)", ha="center", va="center",
+    ax_a.text(0.5, 0.5, "Panel A  (task schematic)", ha="center", va="center",
               fontsize=FONT_SIZE_LABEL, color="0.5", transform=ax_a.transAxes)
-    _panel_letter(ax_a, "A")
+    _panel_letter(ax_a, "A", dx=-12, dy=-2)
 
+    # --- Row 2: Panel B (arrows/polar) ---
     # Arrow + polar side by side per condition (Left arrow, Left polar,
     # Right arrow, Right polar) instead of stacked -- a 2x2 stack left a lot
     # of empty vertical space since quiver panels are wide-but-short and
     # polar panels are compact, so GridSpec was giving both rows equal
     # height regardless.
-    gs_b = gs_top[0, 1].subgridspec(1, 4, wspace=0.5)
+    gs_b = gs_main[1].subgridspec(1, 4, wspace=0.45)
     ax_b_arrow_l = fig.add_subplot(gs_b[0, 0])
     ax_b_polar_l = fig.add_subplot(gs_b[0, 1], polar=True)
     ax_b_arrow_r = fig.add_subplot(gs_b[0, 2])
@@ -497,62 +704,83 @@ def build_figure(session_id: str, experiment_type: str):
     _draw_quiver_panel(ax_b_arrow_l, quiver["Left"], "Left")
     _draw_quiver_panel(ax_b_arrow_r, quiver["Right"], "Right")
     _draw_polar_panel(ax_b_polar_l, session_result["left_angle"],
-                       session_result["reward_angle"], 180, "tab:green")
+                       session_result["reward_angle"], 180, POLAR_HIST_COLOR)
     _draw_polar_panel(ax_b_polar_r, session_result["right_angle"],
-                       session_result["reward_angle"], 0, "tab:pink")
+                       session_result["reward_angle"], 0, POLAR_HIST_COLOR)
     _panel_letter(ax_b_arrow_l, "B")
 
-    # --- Row 2: Panel C (single session hist / CDF / accuracy-vs-latency) ---
-    # Same width_ratios AND wspace as row D's outer 3-slot layout below, so
-    # the hist/accuracy-vs-latency panels end up pixel-identical in width
-    # across both rows.
+    # --- Rows 3 & 4: Panel C (one session) and Panel D (population) ---
+    ### Both rows use the same width_ratios, the same wspace AND the same
+    ### x-limits, so column 1 (latency histogram) and column 2 (accuracy vs.
+    ### latency) can be read straight down from the example session to the
+    ### population. Previously column 2 was the CDF in row C but accuracy in
+    ### row D, and column 3 was accuracy in C but the validity block in D --
+    ### the columns invited a vertical comparison they did not support. The
+    ### session CDF is dropped and column 3 of row C now holds the legend.
     ROW_CD_WIDTH_RATIOS = [1, 1, 1]
     ROW_CD_WSPACE = 0.5
 
-    gs_c = gs_main[1].subgridspec(1, 3, width_ratios=ROW_CD_WIDTH_RATIOS, wspace=ROW_CD_WSPACE)
+    x_hi = max(
+        float(session_result["reward_window"]),
+        float(pooled_all["reward_window"]),
+        float(lo["latencies"].max()) if lo["latencies"].size else 0.0,
+        float(pooled_lo["latencies"].max()) if pooled_lo["latencies"].size else 0.0,
+    )
+
+    gs_c = gs_main[2].subgridspec(1, 3, width_ratios=ROW_CD_WIDTH_RATIOS,
+                                  wspace=ROW_CD_WSPACE)
     ax_c_hist = fig.add_subplot(gs_c[0, 0])
-    ax_c_cdf = fig.add_subplot(gs_c[0, 1])
-    ax_c_acc = fig.add_subplot(gs_c[0, 2])
+    ax_c_acc = fig.add_subplot(gs_c[0, 1])
+    ax_legend = fig.add_subplot(gs_c[0, 2])
+    ax_legend.axis("off")
 
     _draw_latency_hist(ax_c_hist, lo["latencies"], lo["congruent"],
-                        session_result["reward_window"], None)
-    _draw_latency_cdf(ax_c_cdf, lo["latencies"], lo["congruent"],
-                       session_result["reward_window"], None)
+                        session_result["reward_window"], x_hi)
     _draw_accuracy_vs_latency(ax_c_acc, lo["latencies"], lo["congruent"],
-                               session_result["reward_window"], session_result["congruency_window"])
+                               session_result["reward_window"], x_hi)
     _panel_letter(ax_c_hist, "C")
 
-    # --- Row 3: Panel D (population hist / accuracy-vs-latency / validity) ---
-    # Outer layout: 3 equal slots, same as row C above (hist, accuracy-vs-
-    # latency, and one slot for the whole validity block) -- NOT 5 slots,
-    # which would make "1" mean a different width than in row C. The
-    # validity block then subdivides its one slot into 3 narrow columns.
-    gs_d_outer = gs_main[2].subgridspec(1, 3, width_ratios=ROW_CD_WIDTH_RATIOS, wspace=ROW_CD_WSPACE)
+    gs_d_outer = gs_main[3].subgridspec(1, 3, width_ratios=ROW_CD_WIDTH_RATIOS,
+                                        wspace=ROW_CD_WSPACE)
     ax_d_hist = fig.add_subplot(gs_d_outer[0, 0])
     ax_d_acc = fig.add_subplot(gs_d_outer[0, 1])
 
-    gs_d_validity = gs_d_outer[0, 2].subgridspec(1, 3, wspace=0.15)
+    ### Two sub-columns, not three. With the middle all-trials accuracy
+    ### column gone they can breathe a little, so wspace goes up.
+    gs_d_validity = gs_d_outer[0, 2].subgridspec(1, 2, wspace=0.25)
     ax_d_valid = fig.add_subplot(gs_d_validity[0, 0])
-    ax_d_correct = fig.add_subplot(gs_d_validity[0, 1])
-    ax_d_window = fig.add_subplot(gs_d_validity[0, 2])
+    ax_d_window = fig.add_subplot(gs_d_validity[0, 1])
 
     _draw_latency_hist(ax_d_hist, pooled_lo["latencies"], pooled_lo["congruent"],
-                        pooled_all["reward_window"], None)
+                        pooled_all["reward_window"], x_hi)
     _draw_accuracy_vs_latency(ax_d_acc, pooled_lo["latencies"], pooled_lo["congruent"],
-                               pooled_all["reward_window"], None)
-    _draw_validity_columns((ax_d_valid, ax_d_correct, ax_d_window), session_validity, animal_pooled)
+                               pooled_all["reward_window"], x_hi)
+    _draw_validity_columns((ax_d_valid, ax_d_window),
+                            session_validity, animal_pooled, session_results)
     _panel_letter(ax_d_hist, "D")
 
-    # Single shared legend for the color language used across every panel,
-    # instead of repeating it in each one. Delete this block if unwanted.
+    ### The legend now sits in Panel C's freed third slot, beside the panels
+    ### whose colors it explains, instead of floating in the far top-right
+    ### corner of the page. Window entries appear only when those windows
+    ### were actually drawn, so the legend can never advertise shading that
+    ### is not on the figure (see _window_is_informative).
     legend_handles = [
-        plt.Line2D([0], [0], marker="o", color="none", markerfacecolor=CORRECT_COLOR, label="correct"),
-        plt.Line2D([0], [0], marker="o", color="none", markerfacecolor=INCORRECT_COLOR, label="incorrect"),
-        plt.Rectangle((0, 0), 1, 1, color=REWARD_COLOR, alpha=0.3, label="reward window"),
-        plt.Rectangle((0, 0), 1, 1, color=CONGRUENCY_WINDOW_COLOR, alpha=0.3, label="congruency window"),
+        plt.Line2D([0], [0], marker="o", ls="none", color=CORRECT_COLOR,
+                   label="toward target (correct)"),
+        plt.Line2D([0], [0], marker="o", ls="none", color=INCORRECT_COLOR,
+                   label="away from target (incorrect)"),
+        plt.Line2D([0], [0], marker="o", ls="none", markerfacecolor="none",
+                   markeredgecolor=PRECUE_COLOR, label="pre-cue control (D)"),
     ]
-    fig.legend(handles=legend_handles, loc="upper right", fontsize=FONT_SIZE_LABEL,
-               frameon=False, ncol=1, bbox_to_anchor=(0.995, 0.995))
+    if _window_is_informative((0, session_result["reward_window"]), x_hi):
+        legend_handles.append(plt.Rectangle(
+            (0, 0), 1, 1, color=REWARD_COLOR, alpha=0.5, label="reward window"))
+    legend_handles.append(plt.Line2D(
+        [0], [0], color=ACCURACY_WINDOW_COLOR, ls="--", lw=0.9,
+        label=f"accuracy window ({ACCURACY_WINDOW[0]:.1f}-{ACCURACY_WINDOW[1]:.1f} s)"))
+    ax_legend.legend(handles=legend_handles, loc="center left",
+                     fontsize=FONT_SIZE_LABEL, frameon=False,
+                     handletextpad=0.6, borderaxespad=0.0)
 
     return fig
 
