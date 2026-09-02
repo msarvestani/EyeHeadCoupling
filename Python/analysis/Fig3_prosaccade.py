@@ -62,6 +62,14 @@ Running this script re-analyzes every session in the manifest for
 ``EXPERIMENT_TYPE`` (same cost as running ``prosaccade_population.py``
 itself) plus one extra pass over ``SESSION_ID`` for the arrow-plot data.
 
+This script also builds a second, separate SUPPLEMENTARY figure: the
+per-animal breakdown. The main figure's population row pools every animal
+together, which cannot show whether both animals behave the same way. The
+supplement therefore repeats three panels -- latency-by-outcome histogram,
+latency CDF by outcome, and accuracy-vs-latency -- once per animal, each
+pooling all of that animal's sessions. Both figures are drawn from the same
+cache in one run and saved to separate files.
+
 Usage
 -----
 No CLI arguments -- edit ``SESSION_ID``/``EXPERIMENT_TYPE``/``OUTPUT_STEM``
@@ -104,6 +112,7 @@ from eyehead.analysis import _draw_quiver_arrows
 SESSION_ID = "Tsh002_2026-08-19T12_49_59"  #Apollo sessions B/C
 EXPERIMENT_TYPE = "prosaccade"  # pooled across every animal in the manifest -- panel D
 OUTPUT_STEM = None  # None -> <results_root>/<EXPERIMENT_TYPE>_summary_figure; or set an explicit Path/str
+SUPPLEMENT_OUTPUT_STEM = None  # None -> <results_root>/<EXPERIMENT_TYPE>_supplement_per_animal; or an explicit Path/str
 
 # ---------------------------------------------------------------------------
 # Styling constants — tweak these to fit the final page/journal layout.
@@ -443,6 +452,39 @@ def _draw_latency_hist(ax, latencies, congruent, reward_window, x_hi):
     _limit_ticks(ax)
     ### Trial counts are integers -- MaxNLocator was free to tick at 2.5.
     ax.yaxis.set_major_locator(MaxNLocator(nbins=N_TICKS, integer=True))
+    _strip_box(ax)
+
+
+def _draw_latency_cdf(ax, latencies, congruent, reward_window, x_hi):
+    """Cumulative latency distribution, correct and incorrect drawn
+    separately.
+
+    Each curve is normalized within its own outcome, so both rise to 1.0 and
+    the panel compares the SHAPE of the two latency distributions -- whether
+    incorrect saccades happen earlier than correct ones -- not how many of
+    each there were. The histogram beside it carries the relative counts.
+
+    This panel was dropped from the main figure (it broke the column
+    correspondence between rows C and D) but is the natural third view of
+    per-animal latency, so it lives here instead.
+    """
+    for vals, color in ((latencies[congruent], CORRECT_COLOR),
+                        (latencies[~congruent], INCORRECT_COLOR)):
+        if vals.size:
+            ordered = np.sort(vals)
+            ax.step(ordered, np.arange(1, ordered.size + 1) / ordered.size,
+                    where="post", color=color, lw=1.4)
+
+    _shade_window(ax, (0, reward_window), REWARD_COLOR, x_hi)
+    _mark_accuracy_window(ax, x_hi)
+
+    ax.set_ylim(0, 1)
+    ax.set_yticks([0, 0.5, 1])
+    ax.set_xlim(0, x_hi)
+    ax.set_xlabel("Latency (s)", fontsize=FONT_SIZE_LABEL)
+    ax.set_ylabel("Cumulative fraction", fontsize=FONT_SIZE_LABEL)
+    _annotate_n(ax, f"n = {latencies.size} trials", loc="lower right")
+    _limit_ticks(ax, y=False)
     _strip_box(ax)
 
 
@@ -787,23 +829,123 @@ def build_figure(session_id: str, experiment_type: str):
 
 ################################################### main call to build the figure and save it in the right place/format
 
-fig = build_figure(SESSION_ID, EXPERIMENT_TYPE)
+def build_supplement_figure(experiment_type: str):
+    """Per-animal supplementary figure: one row per animal, three columns
+    (latency histogram, latency CDF, accuracy vs. latency), each pooling all
+    of that animal's sessions.
 
-if OUTPUT_STEM:
-    out_stem = Path(OUTPUT_STEM)
-else:
+    Reads the same cache the main figure does, and uses the same drawing
+    helpers, so the supplement can never drift out of style or method from
+    the panels it supplements. ``animal_pooled[animal]`` is already the
+    pooled result across that animal's sessions (built by
+    :func:`prosaccade_population.pool_animal_sessions`), so nothing is
+    re-pooled here.
+
+    Every panel shares one x-limit across both animals, so the two rows are
+    directly comparable -- the whole point of splitting them out.
+    """
+    plt.rcParams["font.sans-serif"] = FONT_SANS_SERIF
+    plt.rcParams["font.size"] = FONT_SIZE_BASE
+    plt.rcParams["svg.fonttype"] = "none"
+
+    cache = _load_population_cache(experiment_type)
+    animal_pooled = cache["animal_pooled"]
+    session_validity = cache["session_validity"]
+    if not animal_pooled:
+        raise ValueError(
+            f"No animals found in the cached population run for "
+            f"experiment_type={experiment_type!r}."
+        )
+
+    animals = sorted(animal_pooled.keys())
+
+    ### One shared x-limit across every panel and both animals. Letting each
+    ### row autoscale would make Apollo's and Paris's latency axes different
+    ### widths, which is exactly the comparison this figure exists to make.
+    x_hi = 0.0
+    for animal in animals:
+        pooled = animal_pooled[animal]
+        lat = pooled["latency_outcome"]["latencies"]
+        x_hi = max(x_hi, float(pooled["reward_window"]),
+                   float(lat.max()) if lat.size else 0.0)
+
+    n_rows = len(animals)
+    fig = plt.figure(figsize=(9, 2.9 * n_rows + 0.6))
+    gs = fig.add_gridspec(n_rows, 3, wspace=0.45, hspace=0.7)
+
+    letters = "ABCDEFGHIJKL"
+    for row, animal in enumerate(animals):
+        pooled = animal_pooled[animal]
+        lo = pooled["latency_outcome"]
+        reward_window = pooled["reward_window"]
+        n_sessions = len([r for r in session_validity
+                          if r["animal_name"] == animal])
+
+        ax_hist = fig.add_subplot(gs[row, 0])
+        ax_cdf = fig.add_subplot(gs[row, 1])
+        ax_acc = fig.add_subplot(gs[row, 2])
+
+        _draw_latency_hist(ax_hist, lo["latencies"], lo["congruent"],
+                            reward_window, x_hi)
+        _draw_latency_cdf(ax_cdf, lo["latencies"], lo["congruent"],
+                           reward_window, x_hi)
+        _draw_accuracy_vs_latency(ax_acc, lo["latencies"], lo["congruent"],
+                                   reward_window, x_hi)
+
+        for col, ax in enumerate((ax_hist, ax_cdf, ax_acc)):
+            _panel_letter(ax, letters[row * 3 + col])
+
+        ### Animal identity goes on the row's left edge rather than in three
+        ### repeated per-panel titles.
+        ax_hist.text(-0.38, 0.5, f"{animal}\n({n_sessions} sessions)",
+                     transform=ax_hist.transAxes, rotation=90,
+                     ha="center", va="center", fontsize=FONT_SIZE_TITLE)
+
+    legend_handles = [
+        plt.Line2D([0], [0], color=CORRECT_COLOR, lw=1.4,
+                   label="toward target (correct)"),
+        plt.Line2D([0], [0], color=INCORRECT_COLOR, lw=1.4,
+                   label="away from target (incorrect)"),
+        plt.Line2D([0], [0], color=ACCURACY_WINDOW_COLOR, ls="--", lw=0.9,
+                   label=f"accuracy window ({ACCURACY_WINDOW[0]:.1f}-{ACCURACY_WINDOW[1]:.1f} s)"),
+    ]
+    fig.legend(handles=legend_handles, loc="lower center", ncol=3,
+               fontsize=FONT_SIZE_LABEL, frameon=False,
+               bbox_to_anchor=(0.5, -0.02))
+
+    return fig
+
+
+def _resolve_out_stem(explicit, default_name):
+    """Output path stem: ``explicit`` when set, else ``<results_root>``
+    from the manifest with ``default_name``."""
+    if explicit:
+        return Path(explicit)
     root_dir = Path(__file__).resolve().parents[2]
     manifest_path = root_dir / "session_manifest.yml"
     with manifest_path.open("r", encoding="utf-8") as fh:
         manifest = yaml.safe_load(fh) or {}
     results_root = Path(manifest.get("results_root") or root_dir)
     results_root.mkdir(parents=True, exist_ok=True)
-    out_stem = results_root / f"{EXPERIMENT_TYPE}_summary_figure"
+    return results_root / default_name
 
-for ext in ("png", "svg"):
-    path = out_stem.with_suffix(f".{ext}")
-    fig.savefig(path, dpi=300, bbox_inches="tight")
-    print(f"Saved {path}")
+
+def _save(fig, out_stem):
+    for ext in ("png", "svg"):
+        path = out_stem.with_suffix(f".{ext}")
+        fig.savefig(path, dpi=300, bbox_inches="tight")
+        print(f"Saved {path}")
+
+
+fig = build_figure(SESSION_ID, EXPERIMENT_TYPE)
+
+_save(fig, _resolve_out_stem(OUTPUT_STEM, f"{EXPERIMENT_TYPE}_summary_figure"))
+
+### Supplementary figure: the same latency/accuracy panels, per animal.
+fig_supp = build_supplement_figure(EXPERIMENT_TYPE)
+_save(fig_supp, _resolve_out_stem(SUPPLEMENT_OUTPUT_STEM,
+                                  f"{EXPERIMENT_TYPE}_supplement_per_animal"))
+
 plt.show()
 
 
