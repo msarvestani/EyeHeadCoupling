@@ -118,12 +118,33 @@ SUPPLEMENT_OUTPUT_STEM = None  # None -> <results_root>/<EXPERIMENT_TYPE>_supple
 # Styling constants — tweak these to fit the final page/journal layout.
 # ---------------------------------------------------------------------------
 FONT_SANS_SERIF = ["Arial", "Helvetica", "DejaVu Sans"]
-FONT_SIZE_BASE = 8
-FONT_SIZE_LABEL = 8
-FONT_SIZE_TITLE = 9
-FONT_SIZE_TICK = 7
-FONT_SIZE_PANEL_LETTER = 13
+### Type sizes and line weights matched to the other figures in the paper
+### (the fixation-task figure), so Figure 3 drops in beside them without
+### being restyled by hand in Illustrator. Everything here is one constant,
+### so the whole figure rescales together if the journal wants it smaller.
+FONT_SIZE_BASE = 7
+FONT_SIZE_LABEL = 7
+FONT_SIZE_TITLE = 8
+FONT_SIZE_TICK = 6
+FONT_SIZE_PANEL_LETTER = 12
 N_TICKS = 3  # e.g. 0, 25, 50 instead of 0, 10, 20, 30, 40, 50
+
+### Short, thin, INWARD ticks on thin spines -- the look of the other
+### figures in the paper, and much lighter than matplotlib's defaults
+### (3.5 pt outward ticks on 0.8 pt axes with 3.5 pt padding).
+###
+### Inward is what keeps the axes corner clean. With outward ticks the
+### tick at each axis minimum projects past the spine junction, so the
+### bottom-left corner reads as two crossed lines with stubs hanging off
+### it rather than a closed L. Pointing them inward puts every tick inside
+### the axes, leaving the corner as a single clean join. Tick labels need
+### slightly more padding once the tick no longer occupies that space.
+SPINE_WIDTH = 0.8
+TICK_LENGTH = 2.5
+TICK_WIDTH = 0.8
+TICK_DIRECTION = "in"
+TICK_PAD = 2.5
+LABEL_PAD = 2.0
 
 ### Fixed post-target latency band that Panel D's third column averages
 ### accuracy over, and that the latency panels of C and D outline with a
@@ -153,6 +174,46 @@ PRECUE_COLOR = "0.45"      # open markers, Panel D's pre-cue control
 PRECUE_DX = 0.17           # x-offset of the pre-cue/post-target pair
 
 
+def _apply_paper_style():
+    """Set the rcParams both figures are drawn under.
+
+    Kept in one function rather than repeated at the top of each build
+    function, so the main figure and the supplement cannot drift apart
+    typographically -- they have to sit side by side in the same paper.
+    """
+    plt.rcParams.update({
+        "font.family": "sans-serif",
+        "font.sans-serif": FONT_SANS_SERIF,
+        "font.size": FONT_SIZE_BASE,
+        "axes.labelsize": FONT_SIZE_LABEL,
+        "axes.titlesize": FONT_SIZE_TITLE,
+        "axes.labelpad": LABEL_PAD,
+        "axes.linewidth": SPINE_WIDTH,
+        "legend.fontsize": FONT_SIZE_LABEL,
+        "xtick.labelsize": FONT_SIZE_TICK,
+        "ytick.labelsize": FONT_SIZE_TICK,
+        "xtick.direction": TICK_DIRECTION,
+        "ytick.direction": TICK_DIRECTION,
+        # Square butt-ends on the spines so the left/bottom pair meets in a
+        # sharp corner rather than two rounded caps leaving a nick at the
+        # junction.
+        "lines.solid_capstyle": "projecting",
+        "xtick.major.size": TICK_LENGTH,
+        "ytick.major.size": TICK_LENGTH,
+        "xtick.major.width": TICK_WIDTH,
+        "ytick.major.width": TICK_WIDTH,
+        "xtick.major.pad": TICK_PAD,
+        "ytick.major.pad": TICK_PAD,
+        # Matplotlib's SVG default ("path") outlines every glyph into vector
+        # paths -- editable in Illustrator, but no longer real text (can't
+        # select/retype it, change font, etc). "none" keeps actual <text>
+        # elements referencing the font by name instead, so Illustrator
+        # imports it as real, editable text -- as long as that font (Arial
+        # here) is installed on whatever machine opens the SVG.
+        "svg.fonttype": "none",
+    })
+
+
 def _limit_ticks(ax, x=True, y=True, nbins=N_TICKS):
     if x:
         ax.xaxis.set_major_locator(MaxNLocator(nbins=nbins))
@@ -161,7 +222,7 @@ def _limit_ticks(ax, x=True, y=True, nbins=N_TICKS):
     ax.tick_params(labelsize=FONT_SIZE_TICK)
 
 
-def _panel_letter(ax, letter, dx=-30, dy=8):
+def _panel_letter(ax, letter, dx=-22, dy=4):
     """Place the panel letter a fixed distance in *points* from the axes'
     top-left corner rather than in axes-fraction coordinates. An
     axes-fraction offset is a fraction of each panel's own width, so a
@@ -175,6 +236,19 @@ def _panel_letter(ax, letter, dx=-30, dy=8):
     )
 
 
+def _close_axes_corner(ax):
+    """Make the left and bottom spines terminate exactly on each other.
+
+    Matplotlib draws each spine across its own axis independently, so with
+    a visible linewidth the two can meet with a small nick at the
+    bottom-left. Giving each spine a projecting cap closes that join.
+    """
+    for side in ("left", "bottom"):
+        spine = ax.spines.get(side)
+        if spine is not None and spine.get_visible():
+            spine.set_capstyle("projecting")
+
+
 def _strip_box(ax, keep=("left", "bottom")):
     """Remove the axes' bounding-box spines except ``keep``, for a cleaner,
     less boxed-in look. Not applied to polar axes (Panel B's polar plots)
@@ -182,6 +256,7 @@ def _strip_box(ax, keep=("left", "bottom")):
     decoration."""
     for side, spine in ax.spines.items():
         spine.set_visible(side in keep)
+    _close_axes_corner(ax)
 
 
 def _annotate_n(ax, text, loc="upper right"):
@@ -367,6 +442,12 @@ def _draw_quiver_panel(ax, qd, label):
         ax.collections[-1].set_color(
             np.where(congruent, CORRECT_COLOR, INCORRECT_COLOR)
         )
+
+    ### _draw_quiver_arrows labels these "X (deg-sign)"; the rest of the
+    ### paper writes "(deg)", so relabel here rather than change the shared
+    ### helper and restyle every other figure that calls it.
+    ax.set_xlabel("X (deg)")
+    ax.set_ylabel("Y (deg)")
 
     ax.set_aspect("equal")
     _annotate_n(ax, f"n = {qd['x'].size}", loc="lower right")
@@ -667,16 +748,7 @@ def _draw_validity_columns(axes, session_validity, animal_pooled, session_result
 # This section puts the actual figure together
 # ---------------------------------------------------------------------------
 def build_figure(session_id: str, experiment_type: str):
-    plt.rcParams["font.family"] = "sans-serif"
-    plt.rcParams["font.sans-serif"] = FONT_SANS_SERIF
-    plt.rcParams["font.size"] = FONT_SIZE_BASE
-    # Matplotlib's SVG default ("path") outlines every glyph into vector
-    # paths -- editable in Illustrator, but no longer real text (can't
-    # select/retype it, change font, etc). "none" keeps actual <text>
-    # elements referencing the font by name instead, so Illustrator imports
-    # it as real, editable text -- as long as that font (Arial here) is
-    # installed on whatever machine opens the SVG.
-    plt.rcParams["svg.fonttype"] = "none"
+    _apply_paper_style()
 
     cache = _load_population_cache(experiment_type)
     session_results = cache["session_results"]
@@ -709,35 +781,47 @@ def build_figure(session_id: str, experiment_type: str):
     pooled_lo = pooled_all["latency_outcome"]
 
 
+    ### Authored at its FINAL printed size, roughly double-column width.
+    ### This matters more than any font constant: point sizes only carry
+    ### across figures rendered at the same physical size. At the previous
+    ### 11 x 8.5 in, a 6 pt tick label had to be scaled down by ~0.65 to
+    ### reach journal width, landing at ~4 pt on the page while the other
+    ### figures' 6 pt stayed 6 pt. Sizes here are now literal: what the
+    ### constants say is what prints. Rescaling this figure in Illustrator
+    ### re-breaks that, so change FIGURE_WIDTH_IN instead.
+    FIGURE_WIDTH_IN = 7.2
+    FIGURE_HEIGHT_IN = 7.0
+
     #setup the main figure size and layout
-    fig = plt.figure(figsize=(11, 8.5))
+    fig = plt.figure(figsize=(FIGURE_WIDTH_IN, FIGURE_HEIGHT_IN))
 
-    ### Four rows, not three. Panel A used to be a tall narrow column
-    ### squeezed beside Panel B, which is the wrong aspect for a task
-    ### schematic -- these are almost always wide trial timelines, and that
-    ### slot would have forced the artwork into portrait. It is now a
-    ### full-width banner; change its height_ratio alone to resize it.
-    gs_main = fig.add_gridspec(4, 1, height_ratios=[0.45, 1.0, 0.92, 0.92],
-                                hspace=0.65)
+    ### Three rows: [A + B], C, D. Panel A is a compact box at the top left
+    ### with B beside it, matching how the other figures in the paper place
+    ### their schematic. It was briefly a full-width banner, which reserved
+    ### about a fifth of the figure height as white space for artwork that
+    ### is added later anyway.
+    gs_main = fig.add_gridspec(3, 1, height_ratios=[0.72, 0.92, 0.92],
+                                hspace=0.5)
 
-    # --- Row 1: Panel A (schematic placeholder, full-width banner) ---
-    ax_a = fig.add_subplot(gs_main[0])
+    # --- Row 1: Panel A (compact schematic box) + Panel B (arrows/polar) ---
+    gs_top = gs_main[0].subgridspec(1, 2, width_ratios=[0.6, 3.4], wspace=0.25)
+
+    ax_a = fig.add_subplot(gs_top[0, 0])
     ax_a.axis("off")
     ax_a.add_patch(plt.Rectangle(
         (0.0, 0.05), 1.0, 0.90, fill=False, ls="--", lw=1, color="0.6",
         transform=ax_a.transAxes,
     ))
-    ax_a.text(0.5, 0.5, "Panel A  (task schematic)", ha="center", va="center",
-              fontsize=FONT_SIZE_LABEL, color="0.5", transform=ax_a.transAxes)
-    _panel_letter(ax_a, "A", dx=-12, dy=-2)
+    ax_a.text(0.5, 0.5, "Panel A\n(task\nschematic)", ha="center", va="center",
+              fontsize=FONT_SIZE_TICK, color="0.5", transform=ax_a.transAxes)
+    _panel_letter(ax_a, "A", dx=-10, dy=2)
 
-    # --- Row 2: Panel B (arrows/polar) ---
     # Arrow + polar side by side per condition (Left arrow, Left polar,
     # Right arrow, Right polar) instead of stacked -- a 2x2 stack left a lot
     # of empty vertical space since quiver panels are wide-but-short and
     # polar panels are compact, so GridSpec was giving both rows equal
     # height regardless.
-    gs_b = gs_main[1].subgridspec(1, 4, wspace=0.45)
+    gs_b = gs_top[0, 1].subgridspec(1, 4, wspace=0.75)
     ax_b_arrow_l = fig.add_subplot(gs_b[0, 0])
     ax_b_polar_l = fig.add_subplot(gs_b[0, 1], polar=True)
     ax_b_arrow_r = fig.add_subplot(gs_b[0, 2])
@@ -760,7 +844,7 @@ def build_figure(session_id: str, experiment_type: str):
     ### the columns invited a vertical comparison they did not support. The
     ### session CDF is dropped and column 3 of row C now holds the legend.
     ROW_CD_WIDTH_RATIOS = [1, 1, 1]
-    ROW_CD_WSPACE = 0.5
+    ROW_CD_WSPACE = 0.45
 
     x_hi = max(
         float(session_result["reward_window"]),
@@ -769,7 +853,7 @@ def build_figure(session_id: str, experiment_type: str):
         float(pooled_lo["latencies"].max()) if pooled_lo["latencies"].size else 0.0,
     )
 
-    gs_c = gs_main[2].subgridspec(1, 3, width_ratios=ROW_CD_WIDTH_RATIOS,
+    gs_c = gs_main[1].subgridspec(1, 3, width_ratios=ROW_CD_WIDTH_RATIOS,
                                   wspace=ROW_CD_WSPACE)
     ax_c_hist = fig.add_subplot(gs_c[0, 0])
     ax_c_acc = fig.add_subplot(gs_c[0, 1])
@@ -782,7 +866,7 @@ def build_figure(session_id: str, experiment_type: str):
                                session_result["reward_window"], x_hi)
     _panel_letter(ax_c_hist, "C")
 
-    gs_d_outer = gs_main[3].subgridspec(1, 3, width_ratios=ROW_CD_WIDTH_RATIOS,
+    gs_d_outer = gs_main[2].subgridspec(1, 3, width_ratios=ROW_CD_WIDTH_RATIOS,
                                         wspace=ROW_CD_WSPACE)
     ax_d_hist = fig.add_subplot(gs_d_outer[0, 0])
     ax_d_acc = fig.add_subplot(gs_d_outer[0, 1])
@@ -844,9 +928,7 @@ def build_supplement_figure(experiment_type: str):
     Every panel shares one x-limit across both animals, so the two rows are
     directly comparable -- the whole point of splitting them out.
     """
-    plt.rcParams["font.sans-serif"] = FONT_SANS_SERIF
-    plt.rcParams["font.size"] = FONT_SIZE_BASE
-    plt.rcParams["svg.fonttype"] = "none"
+    _apply_paper_style()
 
     cache = _load_population_cache(experiment_type)
     animal_pooled = cache["animal_pooled"]
@@ -870,7 +952,9 @@ def build_supplement_figure(experiment_type: str):
                    float(lat.max()) if lat.size else 0.0)
 
     n_rows = len(animals)
-    fig = plt.figure(figsize=(9, 2.9 * n_rows + 0.6))
+    ### Same printed width as the main figure, for the same reason: point
+    ### sizes only carry between figures rendered at the same physical size.
+    fig = plt.figure(figsize=(7.2, 2.2 * n_rows + 0.5))
     gs = fig.add_gridspec(n_rows, 3, wspace=0.45, hspace=0.7)
 
     letters = "ABCDEFGHIJKL"
@@ -931,9 +1015,21 @@ def _resolve_out_stem(explicit, default_name):
 
 
 def _save(fig, out_stem):
+    """Save at the figure's declared size, NOT bbox_inches="tight".
+
+    "tight" crops the canvas to its content, so the saved file came out at
+    6.29 in wide rather than the 7.2 in the figure declares. Placing that
+    at 7.2 in scales everything up by ~1.15x, and 6 pt tick labels print at
+    ~6.9 pt -- which defeats the reason the figure is authored at its final
+    size in the first place. Saving uncropped means the file is exactly
+    FIGURE_WIDTH_IN wide and every point size on it is literal.
+
+    The cost is some outer margin, which is trimmed on the artboard rather
+    than by rescaling.
+    """
     for ext in ("png", "svg"):
         path = out_stem.with_suffix(f".{ext}")
-        fig.savefig(path, dpi=300, bbox_inches="tight")
+        fig.savefig(path, dpi=300)
         print(f"Saved {path}")
 
 
